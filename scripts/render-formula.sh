@@ -6,7 +6,7 @@
 # <dist-dir> must contain the release tarballs named
 #   muckdb-<version>-<target>.tar.gz
 # for these targets:
-#   aarch64-apple-darwin, x86_64-apple-darwin, x86_64-unknown-linux-gnu
+#   aarch64-apple-darwin, x86_64-unknown-linux-gnu
 set -euo pipefail
 
 VERSION="${1:?usage: render-formula.sh <version> <dist-dir>}"
@@ -21,7 +21,6 @@ sha() {
 }
 
 ARM_MAC="$(sha aarch64-apple-darwin)"
-INTEL_MAC="$(sha x86_64-apple-darwin)"
 LINUX="$(sha x86_64-unknown-linux-gnu)"
 
 cat <<EOF
@@ -37,10 +36,6 @@ class Muckdb < Formula
     on_arm do
       url "${BASE}/muckdb-${VERSION}-aarch64-apple-darwin.tar.gz"
       sha256 "${ARM_MAC}"
-    end
-    on_intel do
-      url "${BASE}/muckdb-${VERSION}-x86_64-apple-darwin.tar.gz"
-      sha256 "${INTEL_MAC}"
     end
   end
 

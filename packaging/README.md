@@ -26,9 +26,9 @@ git push origin v0.1.0
 
 The release workflow then:
 
-1. Cross-builds `muckdb` for `aarch64-apple-darwin`, `x86_64-apple-darwin`, and
+1. Cross-builds `muckdb` for `aarch64-apple-darwin` and
    `x86_64-unknown-linux-gnu`.
-2. Publishes a GitHub Release with the three `muckdb-<version>-<target>.tar.gz`
+2. Publishes a GitHub Release with the `muckdb-<version>-<target>.tar.gz`
    tarballs.
 3. Regenerates `Formula/muckdb.rb` (via `scripts/render-formula.sh`, with the
    real sha256 sums) and commits it to the tap.
