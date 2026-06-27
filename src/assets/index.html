@@ -497,6 +497,11 @@
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     $("view-" + tab).classList.add("active");
     syncUrl(true);
+    if (!suppressSync) maybeAutoSession();
+  }
+  // On the Sessions tab with nothing chosen, open the first session.
+  function maybeAutoSession() {
+    if (state.tab === "sessions" && !state.selSession && state.sessions.length) loadSession(state.sessions[0].id, false);
   }
 
   // ---- ledger -----------------------------------------------------------
@@ -906,7 +911,7 @@
       state.sessionData = s;
       renderPanels(s);
     } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; }
-    if (push) syncUrl(true);
+    syncUrl(!!push);
   }
   function renderPanels(s) {
     destroyCharts();
@@ -1305,6 +1310,7 @@
     renderLedger();
     renderSessionNav();
     maybeRefreshSession();
+    if (!suppressSync && !pendingNav) maybeAutoSession();
     refreshDbExistence(s.databases || []);
   }
   function maybeRefreshSession() {
