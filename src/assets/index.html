@@ -112,9 +112,9 @@
   .range-slider input[type=range]::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--orange); border: 2px solid var(--bg); cursor: pointer; }
   .range-note { font-size: 11px; color: var(--faint); margin: 2px; }
 
-  .thist { display: flex; align-items: flex-end; gap: 1px; height: 44px; margin: 2px 0 8px; }
+  .thist { display: flex; align-items: flex-end; gap: 1px; height: 44px; margin: 2px 0 8px; cursor: crosshair; }
   .thist .tb { flex: 1; background: var(--orange-dim); min-height: 2px; border-radius: 1px 1px 0 0; }
-  .thist .tb:hover { background: var(--orange); }
+  .thist .tb:hover, .thist .tb.sel { background: var(--orange); }
   .trange { display: flex; align-items: center; gap: 6px; }
   .tdate { font: inherit; font-size: 11px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; flex: 1; min-width: 0; }
   .tdate:focus { outline: none; border-color: var(--orange-dim); }
@@ -542,10 +542,10 @@
     const tf = state.filters.find((x) => x.column === f.name && (x.tmin !== undefined || x.tmax !== undefined));
     const lo = (tf && tf.tmin) || f.min, hi = (tf && tf.tmax) || f.max;
     const bmax = Math.max(1, ...f.bins.map((b) => b.count));
-    const bars = f.bins.map((b) => `<div class="tb" style="height:${Math.round((b.count / bmax) * 100)}%" title="${attr(b.label)} · ${b.count}"></div>`).join("");
+    const bars = f.bins.map((b) => `<div class="tb" data-label="${attr(b.label)}" style="height:${Math.round((b.count / bmax) * 100)}%" title="${attr(b.label)} · ${b.count}"></div>`).join("");
     return `<div class="facet-group" data-tcol="${attr(f.name)}">${head}
       <div class="range-readout"><span>${fmtDMY(lo)}</span> <span class="rsep">–</span> <span>${fmtDMY(hi)}</span></div>
-      <div class="thist">${bars}</div>
+      <div class="thist" data-tcol="${attr(f.name)}" title="click a bar or drag to pick a date range">${bars}</div>
       <div class="trange">
         <input type="date" class="tdate tdate-lo" value="${attr(lo.slice(0, 10))}" />
         <span class="rsep">–</span>
@@ -800,17 +800,41 @@
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
   });
 
-  // brush-select on stats histograms
+  // brush-select on numeric stats histograms AND temporal facet histograms
+  function timeBarIdx(b, x) { return clamp(Math.floor((x - b.rect.left) / b.rect.width * b.bars.length), 0, b.bars.length - 1); }
+  function highlightTimeBars() { const lo = Math.min(brush.start, brush.cur), hi = Math.max(brush.start, brush.cur); brush.bars.forEach((el, i) => el.classList.toggle("sel", i >= lo && i <= hi)); }
+
   document.addEventListener("mousedown", (ev) => {
+    const thist = ev.target.closest(".thist[data-tcol]");
+    if (thist) {
+      const bars = [...thist.querySelectorAll(".tb")];
+      if (!bars.length) return;
+      brush = { type: "time", col: thist.dataset.tcol, rect: thist.getBoundingClientRect(), bars };
+      brush.start = brush.cur = timeBarIdx(brush, ev.clientX);
+      highlightTimeBars(); ev.preventDefault(); return;
+    }
     const hist = ev.target.closest(".hist[data-col]"); if (!hist) return;
     const rect = hist.getBoundingClientRect();
-    brush = { hist, rect, col: hist.dataset.col, min: parseFloat(hist.dataset.min), max: parseFloat(hist.dataset.max), x0: ev.clientX };
+    brush = { type: "num", hist, rect, col: hist.dataset.col, min: parseFloat(hist.dataset.min), max: parseFloat(hist.dataset.max), x0: ev.clientX };
     let ov = hist.querySelector(".brush-sel"); if (!ov) { ov = document.createElement("div"); ov.className = "brush-sel"; hist.appendChild(ov); }
     drawBrush(ev.clientX); ev.preventDefault();
   });
-  document.addEventListener("mousemove", (ev) => { if (brush) drawBrush(ev.clientX); });
+  document.addEventListener("mousemove", (ev) => {
+    if (!brush) return;
+    if (brush.type === "time") { brush.cur = timeBarIdx(brush, ev.clientX); highlightTimeBars(); }
+    else drawBrush(ev.clientX);
+  });
   document.addEventListener("mouseup", (ev) => {
     if (!brush) return; const b = brush; brush = null;
+    if (b.type === "time") {
+      const end = timeBarIdx(b, ev.clientX);
+      const lo = Math.min(b.start, end), hi = Math.max(b.start, end);
+      const tmin = String(b.bars[lo].dataset.label).slice(0, 10);
+      const tmax = String(b.bars[hi].dataset.label).slice(0, 10);
+      const f = state.facets.find((x) => x.name === b.col) || {};
+      setTRange(b.col, tmin, tmax, f.min || tmin, f.max || tmax);
+      return;
+    }
     const f0 = clamp((Math.min(b.x0, ev.clientX) - b.rect.left) / b.rect.width, 0, 1);
     const f1 = clamp((Math.max(b.x0, ev.clientX) - b.rect.left) / b.rect.width, 0, 1);
     const ov = b.hist.querySelector(".brush-sel"); if (ov) ov.remove();
