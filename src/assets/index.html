@@ -108,11 +108,28 @@
   .facet-val .fc { color: var(--faint); z-index: 1; }
   .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgba(194, 97, 26, 0.13); border-radius: 4px; }
 
+  /* range facet (dual slider) */
+  .range-readout { font-size: 12px; color: var(--fg); margin: 2px 2px 8px; }
+  .range-readout .rsep { color: var(--faint); }
+  .range-slider { position: relative; height: 26px; margin: 0 6px 4px; }
+  .range-slider .rtrack { position: absolute; left: 0; right: 0; top: 11px; height: 4px; background: var(--line); border-radius: 2px; }
+  .range-slider .rsel { position: absolute; top: 11px; height: 4px; background: var(--orange-dim); border-radius: 2px; }
+  .range-slider input[type=range] { position: absolute; left: 0; width: 100%; height: 26px; margin: 0; background: none; pointer-events: none; -webkit-appearance: none; appearance: none; }
+  .range-slider input[type=range]:focus { outline: none; }
+  .range-slider input[type=range]::-webkit-slider-thumb { pointer-events: auto; -webkit-appearance: none; width: 14px; height: 14px; border-radius: 50%; background: var(--orange); border: 2px solid var(--bg); cursor: pointer; }
+  .range-slider input[type=range]::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--orange); border: 2px solid var(--bg); cursor: pointer; }
+  .range-note { font-size: 11px; color: var(--faint); margin: 2px; }
+
   /* results header + filters */
   .tp-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .tp-name { font-size: 16px; color: var(--fg); }
   .tp-rows { font-size: 12px; color: var(--faint); }
-  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin-left: auto; }
+  .tp-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .export { display: inline-flex; align-items: center; gap: 6px; }
+  .exlabel { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+  .exlink { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
+  .exlink:hover { border-color: var(--orange-dim); color: var(--orange); }
   .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button.active { background: var(--orange); color: #1c1a18; font-weight: 700; }
@@ -278,6 +295,8 @@
   };
   let lastIds = new Set();
   let searchTimer = null;
+  let suppressSync = false;   // true while restoring state from the URL
+  let pendingNav = null;      // nav from URL waiting for databases to load
 
   // ---- helpers ----------------------------------------------------------
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -295,6 +314,48 @@
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     $("view-" + tab).classList.add("active");
+    syncUrl(true);
+  }
+
+  // ---- URL <-> state ----------------------------------------------------
+  function serializeParams() {
+    const p = new URLSearchParams();
+    if (state.tab !== "databases") p.set("tab", state.tab);
+    if (state.selDb) p.set("db", state.selDb);
+    if (state.selTable) p.set("t", state.selTable);
+    if (state.subview !== "rows") p.set("v", state.subview);
+    if (state.q && state.q.trim()) p.set("q", state.q.trim());
+    if (state.page > 0) p.set("p", String(state.page + 1));
+    if (state.filters.length) p.set("f", JSON.stringify(state.filters));
+    return p;
+  }
+  function syncUrl(push) {
+    if (suppressSync) return;
+    const qs = serializeParams().toString();
+    const url = location.pathname + (qs ? "?" + qs : "");
+    if (url === location.pathname + location.search) return;
+    if (push) history.pushState(null, "", url); else history.replaceState(null, "", url);
+  }
+  function parseUrl() {
+    const p = new URLSearchParams(location.search);
+    let filters = [];
+    try { const f = p.get("f"); if (f) filters = JSON.parse(f); } catch (_) {}
+    return {
+      tab: ["databases", "sessions", "ledger"].includes(p.get("tab")) ? p.get("tab") : "databases",
+      db: p.get("db"), table: p.get("t"),
+      sub: p.get("v") === "stats" ? "stats" : "rows",
+      q: p.get("q") || "",
+      page: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
+      filters: Array.isArray(filters) ? filters : [],
+    };
+  }
+  async function restoreFromNav(nav) {
+    suppressSync = true;
+    setTab(nav.tab);
+    if (nav.db && state.databases.some((d) => d.path === nav.db)) await selectDb(nav.db, nav);
+    else pendingNav = nav;
+    suppressSync = false;
+    syncUrl(false);
   }
 
   // ---- ledger -----------------------------------------------------------
@@ -347,7 +408,7 @@
     }).join(" ");
   }
 
-  async function selectDb(path) {
+  async function selectDb(path, restore) {
     state.selDb = path; state.selTable = null; state.tables = [];
     state.q = ""; state.filters = []; state.page = 0; state.facets = [];
     renderDbNav();
@@ -355,20 +416,26 @@
     $("results").innerHTML = '<div class="note">loading tables…</div>';
     try {
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(path))).json();
-      if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; syncUrl(true); return; }
       state.tables = data.tables || [];
       renderTableNav();
-      if (state.tables.length) selectTable(state.tables[0].name);
-      else { $("results").innerHTML = '<div class="note">This database has no tables yet.</div>'; $("facet-panel").innerHTML = ""; }
-    } catch (e) { $("results").innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+      if (restore && restore.table && state.tables.some((t) => t.name === restore.table)) selectTable(restore.table, restore);
+      else if (state.tables.length) selectTable(state.tables[0].name);
+      else { $("results").innerHTML = '<div class="note">This database has no tables yet.</div>'; $("facet-panel").innerHTML = ""; syncUrl(true); }
+    } catch (e) { $("results").innerHTML = `<div class="note err">${esc(String(e))}</div>`; syncUrl(true); }
   }
 
-  function selectTable(name) {
-    state.selTable = name; state.subview = "rows";
-    state.q = ""; state.filters = []; state.page = 0; state.facets = [];
+  function selectTable(name, restore) {
+    state.selTable = name;
+    state.subview = restore && restore.sub ? restore.sub : "rows";
+    state.q = restore && restore.q ? restore.q : "";
+    state.filters = restore && restore.filters ? restore.filters.slice() : [];
+    state.page = restore && restore.page ? restore.page : 0;
+    state.facets = [];
     renderTableNav();
     loadFacets();
     renderResults();
+    syncUrl(true);
   }
 
   // ---- facets (left panel) ----------------------------------------------
@@ -382,20 +449,47 @@
     } catch (_) { state.facets = []; }
     renderFacetPanel();
   }
-  function renderFacetPanel() {
-    const groups = state.facets.map((f) => {
-      const max = Math.max(1, ...f.values.map((v) => v.count));
-      const vals = f.values.map((v) => {
-        const on = hasFilter(f.name, v.value) ? " on" : "";
-        return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}">
-          <span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span>
-          <span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span>
-        </button>`;
-      }).join("");
-      return `<div class="facet-group"><div class="facet-col">${esc(f.name)}</div>${vals}</div>`;
+  function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined); }
+  function currentRange(col, fmin, fmax) {
+    const rf = rangeFilter(col);
+    return { lo: rf && rf.min != null ? rf.min : fmin, hi: rf && rf.max != null ? rf.max : fmax };
+  }
+
+  function renderValuesFacet(f) {
+    const max = Math.max(1, ...f.values.map((v) => v.count));
+    const vals = f.values.map((v) => {
+      const on = hasFilter(f.name, v.value) ? " on" : "";
+      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}">
+        <span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span>
+        <span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span>
+      </button>`;
     }).join("");
+    return `<div class="facet-group"><div class="facet-col">${esc(f.name)}</div>${vals}</div>`;
+  }
+
+  function renderRangeFacet(f) {
+    const head = `<div class="facet-col">${esc(f.name)}</div>`;
+    if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range available.</div></div>`;
+    if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${fmtNum(f.min)}</div></div>`;
+    const { lo, hi } = currentRange(f.name, f.min, f.max);
+    const step = (f.max - f.min) / 200 || 1;
+    const span = f.max - f.min;
+    const leftPct = ((lo - f.min) / span) * 100;
+    const widthPct = ((hi - lo) / span) * 100;
+    return `<div class="facet-group">${head}
+      <div class="range-readout"><span data-rmin>${fmtNum(lo)}</span> <span class="rsep">–</span> <span data-rmax>${fmtNum(hi)}</span></div>
+      <div class="range-slider" data-rcol="${attr(f.name)}" data-fmin="${f.min}" data-fmax="${f.max}">
+        <div class="rtrack"></div>
+        <div class="rsel" style="left:${leftPct}%;width:${widthPct}%"></div>
+        <input type="range" class="rng rng-lo" min="${f.min}" max="${f.max}" step="${step}" value="${lo}" aria-label="${attr(f.name)} minimum" />
+        <input type="range" class="rng rng-hi" min="${f.min}" max="${f.max}" step="${step}" value="${hi}" aria-label="${attr(f.name)} maximum" />
+      </div></div>`;
+  }
+
+  function renderFacetPanel() {
+    const groups = state.facets.map((f) => f.kind === "range" ? renderRangeFacet(f) : renderValuesFacet(f)).join("");
     const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
-    const body = state.facets.length ? groups : '<div class="note">No categorical columns to facet.</div>';
+    const body = state.facets.length ? groups : '<div class="note">No columns to facet.</div>';
     $("facet-panel").innerHTML = `
       <input class="facet-search" id="facet-search" type="search" placeholder="search all columns…" value="${attr(state.q)}" />
       ${clear}${body}`;
@@ -405,16 +499,26 @@
   function renderResults() {
     const t = state.tables.find((x) => x.name === state.selTable);
     const colCount = t ? `${t.column_count} columns` : "";
-    const chips = state.filters.map((f, i) =>
-      `<span class="fchip"><span class="col">${esc(f.column)}</span> = ${esc(f.value)}
-        <button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`).join("");
+    const chips = state.filters.map((f, i) => {
+      const label = f.value !== undefined
+        ? `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`
+        : `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
+      return `<span class="fchip">${label}
+        <button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`;
+    }).join("");
     $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
         <span class="tp-rows">${colCount}</span>
-        <span class="seg">
-          <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
-          <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
+        <span class="tp-actions">
+          <span class="seg">
+            <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
+            <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
+          </span>
+          <span class="export"><span class="exlabel">export</span>
+            <button class="exlink" data-export="csv">csv</button>
+            <button class="exlink" data-export="json">json</button>
+          </span>
         </span>
       </div>
       ${chips ? `<div class="active-filters">${chips}</div>` : ""}
@@ -490,8 +594,40 @@
     if (i >= 0) state.filters.splice(i, 1); else state.filters.push({ column, value });
     state.page = 0;
     if (state.subview !== "rows") state.subview = "rows";
-    loadFacets();
-    renderResults();
+    loadFacets(); renderResults(); syncUrl(false);
+  }
+  function setRange(col, lo, hi, fmin, fmax) {
+    state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined));
+    const eps = (fmax - fmin) / 1000;
+    if (lo > fmin + eps || hi < fmax - eps) state.filters.push({ column: col, min: lo, max: hi });
+    state.page = 0;
+    if (state.subview !== "rows") state.subview = "rows";
+    loadFacets(); renderResults(); syncUrl(false);
+  }
+  // Download the current filtered set (all rows) as csv/json.
+  function downloadExport(format) {
+    const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });
+    if (state.q.trim()) p.set("q", state.q.trim());
+    if (state.filters.length) p.set("filter", JSON.stringify(state.filters));
+    const a = document.createElement("a");
+    a.href = "/api/export?" + p.toString();
+    a.download = `${state.selTable}.${format}`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+
+  // Live (un-committed) drag: clamp the two thumbs and redraw the selection.
+  function liveRange(input) {
+    const box = input.closest(".range-slider");
+    const lo = box.querySelector(".rng-lo"), hi = box.querySelector(".rng-hi");
+    let a = parseFloat(lo.value), b = parseFloat(hi.value);
+    if (a > b) { if (input === lo) { a = b; lo.value = a; } else { b = a; hi.value = b; } }
+    const fmin = parseFloat(box.dataset.fmin), fmax = parseFloat(box.dataset.fmax), span = (fmax - fmin) || 1;
+    const sel = box.querySelector(".rsel");
+    sel.style.left = ((a - fmin) / span * 100) + "%";
+    sel.style.width = ((b - a) / span * 100) + "%";
+    const grp = box.parentElement;
+    grp.querySelector("[data-rmin]").textContent = fmtNum(a);
+    grp.querySelector("[data-rmax]").textContent = fmtNum(b);
   }
 
   // ---- events -----------------------------------------------------------
@@ -505,17 +641,19 @@
     const tc = ev.target.closest("[data-table]");
     if (tc) { selectTable(tc.dataset.table); return; }
     const sub = ev.target.closest("[data-sub]");
-    if (sub) { state.subview = sub.dataset.sub; renderResults(); return; }
+    if (sub) { state.subview = sub.dataset.sub; renderResults(); syncUrl(true); return; }
     const rm = ev.target.closest("[data-rmfilter]");
-    if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); state.page = 0; loadFacets(); renderResults(); return; }
+    if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); state.page = 0; loadFacets(); renderResults(); syncUrl(false); return; }
     const facet = ev.target.closest("[data-fcol]");
     if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
-    if (ev.target.id === "facet-clear") { state.filters = []; state.page = 0; loadFacets(); renderResults(); return; }
+    const ex = ev.target.closest("[data-export]");
+    if (ex) { downloadExport(ex.dataset.export); return; }
+    if (ev.target.id === "facet-clear") { state.filters = []; state.page = 0; loadFacets(); renderResults(); syncUrl(false); return; }
     const pg = ev.target.closest("[data-page]");
     if (pg) {
       if (pg.dataset.page === "prev" && state.page > 0) state.page--;
       else if (pg.dataset.page === "next") state.page++;
-      loadRows();
+      loadRows(); syncUrl(false);
       return;
     }
   });
@@ -524,7 +662,19 @@
     if (ev.target.id === "facet-search") {
       state.q = ev.target.value; state.page = 0;
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); }, 250);
+      searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); syncUrl(false); }, 250);
+    } else if (ev.target.classList.contains("rng")) {
+      liveRange(ev.target);
+    }
+  });
+
+  // Commit a range only on release, so dragging doesn't spam the backend.
+  document.addEventListener("change", (ev) => {
+    if (ev.target.classList.contains("rng")) {
+      const box = ev.target.closest(".range-slider");
+      const a = parseFloat(box.querySelector(".rng-lo").value);
+      const b = parseFloat(box.querySelector(".rng-hi").value);
+      setRange(box.dataset.rcol, Math.min(a, b), Math.max(a, b), parseFloat(box.dataset.fmin), parseFloat(box.dataset.fmax));
     }
   });
 
@@ -555,7 +705,16 @@
       $("table-nav").hidden = true; $("facet-panel").innerHTML = "";
     }
     renderDbNav();
-    // Auto-select the first database so the default tab isn't empty.
+    // Restore a database/table requested by the URL, once databases are known.
+    if (pendingNav) {
+      const nav = pendingNav; pendingNav = null;
+      if (nav.db && state.databases.some((d) => d.path === nav.db)) {
+        suppressSync = true;
+        selectDb(nav.db, nav).then(() => { suppressSync = false; syncUrl(false); });
+        return;
+      }
+    }
+    // Otherwise auto-select the first database so the default tab isn't empty.
     if (!state.selDb && state.databases.length) selectDb(state.databases[0].path);
   }
 
@@ -573,6 +732,14 @@
 
   $("self-link").textContent = location.host;
   $("sl-port").textContent = ":" + (location.port || (location.protocol === "https:" ? "443" : "80"));
+
+  // Restore from the URL on load (db/table applied once databases arrive), and
+  // honour browser back/forward.
+  const initial = parseUrl();
+  suppressSync = true; setTab(initial.tab); suppressSync = false;
+  pendingNav = initial;
+  window.addEventListener("popstate", () => { restoreFromNav(parseUrl()); });
+
   connect();
 })();
 </script>

@@ -12,7 +12,7 @@ use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
-use axum::{Router, http::StatusCode};
+use axum::{Router, http::StatusCode, http::header};
 use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
@@ -52,6 +52,7 @@ pub async fn run() -> Result<()> {
         .route("/api/preview", get(api_preview))
         .route("/api/stats", get(api_stats))
         .route("/api/facets", get(api_facets))
+        .route("/api/export", get(api_export))
         .route("/ws", get(ws_handler))
         .with_state(state);
 
@@ -227,6 +228,56 @@ async fn api_facets(Query(p): Query<FacetsParams>) -> Response {
     let filters = parse_filters(p.filter.as_deref());
     match introspect::facets(&p.db, &p.table, p.q.as_deref(), &filters) {
         Ok(facets) => Json(json!({ "facets": facets })).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ExportParams {
+    db: String,
+    table: String,
+    format: Option<String>,
+    q: Option<String>,
+    filter: Option<String>,
+}
+
+/// Keep a table name safe to drop into a Content-Disposition filename.
+fn safe_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect()
+}
+
+async fn api_export(Query(p): Query<ExportParams>) -> Response {
+    let fmt = p.format.as_deref().unwrap_or("csv").to_ascii_lowercase();
+    let filters = parse_filters(p.filter.as_deref());
+    match introspect::export(&p.db, &p.table, &fmt, p.q.as_deref(), &filters) {
+        Ok(body) => {
+            let (ctype, ext) = if fmt == "json" {
+                ("application/json", "json")
+            } else {
+                ("text/csv", "csv")
+            };
+            let disposition = format!(
+                "attachment; filename=\"{}.{}\"",
+                safe_filename(&p.table),
+                ext
+            );
+            (
+                [
+                    (header::CONTENT_TYPE, ctype.to_string()),
+                    (header::CONTENT_DISPOSITION, disposition),
+                ],
+                body,
+            )
+                .into_response()
+        }
         Err(e) => error_json(&e),
     }
 }

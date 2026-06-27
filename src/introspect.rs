@@ -74,11 +74,23 @@ pub fn is_numeric(col_type: &str) -> bool {
     NEEDLES.iter().any(|n| t.contains(n))
 }
 
-/// One facet filter: a column constrained to an exact (string-compared) value.
+/// One facet filter on a column. Either an exact value (string-compared) or a
+/// numeric range (min/max, either bound optional).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Filter {
     pub column: String,
-    pub value: String,
+    #[serde(default)]
+    pub value: Option<String>,
+    #[serde(default)]
+    pub min: Option<f64>,
+    #[serde(default)]
+    pub max: Option<f64>,
+}
+
+impl Filter {
+    fn is_range(&self) -> bool {
+        self.value.is_none() && (self.min.is_some() || self.max.is_some())
+    }
 }
 
 /// Build a SQL `WHERE` body (without the `WHERE` keyword) from a free-text
@@ -90,13 +102,15 @@ pub struct Filter {
 pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> Option<String> {
     let mut clauses: Vec<String> = Vec::new();
 
-    // Group filters by column: values within a column combine with OR (a value
-    // is either of the chosen ones), and columns combine with AND.
+    // Value filters: group by column — values within a column combine with OR
+    // (the value is any of the chosen ones), and columns combine with AND.
     let mut by_col: Vec<(String, Vec<String>)> = Vec::new();
     for f in filters {
-        match by_col.iter_mut().find(|(c, _)| *c == f.column) {
-            Some((_, vals)) => vals.push(f.value.clone()),
-            None => by_col.push((f.column.clone(), vec![f.value.clone()])),
+        if let Some(v) = &f.value {
+            match by_col.iter_mut().find(|(c, _)| *c == f.column) {
+                Some((_, vals)) => vals.push(v.clone()),
+                None => by_col.push((f.column.clone(), vec![v.clone()])),
+            }
         }
     }
     for (col, vals) in &by_col {
@@ -115,6 +129,21 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
         } else {
             format!("({})", ors.join(" OR "))
         });
+    }
+
+    // Range filters: numeric column bounded by min and/or max.
+    for f in filters.iter().filter(|f| f.is_range()) {
+        let col = quote_ident(&f.column);
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(mn) = f.min {
+            parts.push(format!("{col} >= {mn}"));
+        }
+        if let Some(mx) = f.max {
+            parts.push(format!("{col} <= {mx}"));
+        }
+        if !parts.is_empty() {
+            clauses.push(format!("({})", parts.join(" AND ")));
+        }
     }
 
     if let Some(q) = q.map(str::trim).filter(|q| !q.is_empty()) {
@@ -299,17 +328,73 @@ pub fn preview(
     })
 }
 
-/// Top values (with counts) of one categorical column, for the facet panel.
-#[derive(Debug, Clone, Serialize)]
-pub struct ColumnFacet {
-    pub name: String,
-    pub values: Vec<TopValue>,
+/// Export the full filtered result set as CSV or JSON text (no row limit),
+/// using duckdb's own `-csv` / `-json` output.
+pub fn export(
+    db: &str,
+    table: &str,
+    format: &str,
+    q: Option<&str>,
+    filters: &[Filter],
+) -> Result<String> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist");
+    }
+    let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
+    let where_sql = build_where(&columns, q, filters)
+        .map(|w| format!(" WHERE {w}"))
+        .unwrap_or_default();
+    let sql = format!("SELECT * FROM {}{}", quote_ident(table), where_sql);
+
+    let out_flag = if format.eq_ignore_ascii_case("json") {
+        "-json"
+    } else {
+        "-csv"
+    };
+    let output = Command::new("duckdb")
+        .arg("-readonly")
+        .arg(out_flag)
+        .arg(db)
+        .arg("-c")
+        .arg(&sql)
+        .output()
+        .context("failed to run `duckdb` — is it installed and on PATH?")?;
+    if !output.status.success() {
+        bail!(
+            "duckdb error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
-/// Compute facets for every categorical column. Each column's counts are
-/// computed with all active filters EXCEPT those on that column itself — the
-/// standard faceted-search behaviour that keeps a column's other values visible
-/// after you select one of them. The free-text search applies throughout.
+/// A facet for the left panel: either a categorical value list or a numeric
+/// range. Serialized with a `kind` tag for the frontend to switch on.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "lowercase")]
+pub enum ColumnFacet {
+    Values {
+        name: String,
+        values: Vec<TopValue>,
+    },
+    Range {
+        name: String,
+        min: Option<f64>,
+        max: Option<f64>,
+    },
+}
+
+/// True if a column name looks like an identifier (so it gets no range facet).
+fn looks_like_id(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    n == "id" || n == "rowid" || n.ends_with("_id")
+}
+
+/// Compute facets for each column. Categorical columns get a value list;
+/// numeric (non-id) columns get a min/max range. Each column's facet is computed
+/// with all active filters EXCEPT those on that column itself — the standard
+/// faceted-search behaviour that keeps a column's other options visible after you
+/// constrain it. The free-text search applies throughout.
 pub fn facets(
     db: &str,
     table: &str,
@@ -325,8 +410,8 @@ pub fn facets(
 
     let mut out = Vec::new();
     for (name, ty) in &cols {
-        if is_numeric(ty) {
-            continue; // facets are for categorical columns
+        if is_numeric(ty) && looks_like_id(name) {
+            continue; // id-like numeric columns get no facet
         }
         let others: Vec<Filter> = filters
             .iter()
@@ -334,32 +419,53 @@ pub fn facets(
             .cloned()
             .collect();
         let qc = quote_ident(name);
-        // Always exclude NULLs; AND that onto any other-column / search clause.
         let not_null = format!("{qc} IS NOT NULL");
         let where_sql = match build_where(&all_names, q, &others) {
             Some(w) => format!(" WHERE {w} AND {not_null}"),
             None => format!(" WHERE {not_null}"),
         };
-        let rows = query_json(
-            db,
-            &format!(
-                "SELECT CAST({qc} AS VARCHAR) AS v, count(*) AS c FROM {tbl}{where_sql} \
-                 GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
-            ),
-        )?;
-        let values = rows
-            .into_iter()
-            .filter_map(|r| {
-                Some(TopValue {
-                    value: r.get("v").and_then(Value::as_str)?.to_string(),
-                    count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+
+        if is_numeric(ty) {
+            let row = query_json(
+                db,
+                &format!("SELECT min({qc}) AS lo, max({qc}) AS hi FROM {tbl}{where_sql}"),
+            )?;
+            let (min, max) = row
+                .first()
+                .map(|r| {
+                    (
+                        r.get("lo").and_then(Value::as_f64),
+                        r.get("hi").and_then(Value::as_f64),
+                    )
                 })
-            })
-            .collect();
-        out.push(ColumnFacet {
-            name: name.clone(),
-            values,
-        });
+                .unwrap_or((None, None));
+            out.push(ColumnFacet::Range {
+                name: name.clone(),
+                min,
+                max,
+            });
+        } else {
+            let rows = query_json(
+                db,
+                &format!(
+                    "SELECT CAST({qc} AS VARCHAR) AS v, count(*) AS c FROM {tbl}{where_sql} \
+                     GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
+                ),
+            )?;
+            let values = rows
+                .into_iter()
+                .filter_map(|r| {
+                    Some(TopValue {
+                        value: r.get("v").and_then(Value::as_str)?.to_string(),
+                        count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+                    })
+                })
+                .collect();
+            out.push(ColumnFacet::Values {
+                name: name.clone(),
+                values,
+            });
+        }
     }
     Ok(out)
 }
@@ -491,6 +597,25 @@ fn histogram_buckets(db: &str, tbl: &str, q: &str, lo: f64, hi: f64) -> Result<V
 mod tests {
     use super::*;
 
+    /// A value (exact-match) filter.
+    fn vf(column: &str, value: &str) -> Filter {
+        Filter {
+            column: column.into(),
+            value: Some(value.into()),
+            min: None,
+            max: None,
+        }
+    }
+    /// A numeric range filter.
+    fn rf(column: &str, min: Option<f64>, max: Option<f64>) -> Filter {
+        Filter {
+            column: column.into(),
+            value: None,
+            min,
+            max,
+        }
+    }
+
     #[test]
     fn classifies_numeric_types() {
         for t in [
@@ -532,10 +657,7 @@ mod tests {
     #[test]
     fn build_where_filters_compare_as_text_and_escape() {
         let cols = vec!["name".to_string()];
-        let filters = vec![Filter {
-            column: "name".into(),
-            value: "O'Hare".into(),
-        }];
+        let filters = vec![vf("name", "O'Hare")];
         assert_eq!(
             build_where(&cols, None, &filters).unwrap(),
             "CAST(\"name\" AS VARCHAR) = 'O''Hare'"
@@ -545,16 +667,7 @@ mod tests {
     #[test]
     fn build_where_groups_same_column_values_with_or() {
         let cols = vec!["species".to_string()];
-        let filters = vec![
-            Filter {
-                column: "species".into(),
-                value: "coot".into(),
-            },
-            Filter {
-                column: "species".into(),
-                value: "teal".into(),
-            },
-        ];
+        let filters = vec![vf("species", "coot"), vf("species", "teal")];
         assert_eq!(
             build_where(&cols, None, &filters).unwrap(),
             "(CAST(\"species\" AS VARCHAR) = 'coot' OR CAST(\"species\" AS VARCHAR) = 'teal')"
@@ -564,16 +677,7 @@ mod tests {
     #[test]
     fn build_where_joins_different_columns_with_and() {
         let cols = vec!["a".to_string(), "b".to_string()];
-        let filters = vec![
-            Filter {
-                column: "a".into(),
-                value: "1".into(),
-            },
-            Filter {
-                column: "b".into(),
-                value: "2".into(),
-            },
-        ];
+        let filters = vec![vf("a", "1"), vf("b", "2")];
         assert_eq!(
             build_where(&cols, None, &filters).unwrap(),
             "CAST(\"a\" AS VARCHAR) = '1' AND CAST(\"b\" AS VARCHAR) = '2'"
@@ -593,14 +697,36 @@ mod tests {
     #[test]
     fn build_where_combines_filters_and_search_with_and() {
         let cols = vec!["a".to_string()];
-        let filters = vec![Filter {
-            column: "a".into(),
-            value: "1".into(),
-        }];
+        let filters = vec![vf("a", "1")];
         let w = build_where(&cols, Some("z"), &filters).unwrap();
         assert_eq!(
             w,
             "CAST(\"a\" AS VARCHAR) = '1' AND (CAST(\"a\" AS VARCHAR) ILIKE '%z%')"
+        );
+    }
+
+    #[test]
+    fn build_where_range_filter_bounds_numeric_column() {
+        let cols = vec!["temp".to_string()];
+        // both bounds
+        assert_eq!(
+            build_where(&cols, None, &[rf("temp", Some(0.0), Some(10.0))]).unwrap(),
+            "(\"temp\" >= 0 AND \"temp\" <= 10)"
+        );
+        // min only
+        assert_eq!(
+            build_where(&cols, None, &[rf("temp", Some(5.0), None)]).unwrap(),
+            "(\"temp\" >= 5)"
+        );
+    }
+
+    #[test]
+    fn build_where_mixes_value_and_range_filters() {
+        let cols = vec!["species".to_string(), "temp".to_string()];
+        let filters = vec![vf("species", "coot"), rf("temp", Some(1.0), Some(2.0))];
+        assert_eq!(
+            build_where(&cols, None, &filters).unwrap(),
+            "CAST(\"species\" AS VARCHAR) = 'coot' AND (\"temp\" >= 1 AND \"temp\" <= 2)"
         );
     }
 
