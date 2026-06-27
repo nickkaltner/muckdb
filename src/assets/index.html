@@ -84,7 +84,7 @@
   .db-body.full { grid-template-columns: 1fr; }
   .db-body.full .facet-panel { display: none; }
   .facet-panel { border-right: 1px solid var(--line); overflow: auto; padding: 12px 12px 24px; }
-  .results { overflow: auto; padding: 14px 18px 24px; }
+  .results { overflow: auto; padding: 14px 18px 10px; }
 
   .facet-search { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 11px; margin-bottom: 6px; }
   .facet-search:focus { outline: none; border-color: var(--orange-dim); }
@@ -138,7 +138,7 @@
   .fchip .x { cursor: pointer; color: var(--muted); border: 0; background: none; font: inherit; padding: 0 2px; }
   .fchip .x:hover { color: var(--fail); }
 
-  .preview-wrap { border: 1px solid var(--line); border-radius: 5px; overflow: auto; max-height: calc(100vh - 360px); }
+  .preview-wrap { border: 1px solid var(--line); border-radius: 5px; overflow: auto; }
   table.preview { border-collapse: collapse; width: 100%; font-size: 12px; }
   table.preview th, table.preview td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
   table.preview thead th { position: sticky; top: 0; background: var(--raised); color: var(--orange); border-bottom: 1px solid var(--orange-dim); letter-spacing: 0.03em; }
@@ -615,6 +615,7 @@
         <span class="range">showing <b>${from}–${to}</b> of <b>${state.total}</b></span>
         <button data-page="next" ${last ? "disabled" : ""}>next ›</button>
         <select class="psize" data-psize aria-label="rows per page">${opts}</select></div>`;
+      maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function cell(v) {
@@ -751,6 +752,42 @@
     state.pageMode = mode;
     state.pageSize = mode === "auto" ? autoPageSize() : Number(mode);
     state.page = 0; loadRows(); syncUrl(false);
+  }
+  // Measure the real space available to the rows table (between its top and the
+  // bottom of the results area, minus the pager), cap the table there, and return
+  // it. Keeps the pager pinned at the bottom with no outer scroll.
+  function fitWrap() {
+    const wrap = document.querySelector(".preview-wrap");
+    if (!wrap) return null;
+    const results = $("results");
+    const rRect = results.getBoundingClientRect();
+    const padB = parseFloat(getComputedStyle(results).paddingBottom) || 0;
+    const pager = wrap.parentElement.querySelector(".pager");
+    const pagerH = pager ? pager.getBoundingClientRect().height : 36;
+    const top = wrap.getBoundingClientRect().top;
+    // pagerH + its 10px margin-top + 2px slack so nothing overflows.
+    const avail = Math.max(120, (rRect.bottom - padB) - top - pagerH - 12);
+    // Pin the table to the full height so the pager sits at the very bottom
+    // (rather than floating up after a short, floor-rounded set of rows).
+    wrap.style.height = avail + "px";
+    return { wrap, avail };
+  }
+  // In auto mode, size the page so the rows fill that measured space exactly.
+  let autofitGuard = false;
+  function maybeAutoFit() {
+    const fw = fitWrap();
+    if (!fw || state.pageMode !== "auto") return;
+    if (autofitGuard) { autofitGuard = false; return; }
+    const tr = fw.wrap.querySelector("tbody tr");
+    if (!tr) return;
+    const rowH = tr.getBoundingClientRect().height;
+    if (rowH < 4) return;
+    const thead = fw.wrap.querySelector("thead");
+    const theadH = thead ? thead.getBoundingClientRect().height : 0;
+    const capacity = clamp(Math.floor((fw.avail - theadH) / rowH), 1, 500);
+    if (capacity !== state.pageSize) {
+      state.pageSize = capacity; state.page = 0; autofitGuard = true; loadRows();
+    }
   }
 
   // ---- events -----------------------------------------------------------
@@ -917,11 +954,8 @@
     if (state.pageMode !== "auto") return;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
-      const n = autoPageSize();
-      if (n !== state.pageSize) {
-        state.pageSize = n;
-        if (state.tab === "databases" && state.mode === "table" && state.subview === "rows" && state.selTable) loadRows();
-      }
+      // Re-render rows; maybeAutoFit() measures the new space and resizes to fit.
+      if (state.tab === "databases" && state.mode === "table" && state.subview === "rows" && state.selTable) loadRows();
     }, 200);
   });
 
