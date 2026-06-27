@@ -50,6 +50,7 @@ pub async fn run() -> Result<()> {
         .route("/api/databases", get(api_databases))
         .route("/api/tables", get(api_tables))
         .route("/api/preview", get(api_preview))
+        .route("/api/stats", get(api_stats))
         .route("/ws", get(ws_handler))
         .with_state(state);
 
@@ -177,12 +178,34 @@ struct PreviewParams {
     db: String,
     table: String,
     limit: Option<u32>,
+    /// Free-text search across all columns.
+    q: Option<String>,
+    /// JSON array of `{ "column": .., "value": .. }` facet filters.
+    filter: Option<String>,
 }
 
 async fn api_preview(Query(p): Query<PreviewParams>) -> Response {
     let limit = p.limit.unwrap_or(PREVIEW_LIMIT).min(1000);
-    match introspect::preview(&p.db, &p.table, limit) {
+    let filters: Vec<introspect::Filter> = p
+        .filter
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default();
+    match introspect::preview(&p.db, &p.table, limit, p.q.as_deref(), &filters) {
         Ok(preview) => Json(preview).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct StatsParams {
+    db: String,
+    table: String,
+}
+
+async fn api_stats(Query(p): Query<StatsParams>) -> Response {
+    match introspect::stats(&p.db, &p.table) {
+        Ok(stats) => Json(stats).into_response(),
         Err(e) => error_json(&e),
     }
 }
