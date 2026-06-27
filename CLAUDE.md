@@ -68,6 +68,23 @@ muckdb session rm <name> [--tile TILE]
   put aggregation in the view/SQL (one row per x). If the `--x` column is a
   date/timestamp, the chart uses a real time axis automatically.
 
+## Inspecting state (read it back as JSON)
+
+To understand what muckdb is currently showing — without starting the server —
+use the read-only `ls` commands. They print JSON, so you can parse them:
+
+```
+muckdb ls databases          # [{id, path, exists}] for every db muckdb has seen
+muckdb ls tables <db>         # tables + views in a database ({name, is_view, ...})
+muckdb ls sessions           # every session with its tiles
+muckdb ls session <id>       # one session (tiles: names, types, charts, views)
+muckdb ls history [--limit N]  # the command ledger (args, exit codes, session tag)
+```
+
+Use these to check a session's current tiles before updating one, to find a
+database's `id` (for building a `/db/<id>/…` link), or to see what the human has
+been running.
+
 ## Good habits
 
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the

@@ -62,6 +62,14 @@ pub struct State {
     pub databases: Vec<String>,
 }
 
+/// A short, stable id for a database path (for clean URLs and CLI references).
+pub fn db_id(path: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    format!("{:016x}", h.finish())[..8].to_string()
+}
+
 /// Current wall-clock time in milliseconds since the Unix epoch.
 pub fn now_millis() -> u64 {
     SystemTime::now()

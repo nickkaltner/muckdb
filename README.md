@@ -46,6 +46,9 @@ muckdb -json :memory: -c "SELECT 1"
 muckdb --display             # ensure the daemon is up and open the web view
 muckdb --status              # is the daemon running?
 muckdb --stop                # stop the daemon
+
+muckdb ls databases          # read state back as JSON (also: tables <db>,
+muckdb ls sessions           #   sessions, session <id>, history [--limit N])
 ```
 
 Then open <http://localhost:11000> (or find `muckdb` via mDNS:

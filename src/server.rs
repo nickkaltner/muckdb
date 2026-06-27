@@ -173,14 +173,6 @@ async fn api_state() -> Response {
     state_response()
 }
 
-/// A short, stable id for a database path, for clean URLs (/db/<id>/...).
-fn db_id(path: &str) -> String {
-    use std::hash::{Hash, Hasher};
-    let mut h = std::collections::hash_map::DefaultHasher::new();
-    path.hash(&mut h);
-    format!("{:016x}", h.finish())[..8].to_string()
-}
-
 async fn api_databases() -> Response {
     match store::load_state() {
         Ok(state) => {
@@ -189,7 +181,7 @@ async fn api_databases() -> Response {
                 .into_iter()
                 .map(|p| {
                     let exists = Path::new(&p).exists();
-                    json!({ "id": db_id(&p), "path": p, "exists": exists })
+                    json!({ "id": store::db_id(&p), "path": p, "exists": exists })
                 })
                 .collect();
             Json(json!({ "databases": dbs })).into_response()
