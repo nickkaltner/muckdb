@@ -13,7 +13,8 @@ use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::get;
 use axum::{Router, http::StatusCode};
-use notify::{RecursiveMode, Watcher};
+use notify::event::ModifyKind;
+use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast;
@@ -86,8 +87,20 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
     let (raw_tx, raw_rx) = mpsc::channel();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
-        if res.is_ok() {
-            let _ = raw_tx.send(());
+        // Only react to events that can change the store's *contents*. Reads of
+        // the watched file (which load_state performs below) emit Access and
+        // Metadata/atime events — reacting to those would feed back into the
+        // watcher forever. Real appends emit Modify(Data).
+        if let Ok(event) = res {
+            let relevant = match event.kind {
+                EventKind::Create(_) | EventKind::Remove(_) => true,
+                EventKind::Modify(ModifyKind::Metadata(_)) => false,
+                EventKind::Modify(_) => true,
+                _ => false,
+            };
+            if relevant {
+                let _ = raw_tx.send(());
+            }
         }
     })
     .context("creating file watcher")?;
@@ -98,10 +111,15 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
     thread::spawn(move || {
         // The watcher is moved in so it lives as long as this thread.
         let _watcher = watcher;
+        // Dedupe: only broadcast when the derived state actually changed, so a
+        // stray filesystem event never turns into a client-side refresh storm.
+        let mut last_sent = String::new();
         for _ in raw_rx {
             if let Ok(state) = store::load_state()
                 && let Ok(s) = serde_json::to_string(&state)
+                && s != last_sent
             {
+                last_sent.clone_from(&s);
                 let _ = tx.send(s);
             }
         }
