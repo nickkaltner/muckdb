@@ -22,6 +22,45 @@
   ::selection { background: rgba(255, 122, 26, 0.28); }
   :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 3px; }
 
+  /* themed scrollbars everywhere */
+  * { scrollbar-width: thin; scrollbar-color: var(--line) transparent; }
+  ::-webkit-scrollbar { width: 11px; height: 11px; }
+  ::-webkit-scrollbar-track { background: transparent; }
+  ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 7px; border: 3px solid var(--bg); }
+  ::-webkit-scrollbar-thumb:hover { background: var(--orange-dim); }
+  ::-webkit-scrollbar-corner { background: transparent; }
+
+  /* combobox button (current db/table) */
+  .combo { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 12px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 5px; background: var(--raised); color: var(--fg); cursor: pointer; flex: none; max-width: 320px; }
+  .combo:hover { border-color: var(--orange-dim); }
+  .combo .cv-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .combo .cv-sub { color: var(--faint); font-size: 11px; }
+  .combo .cv-caret { color: var(--orange); margin-left: auto; }
+
+  /* titlebar ⌘K button */
+  .kbtn { font: inherit; font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 3px 10px; cursor: pointer; letter-spacing: 0.04em; }
+  .kbtn:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .kbtn kbd { color: var(--orange-dim); }
+
+  /* shared picker: combobox popover + ⌘K palette */
+  .pick-pop, .pick-overlay { position: fixed; inset: 0; z-index: 60; }
+  .pick-overlay { background: rgba(0, 0, 0, 0.45); }
+  .pick-box { position: absolute; display: flex; flex-direction: column; max-height: 62vh; overflow: hidden;
+    background: var(--surface); border: 1px solid var(--line); border-radius: 8px; box-shadow: 0 14px 44px rgba(0, 0, 0, 0.55); }
+  .pick-overlay .pick-box { left: 50%; top: 13%; transform: translateX(-50%); width: min(560px, 92vw); }
+  .pick-search { display: flex; align-items: center; gap: 9px; padding: 10px 13px; border-bottom: 1px solid var(--line); }
+  .pick-prompt { color: var(--orange); font-weight: 700; }
+  .pick-input { flex: 1; min-width: 0; background: none; border: 0; outline: none; color: var(--fg); font: inherit; font-size: 13px; }
+  .pick-list { list-style: none; margin: 0; padding: 4px; overflow: auto; }
+  .pick-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 9px; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; cursor: pointer; font-size: 13px; }
+  .pick-row:hover { background: var(--raised); }
+  .pick-row.sel { background: var(--raised); border-left-color: var(--orange); }
+  .pick-hint { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--orange-dim); min-width: 44px; }
+  .pick-label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pick-sub { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .pick-empty { padding: 12px; color: var(--muted); font-size: 12px; }
+  .pick-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
+
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); }
   .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
   .wordmark .db { color: var(--orange); }
@@ -283,6 +322,7 @@
     <span class="wordmark">muck<span class="db">db</span></span>
     <span class="subtitle">live console</span>
     <span class="spacer"></span>
+    <button class="kbtn" id="kbtn" title="Jump to a database, table or session (⌘K / Ctrl-K)">⌕ jump <kbd>⌘K</kbd></button>
     <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
     <a class="host" id="self-link" href="/">localhost</a>
   </header>
@@ -511,21 +551,20 @@
       $("results").innerHTML = '<div class="empty">No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.</div>';
       return;
     }
-    $("db-chips").innerHTML = dbs.map((db) => {
-      const active = db.path === state.selDb ? " active" : "";
-      const miss = db.exists ? "" : ' <span class="sub" style="color:var(--fail)">missing</span>';
-      return `<button class="navchip l1${active}" data-db="${attr(db.path)}" title="${attr(db.path)}">${esc(basename(db.path))}${miss}</button>`;
-    }).join(" ");
+    const cur = state.databases.find((d) => d.path === state.selDb);
+    const name = cur ? basename(cur.path) : basename(state.selDb || dbs[0].path);
+    const miss = cur && !cur.exists ? ' <span class="cv-sub" style="color:var(--fail)">missing</span>' : "";
+    $("db-chips").innerHTML = `<button class="combo" id="db-combo" title="${attr(state.selDb || "")}"><span class="cv-name">${esc(name)}</span>${miss}<span class="cv-sub">${dbs.length} ${dbs.length === 1 ? "db" : "dbs"}</span><span class="cv-caret">▾</span></button>`;
   }
   function renderTableNav() {
     if (!state.tables.length && state.mode !== "query") { $("table-nav").hidden = true; return; }
     $("table-nav").hidden = false;
-    const tabs = state.tables.map((t) => {
-      const active = state.mode === "table" && t.name === state.selTable ? " active" : "";
-      return `<button class="navchip${active}" data-table="${attr(t.name)}">${esc(t.name)}<span class="sub">${t.column_count}c</span></button>`;
-    }).join(" ");
+    const t = state.tables.find((x) => x.name === state.selTable);
+    const cur = state.mode === "query" ? "query editor" : (state.selTable || "select a table");
+    const sub = state.mode === "query" ? "" : `<span class="cv-sub">${state.tables.length} ${state.tables.length === 1 ? "table" : "tables"}</span>`;
+    const combo = `<button class="combo" id="table-combo"><span class="cv-name">${esc(cur)}${t && t.is_view ? " ·view" : ""}</span>${sub}<span class="cv-caret">▾</span></button>`;
     const qchip = `<button class="navchip query${state.mode === "query" ? " active" : ""}" data-querymode>＋ query</button>`;
-    $("table-chips").innerHTML = tabs + " " + qchip;
+    $("table-chips").innerHTML = combo + " " + qchip;
   }
 
   async function selectDb(path, restore) {
@@ -647,12 +686,12 @@
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
         <span class="tp-rows">${colCount}</span>
-        <span class="tp-actions">
+        <span class="tp-actions">${exp}
           <span class="seg">
             <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
             <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
             <button data-sub="schema" class="${state.subview === "schema" ? "active" : ""}">schema</button>
-          </span>${exp}
+          </span>
         </span>
       </div>
       ${chips ? `<div class="active-filters">${chips}</div>` : ""}
@@ -777,6 +816,75 @@
       const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+
+  // ---- picker (combobox popover + ⌘K palette) ---------------------------
+  let currentPicker = null;
+  function closePicker() { if (currentPicker) { currentPicker.remove(); currentPicker = null; } }
+  function openPicker(opts) {
+    closePicker();
+    const layer = document.createElement("div");
+    layer.className = opts.anchor ? "pick-pop" : "pick-overlay";
+    const foot = opts.foot ? `<div class="pick-foot">${esc(opts.foot)}</div>` : "";
+    layer.innerHTML = `<div class="pick-box"><div class="pick-search"><span class="pick-prompt">❯</span><input class="pick-input" type="text" placeholder="${attr(opts.placeholder || "filter…")}" /></div><ul class="pick-list"></ul>${foot}</div>`;
+    document.body.appendChild(layer);
+    const box = layer.querySelector(".pick-box");
+    if (opts.anchor) {
+      const r = opts.anchor.getBoundingClientRect();
+      box.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
+      box.style.top = (r.bottom + 4) + "px";
+      box.style.minWidth = Math.max(r.width, 240) + "px";
+    }
+    const input = box.querySelector(".pick-input");
+    const list = box.querySelector(".pick-list");
+    let shown = opts.items.slice(), sel = 0;
+    const draw = () => {
+      list.innerHTML = shown.length ? shown.map((it, i) =>
+        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
+        : '<li class="pick-empty">no matches</li>';
+      const s = list.querySelector(".pick-row.sel"); if (s) s.scrollIntoView({ block: "nearest" });
+    };
+    const filter = () => {
+      const q = input.value.trim().toLowerCase();
+      shown = q ? opts.items.filter((it) => (it.label + " " + (it.sub || "") + " " + (it.hint || "")).toLowerCase().includes(q)) : opts.items.slice();
+      sel = 0; draw();
+    };
+    const choose = () => { const it = shown[sel]; if (it) { closePicker(); opts.onPick(it); } };
+    input.addEventListener("input", filter);
+    input.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowDown") { sel = Math.min(sel + 1, shown.length - 1); draw(); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); }
+      else if (e.key === "Enter") { choose(); e.preventDefault(); }
+      else if (e.key === "Escape") { closePicker(); e.preventDefault(); }
+    });
+    list.addEventListener("mousedown", (e) => { const row = e.target.closest(".pick-row"); if (row) { sel = +row.dataset.i; choose(); } });
+    layer.addEventListener("mousedown", (e) => { if (e.target === layer) closePicker(); });
+    draw(); input.focus();
+    currentPicker = layer;
+  }
+  function openDbCombo(anchor) {
+    if (!state.databases.length) return;
+    openPicker({
+      anchor, placeholder: "filter databases…",
+      items: state.databases.map((d) => ({ label: basename(d.path), sub: dirname(d.path), path: d.path })),
+      onPick: (it) => selectDb(it.path),
+    });
+  }
+  function openTableCombo(anchor) {
+    if (!state.tables.length) return;
+    openPicker({
+      anchor, placeholder: "filter tables…",
+      items: state.tables.map((t) => ({ label: t.name, sub: t.is_view ? "view" : t.column_count + "c", name: t.name })),
+      onPick: (it) => selectTable(it.name),
+    });
+  }
+  function openPalette() {
+    const items = [];
+    state.databases.forEach((d) => items.push({ hint: "db", label: basename(d.path), sub: dirname(d.path), go: () => { setTab("databases"); selectDb(d.path); } }));
+    if (state.selDb) state.tables.forEach((t) => items.push({ hint: t.is_view ? "view" : "table", label: t.name, sub: basename(state.selDb), go: () => { setTab("databases"); selectTable(t.name); } }));
+    state.sessions.forEach((s) => items.push({ hint: "sess", label: s.title || s.id, sub: s.tiles + " tiles", go: () => { setTab("sessions"); loadSession(s.id, true); } }));
+    if (!items.length) return;
+    openPicker({ placeholder: "jump to a database, table or session…", foot: "↑/↓ move · Enter open · Esc close", items, onPick: (it) => it.go() });
   }
 
   // ---- sessions ---------------------------------------------------------
@@ -966,6 +1074,16 @@
       if (sentinel) { html += blocks[+sentinel[1]]; i++; continue; }
       const h = ln.match(/^(#{1,3})\s+(.*)/);
       if (h) { html += `<h${h[1].length}>${inl(h[2])}</h${h[1].length}>`; i++; continue; }
+      // pipe table: a header row, a |---|---| separator, then body rows
+      if (ln.includes("|") && i + 1 < lines.length && lines[i + 1].includes("|") && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1])) {
+        const cells = (s) => s.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => inl(c.trim()));
+        const head = cells(ln); i += 2;
+        const body = [];
+        while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") { body.push(cells(lines[i])); i++; }
+        html += `<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead>` +
+          `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+        continue;
+      }
       if (/^\s*[-*]\s+/.test(ln)) { const it = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { it.push(`<li>${inl(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>`); i++; } html += `<ul>${it.join("")}</ul>`; continue; }
       if (/^\s*\d+\.\s+/.test(ln)) { const it = []; while (i < lines.length && /^\s*\d+\.\s+/.test(lines[i])) { it.push(`<li>${inl(lines[i].replace(/^\s*\d+\.\s+/, ""))}</li>`); i++; } html += `<ol>${it.join("")}</ol>`; continue; }
       if (ln.trim() === "") { i++; continue; }
@@ -1070,6 +1188,9 @@
   $("tabs").addEventListener("click", (ev) => { const t = ev.target.closest(".tab"); if (t) setTab(t.dataset.tab); });
 
   document.addEventListener("click", (ev) => {
+    const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
+    const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
+    if (ev.target.closest("#kbtn")) { openPalette(); return; }
     const openDb = ev.target.closest("[data-open-db]");
     if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
     const dbc = ev.target.closest("[data-db]"); if (dbc) { selectDb(dbc.dataset.db); return; }
@@ -1124,6 +1245,7 @@
 
   document.addEventListener("keydown", (ev) => {
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
+    if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
   });
 
   // brush-select on numeric stats histograms AND temporal facet histograms

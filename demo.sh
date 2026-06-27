@@ -64,14 +64,22 @@ CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
 # ---- session dashboard --------------------------------------------------------
 "$MUCKDB" session create "$SESSION" --title "muckdb demo" >/dev/null
 
-"$MUCKDB" session post "$SESSION" --name intro --title "About this demo" --md "# muckdb demo
+"$MUCKDB" session post "$SESSION" --name intro --title "About this demo" --md "# muckdb demo 🦆
 
 A quick tour of what muckdb can do, all driven from the command line.
 
-- **Bars / pies** from aggregated duckdb views (\`sales\`)
-- A **regular** hourly time series (\`sensors\`)
-- An **irregular** event stream (\`events\`) — notice how the points per time
+- 📊 **Bars / pies** from aggregated duckdb views (\`sales\`)
+- 🌡️ A **regular** hourly time series (\`sensors\`)
+- ⚡ An **irregular** event stream (\`events\`) — notice how the points per time
   period vary a lot
+
+## What's in this database
+
+| Table     | Rows  | What it shows                          |
+|-----------|------:|----------------------------------------|
+| sales     |   600 | 🛒 orders by region / product / category |
+| sensors   |   720 | 🌡️ 30 days of hourly temp + humidity     |
+| events    |  ~1.4k | ⚡ irregular event stream over 30 days   |
 
 Click **explore** on any data panel to open it in the faceted table browser
 (search, facets, range/date sliders, sorting, stats, CSV/JSON export)." >/dev/null
