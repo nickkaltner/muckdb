@@ -322,7 +322,10 @@ async fn api_export(Query(p): Query<ExportParams>) -> Response {
 
 async fn api_schema(Query(p): Query<StatsParams>) -> Response {
     match introspect::schema(&p.db, &p.table) {
-        Ok(cols) => Json(json!({ "columns": cols })).into_response(),
+        Ok(cols) => {
+            let sql = introspect::view_sql(&p.db, &p.table).ok().flatten();
+            Json(json!({ "columns": cols, "sql": sql })).into_response()
+        }
         Err(e) => error_json(&e),
     }
 }

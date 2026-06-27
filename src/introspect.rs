@@ -246,6 +246,8 @@ pub struct ColumnStat {
     pub name: String,
     pub col_type: String,
     pub numeric: bool,
+    #[serde(default)]
+    pub temporal: bool,
     pub nulls: i64,
     pub distinct: i64,
     pub min: Option<f64>,
@@ -253,6 +255,9 @@ pub struct ColumnStat {
     pub avg: Option<f64>,
     pub histogram: Vec<HistBin>,
     pub top: Vec<TopValue>,
+    /// Date-bucketed counts (time order) for temporal columns.
+    #[serde(default)]
+    pub timeline: Vec<TimeBin>,
 }
 
 /// Statistics for a whole table.
@@ -492,6 +497,24 @@ pub fn schema(db: &str, table: &str) -> Result<Vec<ColumnSchema>> {
         .collect())
 }
 
+/// The `CREATE VIEW … AS …` definition of a view, or `None` for a base table.
+pub fn view_sql(db: &str, name: &str) -> Result<Option<String>> {
+    if !Path::new(db).exists() {
+        return Ok(None);
+    }
+    let rows = query_json(
+        db,
+        &format!(
+            "SELECT sql FROM duckdb_views() WHERE view_name = '{}' AND NOT internal",
+            escape_literal(name)
+        ),
+    )?;
+    Ok(rows
+        .first()
+        .and_then(|r| r.get("sql").and_then(Value::as_str))
+        .map(str::to_string))
+}
+
 /// A facet for the left panel: either a categorical value list or a numeric
 /// range. Serialized with a `kind` tag for the frontend to switch on.
 /// One bucket of a temporal histogram (e.g. a day or month), with its count.
@@ -704,8 +727,10 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
             (None, None, None)
         };
 
+        let temporal = is_temporal(ty);
         let mut histogram = Vec::new();
         let mut top = Vec::new();
+        let mut timeline = Vec::new();
         let q = quote_ident(name);
 
         if numeric {
@@ -713,6 +738,8 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
                 let raw = histogram_buckets(db, &tbl, &q, lo, hi)?;
                 histogram = bucketize(lo, hi, HIST_BINS, &raw);
             }
+        } else if temporal {
+            timeline = temporal_buckets(db, &tbl, &q)?;
         } else {
             let rows = query_json(
                 db,
@@ -736,6 +763,7 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
             name: name.clone(),
             col_type: ty.clone(),
             numeric,
+            temporal,
             nulls,
             distinct,
             min,
@@ -743,10 +771,48 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
             avg,
             histogram,
             top,
+            timeline,
         });
     }
 
     Ok(TableStats { row_count, columns })
+}
+
+/// Date-bucketed counts (time order) for a temporal column, auto-granularity.
+fn temporal_buckets(db: &str, tbl: &str, qc: &str) -> Result<Vec<TimeBin>> {
+    let row = query_json(
+        db,
+        &format!(
+            "SELECT datediff('day', CAST(min({qc}) AS TIMESTAMP), CAST(max({qc}) AS TIMESTAMP)) AS days \
+             FROM {tbl} WHERE {qc} IS NOT NULL"
+        ),
+    )?;
+    let days = row
+        .first()
+        .and_then(|r| r.get("days").and_then(Value::as_i64))
+        .unwrap_or(0);
+    let gran = match days {
+        d if d <= 2 => "hour",
+        d if d <= 90 => "day",
+        d if d <= 1500 => "month",
+        _ => "year",
+    };
+    let brows = query_json(
+        db,
+        &format!(
+            "SELECT date_trunc('{gran}', CAST({qc} AS TIMESTAMP))::VARCHAR AS b, count(*) AS c \
+             FROM {tbl} WHERE {qc} IS NOT NULL GROUP BY b ORDER BY b"
+        ),
+    )?;
+    Ok(brows
+        .into_iter()
+        .filter_map(|r| {
+            Some(TimeBin {
+                label: r.get("b").and_then(Value::as_str)?.to_string(),
+                count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+            })
+        })
+        .collect())
 }
 
 /// Run duckdb's `width_bucket` for a numeric column, returning

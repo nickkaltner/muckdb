@@ -67,8 +67,19 @@
   .pick-sub { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
   .pick-empty { padding: 12px; color: var(--muted); font-size: 12px; }
   .pick-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
+  .pick-sw { display: inline-flex; gap: 3px; flex: none; }
+  .pick-sw i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 
-  .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, #2f2a22, var(--surface)); box-shadow: var(--hi); }
+  /* expanded chart overlay */
+  .zoom-overlay { position: fixed; inset: 0; z-index: 70; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; padding: 4vh 4vw; }
+  .zoom-box { width: 100%; height: 100%; max-width: 1280px; display: flex; flex-direction: column; background: var(--grad-panel), var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,0.6), var(--hi); overflow: hidden; }
+  .zoom-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
+  .zoom-bar .zoom-title { font-size: 15px; color: var(--fg); }
+  .zoom-close { margin-left: auto; font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
+  .zoom-close:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .zoom-chart { flex: 1; min-height: 0; padding: 16px 18px; position: relative; }
+
+  .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); box-shadow: var(--hi); }
   .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
   .wordmark .db { color: var(--orange); }
   .subtitle { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--faint); }
@@ -81,7 +92,7 @@
   .host { font-size: 12px; color: var(--muted); padding: 3px 9px; border: 1px solid var(--line); border-radius: 5px; }
   .host:hover { color: var(--fg); border-color: var(--orange-dim); text-decoration: none; }
 
-  .tabs { height: var(--tabs-h); display: flex; align-items: stretch; padding: 0 10px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--surface), #1f1b15); }
+  .tabs { height: var(--tabs-h); display: flex; align-items: stretch; padding: 0 10px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--surface), var(--bg)); }
   .tab { font: inherit; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 16px; cursor: pointer; }
   .tab:hover { color: var(--fg); }
   .tab.active { color: var(--amber); border-bottom-color: var(--orange); }
@@ -152,7 +163,7 @@
   .facet-val .fv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .facet-val.on .fv { color: var(--orange); }
   .facet-val .fc { color: var(--faint); z-index: 1; }
-  .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgba(194, 97, 26, 0.13); border-radius: 4px; }
+  .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: color-mix(in srgb, var(--orange) 14%, transparent); border-radius: 4px; }
 
   .range-readout { font-size: 12px; color: var(--fg); margin: 2px 2px 8px; }
   .range-readout .rsep { color: var(--faint); }
@@ -229,7 +240,7 @@
   .toprow:hover { background: var(--raised); }
   .toprow .tv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .toprow .tc { color: var(--faint); z-index: 1; }
-  .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(194, 97, 26, 0.16); border-radius: 4px; }
+  .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; }
 
   /* schema */
   table.schema { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 12px; }
@@ -237,7 +248,8 @@
   table.schema thead th { color: var(--muted); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
   table.schema td .ty { color: var(--orange-dim); }
   table.schema td .pk { color: var(--orange); font-size: 10px; }
-  .ddl { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; font-size: 12px; color: var(--fg); white-space: pre; overflow: auto; max-width: 760px; }
+  .ddl-label { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 16px 0 6px; }
+  .schema + .sql, .ddl-label + .sql { max-width: 760px; }
 
   /* query editor */
   .qeditor { display: flex; flex-direction: column; gap: 10px; }
@@ -304,7 +316,7 @@
   .md table { border-collapse: collapse; margin: 4px 0 10px; }
   .md th, .md td { border: 1px solid var(--line); padding: 4px 9px; font-size: 12px; }
 
-  .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: linear-gradient(180deg, var(--surface), #1f1b15); border-top: 1px solid var(--line); box-shadow: var(--hi); }
+  .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: linear-gradient(180deg, var(--surface), var(--bg)); border-top: 1px solid var(--line); box-shadow: var(--hi); }
   .statusline .seg-item { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted); border-right: 1px solid var(--line); }
   .seg-brand { background: var(--grad-accent); color: #1c1a18 !important; font-weight: 700; letter-spacing: 0.14em; }
   .seg-state { text-transform: uppercase; letter-spacing: 0.16em; }
@@ -330,6 +342,7 @@
     <span class="wordmark">muck<span class="db">db</span></span>
     <span class="subtitle">live console</span>
     <span class="spacer"></span>
+    <button class="kbtn" id="theme-btn" title="Theme">◐ theme</button>
     <button class="kbtn" id="kbtn" title="Jump to a database, table or session (⌘K / Ctrl-K)">⌕ jump <kbd>⌘K</kbd></button>
     <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
     <a class="host" id="self-link" href="/">localhost</a>
@@ -403,11 +416,75 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
+    theme: "pastel",
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
   let suppressSync = false, pendingNav = null, brush = null;
   let charts = [];
+
+  // ---- themes -----------------------------------------------------------
+  // Each theme sets the base CSS variables (gradients/derived vars recompute
+  // from these) plus a categorical chart palette. Add one here to offer it.
+  const THEMES = {
+    pastel: {
+      label: "pastel", vars: {
+        bg: "#191d23", surface: "#20252d", raised: "#29313a", line: "#38414d", "line-soft": "#232a32",
+        fg: "#dde4ec", muted: "#8d99a8", faint: "#5b6675",
+        orange: "#88b8cf", amber: "#a9d2e2", ember: "#5e93ab", "orange-dim": "#557e92", teal: "#9cc6a9",
+        ok: "#93bd92", fail: "#d39a93",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,175,205,0.06), transparent 70%)",
+      },
+      chart: ["#84b6cc", "#a7c9a3", "#c9a9c9", "#e3c79b", "#97b1d8", "#cda7a2", "#9fc8bf", "#b7b2d8"],
+    },
+    ember: {
+      label: "ember", vars: {
+        bg: "#1a1712", surface: "#221e18", raised: "#2b261f", line: "#3b342b", "line-soft": "#2d2820",
+        fg: "#ece4d8", muted: "#a99b88", faint: "#71675c",
+        orange: "#ff7d22", amber: "#ffb851", ember: "#df531c", "orange-dim": "#b85a1a", teal: "#4bc4b6",
+        ok: "#9bb56e", fail: "#e0614a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,138,46,0.07), transparent 70%)",
+      },
+      chart: ["#ef9a5b", "#5bb6ab", "#e6c279", "#cf8aa3", "#8aa6d6", "#a6c585", "#bf9bd0", "#df8f93"],
+    },
+    phosphor: {
+      label: "phosphor", vars: {
+        bg: "#0f130f", surface: "#161c16", raised: "#1d251d", line: "#2a342a", "line-soft": "#1a211a",
+        fg: "#d7e6d2", muted: "#8aa088", faint: "#5c6e5a",
+        orange: "#7fcaa0", amber: "#a7e0bd", ember: "#5fa07a", "orange-dim": "#4f8366", teal: "#86c7c0",
+        ok: "#9bcf8a", fail: "#d39a86",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,200,150,0.06), transparent 70%)",
+      },
+      chart: ["#8fd0a8", "#7fb7c9", "#c9d18f", "#cda9cf", "#a9c98f", "#9fb7d8", "#d6c79c", "#c0a8d0"],
+    },
+    slate: {
+      label: "slate", vars: {
+        bg: "#17191c", surface: "#1f2226", raised: "#282c31", line: "#363b42", "line-soft": "#22262b",
+        fg: "#dfe3e8", muted: "#8a929d", faint: "#5b626c",
+        orange: "#caa46f", amber: "#dcc191", ember: "#a07f54", "orange-dim": "#7e6747", teal: "#86b3b0",
+        ok: "#9cb98c", fail: "#cf938b",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(180,185,195,0.04), transparent 70%)",
+      },
+      chart: ["#c2a06f", "#7fa6a0", "#b08fa0", "#9aa6c0", "#a7b58c", "#c79b8f", "#8fb0bf", "#b6a8c4"],
+    },
+  };
+  function applyTheme(name) {
+    const t = THEMES[name] || THEMES.pastel;
+    state.theme = THEMES[name] ? name : "pastel";
+    const root = document.documentElement.style;
+    for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
+    PAL = t.chart.slice();
+    try { localStorage.setItem("muckdb.theme", state.theme); } catch (_) {}
+    setChartDefaults();
+    // Redraw any Chart.js charts so they pick up the new palette.
+    if (state.tab === "sessions" && state.sessionData) renderPanels(state.sessionData);
+  }
+  function setChartDefaults() {
+    if (!window.Chart) return;
+    const cs = getComputedStyle(document.documentElement);
+    Chart.defaults.color = cs.getPropertyValue("--muted").trim() || "#888";
+    Chart.defaults.borderColor = cs.getPropertyValue("--line").trim() || "#333";
+  }
 
   // ---- helpers ----------------------------------------------------------
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -767,7 +844,12 @@
   function statCard(c, rowCount) {
     const meta = `<span class="stat-meta"><b>nulls</b> ${c.nulls} · <b>distinct</b> ${c.distinct} · <b>rows</b> ${rowCount}</span>`;
     let body = "";
-    if (c.numeric && c.histogram && c.histogram.length) {
+    if (c.temporal && c.timeline && c.timeline.length) {
+      const max = Math.max(1, ...c.timeline.map((b) => b.count));
+      const bars = c.timeline.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="${attr(b.label)} · ${b.count}"></div>`).join("");
+      const first = c.timeline[0].label, last = c.timeline[c.timeline.length - 1].label;
+      body = `<div class="hist">${bars}</div><div class="hist-axis"><span>${esc(fmtDMY(first))}</span><span>${esc(fmtDMY(last))}</span></div>`;
+    } else if (c.numeric && c.histogram && c.histogram.length) {
       const max = Math.max(1, ...c.histogram.map((b) => b.count));
       const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${fmtNum(b.lo)}, ${fmtNum(b.hi)}) · ${b.count}"></div>`).join("");
       body = `<div class="hist" data-col="${attr(c.name)}" data-min="${c.min}" data-max="${c.max}">${bars}</div>
@@ -790,9 +872,14 @@
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       const cols = data.columns || [];
       const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td></tr>`).join("");
-      const ddlCols = cols.map((c) => `  ${quoteId(c.name)} ${c.col_type}${c.nullable ? "" : " NOT NULL"}${c.default ? " DEFAULT " + c.default : ""}`).join(",\n");
-      const ddl = `CREATE TABLE ${quoteId(state.selTable)} (\n${ddlCols}\n);`;
-      slot.innerHTML = `<table class="schema"><thead><tr><th>column</th><th>type</th><th>null</th><th>key</th><th>default</th></tr></thead><tbody>${rows}</tbody></table><div class="ddl">${esc(ddl)}</div>`;
+      let defn;
+      if (data.sql) {
+        defn = `<div class="ddl-label">view definition</div><pre class="sql">${sqlHi(sqlFormat(data.sql))}</pre>`;
+      } else {
+        const ddlCols = cols.map((c) => `  ${quoteId(c.name)} ${c.col_type}${c.nullable ? "" : " NOT NULL"}${c.default ? " DEFAULT " + c.default : ""}`).join(",\n");
+        defn = `<div class="ddl-label">definition</div><pre class="sql">${sqlHi(`CREATE TABLE ${quoteId(state.selTable)} (\n${ddlCols}\n);`)}</pre>`;
+      }
+      slot.innerHTML = `<table class="schema"><thead><tr><th>column</th><th>type</th><th>null</th><th>key</th><th>default</th></tr></thead><tbody>${rows}</tbody></table>${defn}`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function quoteId(n) { return '"' + String(n).replace(/"/g, '""') + '"'; }
@@ -853,7 +940,7 @@
     let shown = opts.items.slice(), sel = 0;
     const draw = () => {
       list.innerHTML = shown.length ? shown.map((it, i) =>
-        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
+        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw">${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
         : '<li class="pick-empty">no matches</li>';
       const s = list.querySelector(".pick-row.sel"); if (s) s.scrollIntoView({ block: "nearest" });
     };
@@ -890,6 +977,37 @@
       items: state.tables.map((t) => ({ label: t.name, sub: t.is_view ? "view" : t.column_count + "c", name: t.name })),
       onPick: (it) => selectTable(it.name),
     });
+  }
+  function openThemePicker(anchor) {
+    openPicker({
+      anchor, placeholder: "theme…",
+      items: Object.keys(THEMES).map((n) => ({
+        label: THEMES[n].label, sub: n === state.theme ? "current" : "", theme: n,
+        swatch: [THEMES[n].vars.orange, THEMES[n].chart[0], THEMES[n].chart[2], THEMES[n].chart[4]],
+      })),
+      onPick: (it) => applyTheme(it.theme),
+    });
+  }
+  // Expand a chart tile into a large overlay for legibility.
+  let zoomChart = null;
+  function closeZoom() { if (zoomChart) { try { zoomChart.destroy(); } catch (_) {} zoomChart = null; } const z = document.querySelector(".zoom-overlay"); if (z) z.remove(); }
+  async function zoomTile(name) {
+    const t = sessionTile(name); if (!t || t.type !== "view") return;
+    const layer = document.createElement("div");
+    layer.className = "zoom-overlay";
+    layer.innerHTML = `<div class="zoom-box"><div class="zoom-bar"><span class="zoom-title">${esc(t.title || t.name)}</span><button class="zoom-close">✕ close</button></div><div class="zoom-chart"><canvas></canvas></div></div>`;
+    document.body.appendChild(layer);
+    layer.addEventListener("mousedown", (e) => { if (e.target === layer || e.target.closest(".zoom-close")) closeZoom(); });
+    const slot = layer.querySelector(".zoom-chart");
+    const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
+    try {
+      const data = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json();
+      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      const cols = data.columns || [], rows = data.rows || [];
+      const kind = (t.chart && t.chart.kind) || "table";
+      if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows); return; }
+      zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows));
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function openPalette() {
     const items = [];
@@ -935,11 +1053,12 @@
       return `<div class="panel wide"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
+    const zoomBtn = `<button class="panel-act" data-zoom="${attr(t.name)}">expand</button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     return `<div class="panel" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc((t.chart && t.chart.kind) || "table")}</span>
-        <span class="panel-actions">${sqlBtn}${explore}</span></div>
+        <span class="panel-actions">${sqlBtn}${zoomBtn}${explore}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div></div>`;
   }
   async function loadTileChart(t) {
@@ -964,9 +1083,8 @@
     const body = rows.slice(0, 50).map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
-  // Retro-future categorical palette: warm amber anchor + a cool teal/blue/violet
-  // counterpoint, even saturation/lightness so the series harmonise.
-  const PAL = ["#ff8a3d", "#4bc4b6", "#ffd166", "#e9698a", "#7aa2f7", "#9ece6a", "#c792ea", "#f7768e"];
+  // The active chart palette — set by applyTheme().
+  let PAL = THEMES.pastel.chart.slice();
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1219,6 +1337,8 @@
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
     const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
     if (ev.target.closest("#kbtn")) { openPalette(); return; }
+    const themeBtn = ev.target.closest("#theme-btn"); if (themeBtn) { openThemePicker(themeBtn); return; }
+    const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
     const openDb = ev.target.closest("[data-open-db]");
     if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
     const dbc = ev.target.closest("[data-db]"); if (dbc) { selectDb(dbc.dataset.db); return; }
@@ -1274,6 +1394,7 @@
   document.addEventListener("keydown", (ev) => {
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
+    if (ev.key === "Escape") { closeZoom(); closePicker(); }
   });
 
   // brush-select on numeric stats histograms AND temporal facet histograms
@@ -1413,10 +1534,9 @@
   });
 
   if (window.Chart) {
-    Chart.defaults.color = "#9a8f82";
-    Chart.defaults.borderColor = "#38332e";
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
   }
+  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "pastel");
 
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
