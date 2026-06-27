@@ -10,7 +10,7 @@
     --line: #3b342b; --line-soft: #2d2820;
     --fg: #ece4d8; --muted: #a99b88; --faint: #71675c;
     --amber: #ffb851; --orange: #ff7d22; --ember: #df531c; --orange-dim: #b85a1a;
-    --teal: #4bc4b6; --ok: #9bb56e; --fail: #e0614a;
+    --teal: #4bc4b6; --ok: #9bb56e; --fail: #e0614a; --on-accent: #14171b;
     /* gradients — the polish */
     --grad-accent: linear-gradient(135deg, var(--amber), var(--orange) 55%, var(--ember));
     --grad-panel: linear-gradient(180deg, rgba(255,206,150,0.045), rgba(255,206,150,0) 58%);
@@ -24,10 +24,6 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--glow), var(--bg); background-attachment: fixed; color: var(--fg); font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
-  /* faint CRT scanlines — the terminal cue (kept very subtle) */
-  body::after { content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
-    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.13) 0, rgba(0,0,0,0.13) 1px, transparent 1px, transparent 3px); opacity: 0.55; }
-  @media (prefers-reduced-motion: reduce) { body::after { display: none; } }
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
   ::selection { background: rgba(255, 122, 26, 0.28); }
@@ -146,7 +142,7 @@
   .navchip .sub { color: var(--faint); margin-left: 7px; font-size: 11px; }
   .navchip.l1 { background: var(--raised); }
   .navchip.query { color: var(--orange); border-style: dashed; }
-  .navchip.query.active { background: var(--grad-accent); color: #1c1a18; border-style: solid; font-weight: 700; }
+  .navchip.query.active { background: var(--grad-accent); color: var(--on-accent); border-style: solid; font-weight: 700; }
 
   .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
   .db-body.full { grid-template-columns: 1fr; }
@@ -194,7 +190,7 @@
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
   .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.active { background: var(--grad-accent); color: #1c1a18; font-weight: 700; }
+  .seg button.active { background: var(--grad-accent); color: var(--on-accent); font-weight: 700; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .exlabel { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .exlink { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
@@ -276,7 +272,7 @@
   .sqledit .sqlbox::selection { background: rgba(255, 122, 26, 0.30); }
   .sql-hl .s-kw { color: var(--orange); } .sql-hl .s-str { color: var(--ok); }
   .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #7fb6ad; }
-  .runbtn { font: inherit; font-size: 12px; background: var(--grad-accent); color: #1c1a18; font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; box-shadow: var(--hi); }
+  .runbtn { font: inherit; font-size: 12px; background: var(--grad-accent); color: var(--on-accent); font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; box-shadow: var(--hi); }
   .runbtn:hover { filter: brightness(1.08); }
   .qhint { font-size: 11px; color: var(--faint); }
 
@@ -287,7 +283,7 @@
 
   /* sessions */
   .session-body { flex: 1; overflow: auto; }
-  .panels { display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 14px; padding: 16px 18px 28px; align-items: start; }
+  .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
   .panel { border: 1px solid var(--line); border-radius: 8px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; }
   .panel.wide { grid-column: 1 / -1; }
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
@@ -296,9 +292,9 @@
   .panel-actions { margin-left: auto; display: flex; gap: 8px; }
   .panel-act { font: inherit; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; cursor: pointer; }
   .panel-act:hover { border-color: var(--orange-dim); color: var(--orange); }
-  .panel-act.active { background: var(--orange); color: #1c1a18; border-color: var(--orange); font-weight: 700; }
+  .panel-act.active { background: var(--orange); color: var(--on-accent); border-color: var(--orange); font-weight: 700; }
   .panel-body { padding: 12px 14px; }
-  .panel-chart { position: relative; height: 260px; }
+  .panel-chart { position: relative; height: 300px; }
   .panel-caption { font-size: 11px; color: var(--faint); margin-top: 8px; }
   pre.sql { font-family: var(--mono); font-size: 12px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin: 0; overflow: auto; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
   pre.sql .s-kw { color: var(--orange); }
@@ -322,7 +318,7 @@
 
   .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: linear-gradient(180deg, var(--surface), var(--bg)); border-top: 1px solid var(--line); box-shadow: var(--hi); }
   .statusline .seg-item { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted); border-right: 1px solid var(--line); }
-  .seg-brand { background: var(--grad-accent); color: #1c1a18 !important; font-weight: 700; letter-spacing: 0.14em; }
+  .seg-brand { background: var(--grad-accent); color: var(--on-accent) !important; font-weight: 700; letter-spacing: 0.14em; }
   .seg-state { text-transform: uppercase; letter-spacing: 0.16em; }
   .statusline.live .seg-state { color: var(--fg); }
   .seg-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-right: 8px; }
@@ -431,45 +427,85 @@
   // Each theme sets the base CSS variables (gradients/derived vars recompute
   // from these) plus a categorical chart palette. Add one here to offer it.
   const THEMES = {
-    pastel: {
-      label: "pastel", vars: {
-        bg: "#191d23", surface: "#20252d", raised: "#29313a", line: "#38414d", "line-soft": "#232a32",
-        fg: "#dde4ec", muted: "#8d99a8", faint: "#5b6675",
-        orange: "#88b8cf", amber: "#a9d2e2", ember: "#5e93ab", "orange-dim": "#557e92", teal: "#9cc6a9",
-        ok: "#93bd92", fail: "#d39a93",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,175,205,0.06), transparent 70%)",
+    slate: {
+      label: "slate", vars: {
+        bg: "#0f141b", surface: "#18202b", raised: "#212b38", line: "#35424f", "line-soft": "#212a35",
+        fg: "#e8eef6", muted: "#93a2b6", faint: "#5c6a7c", "on-accent": "#0c1118",
+        orange: "#6fb7d8", amber: "#93cfe8", ember: "#4d8fb2", "orange-dim": "#4a7e98", teal: "#65cabd",
+        ok: "#8fce8a", fail: "#e08a80",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(108,183,216,0.06), transparent 70%)",
       },
-      chart: ["#84b6cc", "#a7c9a3", "#c9a9c9", "#e3c79b", "#97b1d8", "#cda7a2", "#9fc8bf", "#b7b2d8"],
+      chart: ["#6fb7d8", "#74c4a2", "#b69ad8", "#e0bd76", "#8aa6e0", "#d3948a", "#5fbcb2", "#c79ad0"],
+    },
+    nord: {
+      label: "nord", vars: {
+        bg: "#20262f", surface: "#2a313d", raised: "#333b49", line: "#434c5e", "line-soft": "#2c333f",
+        fg: "#e5ecf4", muted: "#9aa7bb", faint: "#65728a", "on-accent": "#20262f",
+        orange: "#88c0d0", amber: "#8fbcbb", ember: "#5e81ac", "orange-dim": "#5e81ac", teal: "#8fbcbb",
+        ok: "#a3be8c", fail: "#bf616a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(136,192,208,0.06), transparent 70%)",
+      },
+      chart: ["#88c0d0", "#a3be8c", "#b48ead", "#ebcb8b", "#81a1c1", "#d08770", "#8fbcbb", "#bf616a"],
+    },
+    gruvbox: {
+      label: "gruvbox", vars: {
+        bg: "#282828", surface: "#323030", raised: "#3c3836", line: "#504945", "line-soft": "#3a3735",
+        fg: "#ebdbb2", muted: "#a89984", faint: "#7c6f64", "on-accent": "#282828",
+        orange: "#fabd2f", amber: "#fbc55a", ember: "#d79921", "orange-dim": "#b57614", teal: "#8ec07c",
+        ok: "#b8bb26", fail: "#fb4934",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(250,189,47,0.06), transparent 70%)",
+      },
+      chart: ["#fabd2f", "#8ec07c", "#83a598", "#d3869b", "#b8bb26", "#fe8019", "#458588", "#d79921"],
+    },
+    solarized: {
+      label: "solarized", vars: {
+        bg: "#002b36", surface: "#073642", raised: "#0a4250", line: "#15505e", "line-soft": "#08323d",
+        fg: "#c6d2d2", muted: "#8a9a9a", faint: "#5b6e6e", "on-accent": "#002b36",
+        orange: "#2aa198", amber: "#b58900", ember: "#268bd2", "orange-dim": "#1f7a70", teal: "#2aa198",
+        ok: "#859900", fail: "#dc322f",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(42,161,152,0.06), transparent 70%)",
+      },
+      chart: ["#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16", "#d33682", "#6c71c4", "#dc322f"],
+    },
+    neon: {
+      label: "neon", vars: {
+        bg: "#15121f", surface: "#1d1830", raised: "#271f3f", line: "#3a2f59", "line-soft": "#221b38",
+        fg: "#e9e4ff", muted: "#a99fce", faint: "#6f6597", "on-accent": "#15121f",
+        orange: "#f25fce", amber: "#ff8ad8", ember: "#b14fd0", "orange-dim": "#8a3fae", teal: "#4fd6e0",
+        ok: "#6fe0b0", fail: "#ff6b7a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(242,95,206,0.08), transparent 70%)",
+      },
+      chart: ["#ff79c6", "#8be9fd", "#bd93f9", "#50fa7b", "#ffb86c", "#ff5555", "#f1fa8c", "#6fa8ff"],
     },
     ember: {
       label: "ember", vars: {
         bg: "#1a1712", surface: "#221e18", raised: "#2b261f", line: "#3b342b", "line-soft": "#2d2820",
-        fg: "#ece4d8", muted: "#a99b88", faint: "#71675c",
+        fg: "#ece4d8", muted: "#a99b88", faint: "#71675c", "on-accent": "#1a1712",
         orange: "#ff7d22", amber: "#ffb851", ember: "#df531c", "orange-dim": "#b85a1a", teal: "#4bc4b6",
         ok: "#9bb56e", fail: "#e0614a",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,138,46,0.07), transparent 70%)",
       },
       chart: ["#ef9a5b", "#5bb6ab", "#e6c279", "#cf8aa3", "#8aa6d6", "#a6c585", "#bf9bd0", "#df8f93"],
     },
+    pastel: {
+      label: "pastel", vars: {
+        bg: "#191d23", surface: "#20252d", raised: "#29313a", line: "#38414d", "line-soft": "#232a32",
+        fg: "#dde4ec", muted: "#8d99a8", faint: "#5b6675", "on-accent": "#191d23",
+        orange: "#88b8cf", amber: "#a9d2e2", ember: "#5e93ab", "orange-dim": "#557e92", teal: "#9cc6a9",
+        ok: "#93bd92", fail: "#d39a93",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,175,205,0.06), transparent 70%)",
+      },
+      chart: ["#84b6cc", "#a7c9a3", "#c9a9c9", "#e3c79b", "#97b1d8", "#cda7a2", "#9fc8bf", "#b7b2d8"],
+    },
     phosphor: {
       label: "phosphor", vars: {
         bg: "#0f130f", surface: "#161c16", raised: "#1d251d", line: "#2a342a", "line-soft": "#1a211a",
-        fg: "#d7e6d2", muted: "#8aa088", faint: "#5c6e5a",
+        fg: "#d7e6d2", muted: "#8aa088", faint: "#5c6e5a", "on-accent": "#0f130f",
         orange: "#7fcaa0", amber: "#a7e0bd", ember: "#5fa07a", "orange-dim": "#4f8366", teal: "#86c7c0",
         ok: "#9bcf8a", fail: "#d39a86",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,200,150,0.06), transparent 70%)",
       },
       chart: ["#8fd0a8", "#7fb7c9", "#c9d18f", "#cda9cf", "#a9c98f", "#9fb7d8", "#d6c79c", "#c0a8d0"],
-    },
-    slate: {
-      label: "slate", vars: {
-        bg: "#0e1116", surface: "#161b22", raised: "#1e2630", line: "#323d4a", "line-soft": "#222b35",
-        fg: "#e9eef5", muted: "#97a4b6", faint: "#5e6b7c",
-        orange: "#f0b95e", amber: "#ffd488", ember: "#d2913c", "orange-dim": "#b07d3a", teal: "#5ec8bd",
-        ok: "#8fce8a", fail: "#e58a80",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(240,185,94,0.06), transparent 70%)",
-      },
-      chart: ["#e3ab5e", "#5fbcae", "#8ea2e6", "#cf8aa0", "#9cc97f", "#d0a06a", "#79b8d6", "#b394d8"],
     },
   };
   function applyTheme(name) {
@@ -1077,7 +1113,7 @@
     const kind = (t.chart && t.chart.kind) || "table";
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
     if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows); return; }
-    slot.style.height = "260px";
+    slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows))); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
@@ -1127,7 +1163,8 @@
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: labels.map((_, i) => PAL[i % PAL.length]), borderColor: "#1a1712", borderWidth: 2, hoverOffset: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } };
+      const sepColor = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#1a1712";
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: labels.map((_, i) => PAL[i % PAL.length]), borderColor: sepColor, borderWidth: 2, hoverOffset: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
