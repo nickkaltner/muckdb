@@ -74,8 +74,8 @@ pub fn is_numeric(col_type: &str) -> bool {
     NEEDLES.iter().any(|n| t.contains(n))
 }
 
-/// One facet filter on a column. Either an exact value (string-compared) or a
-/// numeric range (min/max, either bound optional).
+/// One facet filter on a column: an exact value (string-compared), a numeric
+/// range (`min`/`max`), or a temporal range (`tmin`/`tmax`, ISO strings).
 #[derive(Debug, Clone, Deserialize)]
 pub struct Filter {
     pub column: String,
@@ -85,12 +85,25 @@ pub struct Filter {
     pub min: Option<f64>,
     #[serde(default)]
     pub max: Option<f64>,
+    #[serde(default)]
+    pub tmin: Option<String>,
+    #[serde(default)]
+    pub tmax: Option<String>,
 }
 
 impl Filter {
     fn is_range(&self) -> bool {
         self.value.is_none() && (self.min.is_some() || self.max.is_some())
     }
+    fn is_trange(&self) -> bool {
+        self.tmin.is_some() || self.tmax.is_some()
+    }
+}
+
+/// True if a duckdb type name denotes a date/time column.
+pub fn is_temporal(col_type: &str) -> bool {
+    let t = col_type.to_ascii_uppercase();
+    t.contains("DATE") || t.contains("TIME")
 }
 
 /// Build a SQL `WHERE` body (without the `WHERE` keyword) from a free-text
@@ -140,6 +153,22 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
         }
         if let Some(mx) = f.max {
             parts.push(format!("{col} <= {mx}"));
+        }
+        if !parts.is_empty() {
+            clauses.push(format!("({})", parts.join(" AND ")));
+        }
+    }
+
+    // Temporal range filters: compare against ISO date/time string literals,
+    // which duckdb casts to the column's type.
+    for f in filters.iter().filter(|f| f.is_trange()) {
+        let col = quote_ident(&f.column);
+        let mut parts: Vec<String> = Vec::new();
+        if let Some(lo) = &f.tmin {
+            parts.push(format!("{col} >= '{}'", escape_literal(lo)));
+        }
+        if let Some(hi) = &f.tmax {
+            parts.push(format!("{col} <= '{}'", escape_literal(hi)));
         }
         if !parts.is_empty() {
             clauses.push(format!("({})", parts.join(" AND ")));
@@ -281,6 +310,7 @@ pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
 /// Preview one page of a table's rows, optionally filtered by a free-text
 /// search and facet filters. Also returns the total matching row count so the
 /// caller can paginate.
+#[allow(clippy::too_many_arguments)]
 pub fn preview(
     db: &str,
     table: &str,
@@ -288,6 +318,8 @@ pub fn preview(
     offset: u32,
     q: Option<&str>,
     filters: &[Filter],
+    sort: Option<&str>,
+    dir: Option<&str>,
 ) -> Result<Preview> {
     if !Path::new(db).exists() {
         bail!("database file does not exist");
@@ -301,12 +333,21 @@ pub fn preview(
         .map(|w| format!(" WHERE {w}"))
         .unwrap_or_default();
 
+    // ORDER BY only on a real column (avoids injection); default ASC.
+    let order_sql = match sort {
+        Some(s) if columns.iter().any(|c| c == s) => {
+            let d = if dir == Some("desc") { "DESC" } else { "ASC" };
+            format!(" ORDER BY {} {}", quote_ident(s), d)
+        }
+        _ => String::new(),
+    };
+
     let total = query_json(db, &format!("SELECT count(*) AS n FROM {tbl}{where_sql}"))?
         .first()
         .and_then(|r| r.get("n").and_then(Value::as_i64))
         .unwrap_or(0);
 
-    let sql = format!("SELECT * FROM {tbl}{where_sql} LIMIT {limit} OFFSET {offset}");
+    let sql = format!("SELECT * FROM {tbl}{where_sql}{order_sql} LIMIT {limit} OFFSET {offset}");
     let rows = query_json(db, &sql)?;
 
     let data = rows
@@ -368,8 +409,91 @@ pub fn export(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Result of an ad-hoc read-only query from the query editor.
+#[derive(Debug, Clone, Serialize)]
+pub struct QueryResult {
+    pub columns: Vec<String>,
+    pub rows: Vec<Vec<Value>>,
+    pub row_count: usize,
+}
+
+/// Run an arbitrary read-only SQL statement and return its rows.
+pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist");
+    }
+    let rows = query_json(db, sql)?;
+    let columns: Vec<String> = match rows.first() {
+        Some(Value::Object(map)) => map.keys().cloned().collect(),
+        _ => Vec::new(),
+    };
+    let data: Vec<Vec<Value>> = rows
+        .iter()
+        .map(|row| {
+            columns
+                .iter()
+                .map(|c| row.get(c).cloned().unwrap_or(Value::Null))
+                .collect()
+        })
+        .collect();
+    let row_count = data.len();
+    Ok(QueryResult {
+        columns,
+        rows: data,
+        row_count,
+    })
+}
+
+/// One column's schema, from `DESCRIBE`.
+#[derive(Debug, Clone, Serialize)]
+pub struct ColumnSchema {
+    pub name: String,
+    pub col_type: String,
+    pub nullable: bool,
+    pub key: Option<String>,
+    pub default: Option<String>,
+}
+
+/// The schema (column definitions) of a table, via `DESCRIBE`.
+pub fn schema(db: &str, table: &str) -> Result<Vec<ColumnSchema>> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist");
+    }
+    let rows = query_json(db, &format!("DESCRIBE {}", quote_ident(table)))?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|r| {
+            let name = r.get("column_name").and_then(Value::as_str)?.to_string();
+            let nonempty = |k: &str| {
+                r.get(k)
+                    .and_then(Value::as_str)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+            };
+            Some(ColumnSchema {
+                col_type: r
+                    .get("column_type")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+                nullable: r.get("null").and_then(Value::as_str) != Some("NO"),
+                key: nonempty("key"),
+                default: nonempty("default"),
+                name,
+            })
+        })
+        .collect())
+}
+
 /// A facet for the left panel: either a categorical value list or a numeric
 /// range. Serialized with a `kind` tag for the frontend to switch on.
+/// One bucket of a temporal histogram (e.g. a day or month), with its count.
+#[derive(Debug, Clone, Serialize)]
+pub struct TimeBin {
+    pub label: String,
+    pub count: i64,
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ColumnFacet {
@@ -381,6 +505,12 @@ pub enum ColumnFacet {
         name: String,
         min: Option<f64>,
         max: Option<f64>,
+    },
+    Time {
+        name: String,
+        min: Option<String>,
+        max: Option<String>,
+        bins: Vec<TimeBin>,
     },
 }
 
@@ -425,7 +555,54 @@ pub fn facets(
             None => format!(" WHERE {not_null}"),
         };
 
-        if is_numeric(ty) {
+        if is_temporal(ty) {
+            let row = query_json(
+                db,
+                &format!(
+                    "SELECT min({qc})::VARCHAR AS lo, max({qc})::VARCHAR AS hi, \
+                     datediff('day', CAST(min({qc}) AS TIMESTAMP), CAST(max({qc}) AS TIMESTAMP)) AS days \
+                     FROM {tbl}{where_sql}"
+                ),
+            )?;
+            let first = row.first();
+            let min = first
+                .and_then(|r| r.get("lo").and_then(Value::as_str))
+                .map(str::to_string);
+            let max = first
+                .and_then(|r| r.get("hi").and_then(Value::as_str))
+                .map(str::to_string);
+            let days = first
+                .and_then(|r| r.get("days").and_then(Value::as_i64))
+                .unwrap_or(0);
+            let gran = match days {
+                d if d <= 2 => "hour",
+                d if d <= 90 => "day",
+                d if d <= 1500 => "month",
+                _ => "year",
+            };
+            let brows = query_json(
+                db,
+                &format!(
+                    "SELECT date_trunc('{gran}', CAST({qc} AS TIMESTAMP))::VARCHAR AS b, \
+                     count(*) AS c FROM {tbl}{where_sql} GROUP BY b ORDER BY b"
+                ),
+            )?;
+            let bins = brows
+                .into_iter()
+                .filter_map(|r| {
+                    Some(TimeBin {
+                        label: r.get("b").and_then(Value::as_str)?.to_string(),
+                        count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+                    })
+                })
+                .collect();
+            out.push(ColumnFacet::Time {
+                name: name.clone(),
+                min,
+                max,
+                bins,
+            });
+        } else if is_numeric(ty) {
             let row = query_json(
                 db,
                 &format!("SELECT min({qc}) AS lo, max({qc}) AS hi FROM {tbl}{where_sql}"),
@@ -604,6 +781,8 @@ mod tests {
             value: Some(value.into()),
             min: None,
             max: None,
+            tmin: None,
+            tmax: None,
         }
     }
     /// A numeric range filter.
@@ -613,6 +792,19 @@ mod tests {
             value: None,
             min,
             max,
+            tmin: None,
+            tmax: None,
+        }
+    }
+    /// A temporal range filter.
+    fn tf(column: &str, tmin: Option<&str>, tmax: Option<&str>) -> Filter {
+        Filter {
+            column: column.into(),
+            value: None,
+            min: None,
+            max: None,
+            tmin: tmin.map(str::to_string),
+            tmax: tmax.map(str::to_string),
         }
     }
 
@@ -718,6 +910,30 @@ mod tests {
             build_where(&cols, None, &[rf("temp", Some(5.0), None)]).unwrap(),
             "(\"temp\" >= 5)"
         );
+    }
+
+    #[test]
+    fn build_where_temporal_range_uses_string_literals() {
+        let cols = vec!["seen".to_string()];
+        assert_eq!(
+            build_where(
+                &cols,
+                None,
+                &[tf("seen", Some("2026-01-01"), Some("2026-02-01"))]
+            )
+            .unwrap(),
+            "(\"seen\" >= '2026-01-01' AND \"seen\" <= '2026-02-01')"
+        );
+    }
+
+    #[test]
+    fn classifies_temporal_types() {
+        for t in ["DATE", "TIMESTAMP", "TIME", "TIMESTAMP WITH TIME ZONE"] {
+            assert!(is_temporal(t), "{t} should be temporal");
+        }
+        for t in ["INTEGER", "VARCHAR", "DOUBLE"] {
+            assert!(!is_temporal(t), "{t} should not be temporal");
+        }
     }
 
     #[test]

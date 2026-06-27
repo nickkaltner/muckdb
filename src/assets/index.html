@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="en">
+<html lang="en-AU">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
@@ -16,16 +16,12 @@
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-  body {
-    margin: 0; background: var(--bg); color: var(--fg);
-    font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
-  }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
   ::selection { background: rgba(255, 122, 26, 0.28); }
   :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 3px; }
 
-  /* titlebar */
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); }
   .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
   .wordmark .db { color: var(--orange); }
@@ -39,7 +35,6 @@
   .host { font-size: 12px; color: var(--muted); padding: 3px 9px; border: 1px solid var(--line); border-radius: 5px; }
   .host:hover { color: var(--fg); border-color: var(--orange-dim); text-decoration: none; }
 
-  /* tab strip */
   .tabs { height: var(--tabs-h); display: flex; align-items: stretch; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
   .tab { font: inherit; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 16px; cursor: pointer; }
   .tab:hover { color: var(--fg); }
@@ -47,7 +42,6 @@
   .tab .badge-n { color: var(--faint); margin-left: 7px; }
   .tab.active .badge-n { color: var(--orange-dim); }
 
-  /* views */
   main { height: calc(100vh - var(--titlebar-h) - var(--tabs-h) - var(--statusline-h)); overflow: hidden; }
   .view { display: none; height: 100%; }
   .view.active { display: block; }
@@ -60,13 +54,10 @@
   .panel-head .count::before { content: "["; color: var(--line); }
   .panel-head .count::after { content: "]"; color: var(--line); }
 
-  /* ledger */
   #view-ledger { padding: 16px 18px; }
   .ledger { list-style: none; margin: 0; padding: 0; max-width: 1100px; }
   .entry { padding: 8px 10px 8px 11px; border-left: 2px solid var(--line); margin-bottom: 4px; background: var(--surface); border-radius: 0 4px 4px 0; }
-  .entry.ok { border-left-color: var(--ok); }
-  .entry.run { border-left-color: var(--orange); }
-  .entry.fail { border-left-color: var(--fail); }
+  .entry.ok { border-left-color: var(--ok); } .entry.run { border-left-color: var(--orange); } .entry.fail { border-left-color: var(--fail); }
   .entry.fresh { animation: printin 0.32s ease-out; }
   @keyframes printin { from { transform: translateX(-6px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   .entry .cmd { font-size: 13px; word-break: break-word; }
@@ -79,7 +70,6 @@
   .badge { font-size: 10px; letter-spacing: 0.06em; padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; }
   .badge.ok { color: var(--ok); } .badge.run { color: var(--orange); } .badge.fail { color: var(--fail); }
 
-  /* databases shell: two horizontal nav rows + body */
   .navrow { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
   .navrow .rowlabel { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); margin-right: 6px; flex: none; }
   .navchip { font: inherit; font-size: 12px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--fg); cursor: pointer; flex: none; }
@@ -87,12 +77,15 @@
   .navchip.active { border-color: var(--orange); color: var(--orange); }
   .navchip .sub { color: var(--faint); margin-left: 7px; font-size: 11px; }
   .navchip.l1 { background: var(--raised); }
+  .navchip.query { color: var(--orange); border-style: dashed; }
+  .navchip.query.active { background: var(--orange); color: #1c1a18; border-style: solid; font-weight: 700; }
 
   .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
+  .db-body.full { grid-template-columns: 1fr; }
+  .db-body.full .facet-panel { display: none; }
   .facet-panel { border-right: 1px solid var(--line); overflow: auto; padding: 12px 12px 24px; }
   .results { overflow: auto; padding: 14px 18px 24px; }
 
-  /* facet panel */
   .facet-search { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 11px; margin-bottom: 6px; }
   .facet-search:focus { outline: none; border-color: var(--orange-dim); }
   .facet-clear { font-size: 11px; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 2px 0 10px; }
@@ -108,7 +101,6 @@
   .facet-val .fc { color: var(--faint); z-index: 1; }
   .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgba(194, 97, 26, 0.13); border-radius: 4px; }
 
-  /* range facet (dual slider) */
   .range-readout { font-size: 12px; color: var(--fg); margin: 2px 2px 8px; }
   .range-readout .rsep { color: var(--faint); }
   .range-slider { position: relative; height: 26px; margin: 0 6px 4px; }
@@ -120,30 +112,38 @@
   .range-slider input[type=range]::-moz-range-thumb { pointer-events: auto; width: 14px; height: 14px; border-radius: 50%; background: var(--orange); border: 2px solid var(--bg); cursor: pointer; }
   .range-note { font-size: 11px; color: var(--faint); margin: 2px; }
 
-  /* results header + filters */
+  .thist { display: flex; align-items: flex-end; gap: 1px; height: 44px; margin: 2px 0 8px; }
+  .thist .tb { flex: 1; background: var(--orange-dim); min-height: 2px; border-radius: 1px 1px 0 0; }
+  .thist .tb:hover { background: var(--orange); }
+  .trange { display: flex; align-items: center; gap: 6px; }
+  .tdate { font: inherit; font-size: 11px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 4px; padding: 4px 6px; flex: 1; min-width: 0; }
+  .tdate:focus { outline: none; border-color: var(--orange-dim); }
+
   .tp-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .tp-name { font-size: 16px; color: var(--fg); }
   .tp-rows { font-size: 12px; color: var(--faint); }
   .tp-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
+  .seg button + button { border-left: 1px solid var(--line); }
+  .seg button.active { background: var(--orange); color: #1c1a18; font-weight: 700; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
   .exlabel { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .exlink { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
   .exlink:hover { border-color: var(--orange-dim); color: var(--orange); }
-  .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
-  .seg button + button { border-left: 1px solid var(--line); }
-  .seg button.active { background: var(--orange); color: #1c1a18; font-weight: 700; }
+
   .active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
   .fchip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; background: var(--raised); border: 1px solid var(--orange-dim); color: var(--fg); padding: 4px 6px 4px 10px; border-radius: 5px; }
   .fchip .col { color: var(--orange); }
   .fchip .x { cursor: pointer; color: var(--muted); border: 0; background: none; font: inherit; padding: 0 2px; }
   .fchip .x:hover { color: var(--fail); }
 
-  /* rows table + pager */
   .preview-wrap { border: 1px solid var(--line); border-radius: 5px; overflow: auto; max-height: calc(100vh - 360px); }
   table.preview { border-collapse: collapse; width: 100%; font-size: 12px; }
   table.preview th, table.preview td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
   table.preview thead th { position: sticky; top: 0; background: var(--raised); color: var(--orange); border-bottom: 1px solid var(--orange-dim); letter-spacing: 0.03em; }
+  table.preview thead th.sortable { cursor: pointer; user-select: none; }
+  table.preview thead th .ind { color: var(--fg); margin-left: 4px; }
   table.preview tbody tr:hover { background: var(--raised); }
   table.preview td.null { color: var(--faint); }
   .pager { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -151,8 +151,9 @@
   .pager button:hover:not(:disabled) { border-color: var(--orange-dim); }
   .pager button:disabled { opacity: 0.35; cursor: default; }
   .pager .range b { color: var(--fg); font-weight: 400; }
+  .pager .psize { margin-left: auto; font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  .pager .psize:hover { border-color: var(--orange-dim); }
 
-  /* stats */
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .stat-card { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 12px 14px; }
   .stat-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -160,9 +161,12 @@
   .stat-type { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--orange-dim); }
   .stat-meta { font-size: 11px; color: var(--faint); margin-bottom: 10px; }
   .stat-meta b { color: var(--muted); font-weight: 400; }
-  .hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin-top: 6px; }
+  .hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin-top: 6px; position: relative; }
+  .hist[data-col] { cursor: crosshair; }
   .hist .bar { flex: 1; background: var(--orange-dim); min-height: 2px; border-radius: 1px 1px 0 0; }
   .hist .bar:hover { background: var(--orange); }
+  .hist .brush-sel { position: absolute; top: 0; bottom: 0; background: rgba(255, 122, 26, 0.22); border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; }
+  .hist-hint { font-size: 10px; color: var(--faint); margin-top: 4px; }
   .hist-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 5px; }
   .stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
   .stat-nums b { color: var(--fg); font-weight: 400; }
@@ -173,12 +177,29 @@
   .toprow .tc { color: var(--faint); z-index: 1; }
   .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: rgba(194, 97, 26, 0.16); border-radius: 4px; }
 
+  /* schema */
+  table.schema { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 12px; }
+  table.schema th, table.schema td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line-soft); }
+  table.schema thead th { color: var(--muted); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
+  table.schema td .ty { color: var(--orange-dim); }
+  table.schema td .pk { color: var(--orange); font-size: 10px; }
+  .ddl { margin-top: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 12px 14px; font-size: 12px; color: var(--fg); white-space: pre; overflow: auto; max-width: 760px; }
+
+  /* query editor */
+  .qeditor { display: flex; flex-direction: column; gap: 10px; }
+  .qbar { display: flex; align-items: center; gap: 12px; }
+  .qbar .qtitle { font-size: 16px; color: var(--fg); }
+  .sqlbox { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 11px; min-height: 110px; resize: vertical; line-height: 1.5; }
+  .sqlbox:focus { outline: none; border-color: var(--orange-dim); }
+  .runbtn { font: inherit; font-size: 12px; background: var(--orange); color: #1c1a18; font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; }
+  .runbtn:hover { background: var(--orange-dim); }
+  .qhint { font-size: 11px; color: var(--faint); }
+
   .note { font-size: 12px; color: var(--muted); padding: 4px 0; }
   .note.err { color: var(--fail); }
   .empty { font-family: var(--sans); font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 20px; line-height: 1.6; }
   .empty code { font-family: var(--mono); color: var(--orange); background: var(--raised); padding: 1px 6px; border-radius: 3px; }
 
-  /* sessions */
   #view-sessions { padding: 40px 18px; }
   .todo { max-width: 640px; margin: 0 auto; }
   .todo h2 { font-size: 18px; color: var(--fg); margin: 0 0 6px; }
@@ -187,7 +208,6 @@
   .todo ul { padding-left: 18px; }
   .todo code { color: var(--orange); }
 
-  /* statusline */
   .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: var(--surface); border-top: 1px solid var(--line); }
   .statusline .seg-item { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted); border-right: 1px solid var(--line); }
   .seg-brand { background: var(--orange); color: #1c1a18 !important; font-weight: 700; letter-spacing: 0.14em; }
@@ -204,10 +224,7 @@
     .facet-panel { border-right: 0; border-bottom: 1px solid var(--line); max-height: 200px; }
     .subtitle, .seg-counts { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) {
-    .entry.fresh { animation: none; }
-    .conn.live .cursor { animation: none; }
-  }
+  @media (prefers-reduced-motion: reduce) { .entry.fresh { animation: none; } .conn.live .cursor { animation: none; } }
 </style>
 </head>
 <body>
@@ -226,7 +243,6 @@
   </nav>
 
   <main>
-    <!-- DATABASES -->
     <section class="view flex active" id="view-databases" aria-label="Databases">
       <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span></div>
       <div class="navrow" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></div>
@@ -238,7 +254,6 @@
       </div>
     </section>
 
-    <!-- SESSIONS -->
     <section class="view scroll" id="view-sessions" aria-label="Sessions">
       <div class="todo">
         <p><span class="tag">coming soon</span></p>
@@ -256,7 +271,6 @@
       </div>
     </section>
 
-    <!-- LEDGER -->
     <section class="view scroll" id="view-ledger" aria-label="Command history">
       <div class="panel-head"><span class="label">history</span><span class="count" id="hist-count">0</span></div>
       <ul class="ledger" id="ledger"></ul>
@@ -278,25 +292,23 @@
   "use strict";
   const $ = (id) => document.getElementById(id);
   const PAGE = 25;
+  const DEFAULT_SQL = "SELECT 1";
 
   const state = {
     tab: "databases",
-    history: [],
-    databases: [],     // [{path, exists}]
-    selDb: null,
-    tables: [],        // [{name, column_count, ...}]
-    selTable: null,
-    subview: "rows",   // "rows" | "stats"
-    q: "",
-    filters: [],       // [{column, value}] — multiple per column = OR
-    facets: [],        // [{name, values:[{value,count}]}]
-    page: 0,
-    total: 0,
+    history: [], databases: [],
+    selDb: null, tables: [], selTable: null,
+    mode: "table",      // "table" | "query"
+    subview: "rows",    // "rows" | "stats" | "schema"
+    q: "", filters: [], facets: [],
+    sort: null, dir: "asc",
+    page: 0, total: 0,
+    pageMode: "auto", pageSize: 25,
+    sql: "",
   };
   let lastIds = new Set();
-  let searchTimer = null;
-  let suppressSync = false;   // true while restoring state from the URL
-  let pendingNav = null;      // nav from URL waiting for databases to load
+  let searchTimer = null, refreshTimer = null;
+  let suppressSync = false, pendingNav = null, brush = null;
 
   // ---- helpers ----------------------------------------------------------
   function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
@@ -306,7 +318,80 @@
   function dirname(p) { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
   function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
   function fmtNum(n) { if (n === null || n === undefined) return "—"; return Number.isInteger(n) ? String(n) : (Math.round(n * 1000) / 1000).toString(); }
+  function fmtDMY(iso) { if (!iso) return "…"; const m = String(iso).slice(0, 10).split("-"); return m.length === 3 ? `${m[2]}/${m[1]}/${m[0]}` : iso; }
+  function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function hasFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val); }
+  function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined && f.tmin === undefined); }
+  function timeFilter(col) { return state.filters.find((f) => f.column === col && f.tmin !== undefined || (f.column === col && f.tmax !== undefined)); }
+
+  // ---- URL <-> state ----------------------------------------------------
+  function dbIdOf(path) { const d = state.databases.find((x) => x.path === path); return d ? d.id : null; }
+  function autoPageSize() { return clamp(Math.floor((window.innerHeight - 330) / 29), 5, 200); }
+
+  function buildPath() {
+    if (state.tab === "ledger") return "/ledger";
+    if (state.tab === "sessions") return "/sessions";
+    const id = state.selDb && dbIdOf(state.selDb);
+    if (!id) return "/";
+    let p = "/db/" + id;
+    if (state.mode === "query") p += "/query";
+    else if (state.selTable) p += "/" + encodeURIComponent(state.selTable);
+    return p + "/";
+  }
+  function buildQuery() {
+    const p = new URLSearchParams();
+    if (state.mode === "table") {
+      if (state.subview !== "rows") p.set("view", state.subview);
+      if (state.q && state.q.trim()) p.set("q", state.q.trim());
+      if (state.sort) { p.set("sort", state.sort); if (state.dir === "desc") p.set("dir", "desc"); }
+      if (state.page > 0) p.set("p", String(state.page + 1));
+      if (state.pageMode !== "auto") p.set("ps", state.pageMode);
+      if (state.filters.length) p.set("f", JSON.stringify(state.filters));
+    } else if (state.mode === "query" && state.sql && state.sql !== DEFAULT_SQL) {
+      p.set("sql", state.sql);
+    }
+    return p.toString();
+  }
+  function syncUrl(push) {
+    if (suppressSync) return;
+    const qs = buildQuery();
+    const url = buildPath() + (qs ? "?" + qs : "");
+    if (url === location.pathname + location.search) return;
+    if (push) history.pushState(null, "", url); else history.replaceState(null, "", url);
+  }
+  function parseUrl() {
+    const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
+    let tab = "databases", dbId = null, table = null, mode = "table";
+    if (segs[0] === "ledger") tab = "ledger";
+    else if (segs[0] === "sessions") tab = "sessions";
+    else if (segs[0] === "db") {
+      dbId = segs[1] || null;
+      if (segs[2] === "query") mode = "query"; else table = segs[2] || null;
+    }
+    const p = new URLSearchParams(location.search);
+    let filters = [];
+    try { const f = p.get("f"); if (f) filters = JSON.parse(f); } catch (_) {}
+    return {
+      tab, dbId, table, mode,
+      sub: ["stats", "schema"].includes(p.get("view")) ? p.get("view") : "rows",
+      q: p.get("q") || "", sort: p.get("sort") || null, dir: p.get("dir") === "desc" ? "desc" : "asc",
+      page: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
+      ps: p.get("ps") || "auto",
+      filters: Array.isArray(filters) ? filters : [], sql: p.get("sql") || "",
+    };
+  }
+  function resolveDb(nav) {
+    if (nav.dbId) { const m = state.databases.find((d) => d.id === nav.dbId); if (m) return m.path; }
+    return null;
+  }
+  async function restoreFromNav(nav) {
+    suppressSync = true;
+    setTab(nav.tab);
+    const dbPath = resolveDb(nav);
+    if (dbPath) await selectDb(dbPath, nav); else pendingNav = nav;
+    suppressSync = false;
+    syncUrl(false);
+  }
 
   // ---- tabs -------------------------------------------------------------
   function setTab(tab) {
@@ -317,47 +402,6 @@
     syncUrl(true);
   }
 
-  // ---- URL <-> state ----------------------------------------------------
-  function serializeParams() {
-    const p = new URLSearchParams();
-    if (state.tab !== "databases") p.set("tab", state.tab);
-    if (state.selDb) p.set("db", state.selDb);
-    if (state.selTable) p.set("t", state.selTable);
-    if (state.subview !== "rows") p.set("v", state.subview);
-    if (state.q && state.q.trim()) p.set("q", state.q.trim());
-    if (state.page > 0) p.set("p", String(state.page + 1));
-    if (state.filters.length) p.set("f", JSON.stringify(state.filters));
-    return p;
-  }
-  function syncUrl(push) {
-    if (suppressSync) return;
-    const qs = serializeParams().toString();
-    const url = location.pathname + (qs ? "?" + qs : "");
-    if (url === location.pathname + location.search) return;
-    if (push) history.pushState(null, "", url); else history.replaceState(null, "", url);
-  }
-  function parseUrl() {
-    const p = new URLSearchParams(location.search);
-    let filters = [];
-    try { const f = p.get("f"); if (f) filters = JSON.parse(f); } catch (_) {}
-    return {
-      tab: ["databases", "sessions", "ledger"].includes(p.get("tab")) ? p.get("tab") : "databases",
-      db: p.get("db"), table: p.get("t"),
-      sub: p.get("v") === "stats" ? "stats" : "rows",
-      q: p.get("q") || "",
-      page: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
-      filters: Array.isArray(filters) ? filters : [],
-    };
-  }
-  async function restoreFromNav(nav) {
-    suppressSync = true;
-    setTab(nav.tab);
-    if (nav.db && state.databases.some((d) => d.path === nav.db)) await selectDb(nav.db, nav);
-    else pendingNav = nav;
-    suppressSync = false;
-    syncUrl(false);
-  }
-
   // ---- ledger -----------------------------------------------------------
   function entryClass(inv) { return inv.running ? "run" : (inv.exit_code === 0 ? "ok" : "fail"); }
   function badge(inv) {
@@ -365,31 +409,27 @@
     return inv.exit_code === 0 ? '<span class="badge ok">exit 0</span>' : `<span class="badge fail">exit ${inv.exit_code}</span>`;
   }
   function renderLedger() {
-    const history = state.history;
-    $("hist-count").textContent = history.length;
-    $("tab-n-ledger").textContent = history.length;
-    $("ledger-empty").style.display = history.length ? "none" : "block";
-    const newIds = new Set(history.map((h) => h.id));
-    $("ledger").innerHTML = history.slice().reverse().map((inv) => {
-      const cls = entryClass(inv);
-      const fresh = !lastIds.has(inv.id) ? " fresh" : "";
+    const h = state.history;
+    $("hist-count").textContent = h.length;
+    $("tab-n-ledger").textContent = h.length;
+    $("ledger-empty").style.display = h.length ? "none" : "block";
+    const newIds = new Set(h.map((x) => x.id));
+    $("ledger").innerHTML = h.slice().reverse().map((inv) => {
+      const cls = entryClass(inv), fresh = !lastIds.has(inv.id) ? " fresh" : "";
       const args = (inv.args || []).map(esc).join(" ");
       const db = inv.db_path ? `<span class="db" data-open-db="${attr(inv.db_path)}">${esc(basename(inv.db_path))}</span>` : "";
-      return `<li class="entry ${cls}${fresh}">
-        <div class="cmd"><span class="prompt">❯</span> <span class="prog">muckdb</span> ${args || "<em>(interactive shell)</em>"}</div>
-        <div class="meta"><span>${fmtTime(inv.ts)}</span>${badge(inv)}${db}</div></li>`;
+      return `<li class="entry ${cls}${fresh}"><div class="cmd"><span class="prompt">❯</span> <span class="prog">muckdb</span> ${args || "<em>(interactive shell)</em>"}</div><div class="meta"><span>${fmtTime(inv.ts)}</span>${badge(inv)}${db}</div></li>`;
     }).join("");
     lastIds = newIds;
   }
 
-  // ---- db / table nav ---------------------------------------------------
+  // ---- nav --------------------------------------------------------------
   function renderDbNav() {
     const dbs = state.databases;
     $("tab-n-databases").textContent = dbs.length;
     if (!dbs.length) {
       $("db-chips").innerHTML = '<span class="note">none</span>';
-      $("table-nav").hidden = true;
-      $("facet-panel").innerHTML = "";
+      $("table-nav").hidden = true; $("facet-panel").innerHTML = "";
       $("results").innerHTML = '<div class="empty">No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.</div>';
       return;
     }
@@ -400,17 +440,20 @@
     }).join(" ");
   }
   function renderTableNav() {
-    if (!state.tables.length) { $("table-nav").hidden = true; return; }
+    if (!state.tables.length && state.mode !== "query") { $("table-nav").hidden = true; return; }
     $("table-nav").hidden = false;
-    $("table-chips").innerHTML = state.tables.map((t) => {
-      const active = t.name === state.selTable ? " active" : "";
+    const tabs = state.tables.map((t) => {
+      const active = state.mode === "table" && t.name === state.selTable ? " active" : "";
       return `<button class="navchip${active}" data-table="${attr(t.name)}">${esc(t.name)}<span class="sub">${t.column_count}c</span></button>`;
     }).join(" ");
+    const qchip = `<button class="navchip query${state.mode === "query" ? " active" : ""}" data-querymode>＋ query</button>`;
+    $("table-chips").innerHTML = tabs + " " + qchip;
   }
 
   async function selectDb(path, restore) {
     state.selDb = path; state.selTable = null; state.tables = [];
-    state.q = ""; state.filters = []; state.page = 0; state.facets = [];
+    state.mode = "table"; state.subview = "rows";
+    state.q = ""; state.filters = []; state.page = 0; state.facets = []; state.sort = null; state.dir = "asc";
     renderDbNav();
     $("facet-panel").innerHTML = "";
     $("results").innerHTML = '<div class="note">loading tables…</div>';
@@ -419,26 +462,36 @@
       if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; syncUrl(true); return; }
       state.tables = data.tables || [];
       renderTableNav();
-      if (restore && restore.table && state.tables.some((t) => t.name === restore.table)) selectTable(restore.table, restore);
+      if (restore && restore.mode === "query") enterQueryMode(restore);
+      else if (restore && restore.table && state.tables.some((t) => t.name === restore.table)) selectTable(restore.table, restore);
       else if (state.tables.length) selectTable(state.tables[0].name);
       else { $("results").innerHTML = '<div class="note">This database has no tables yet.</div>'; $("facet-panel").innerHTML = ""; syncUrl(true); }
     } catch (e) { $("results").innerHTML = `<div class="note err">${esc(String(e))}</div>`; syncUrl(true); }
   }
 
   function selectTable(name, restore) {
-    state.selTable = name;
+    state.mode = "table"; state.selTable = name;
     state.subview = restore && restore.sub ? restore.sub : "rows";
     state.q = restore && restore.q ? restore.q : "";
     state.filters = restore && restore.filters ? restore.filters.slice() : [];
     state.page = restore && restore.page ? restore.page : 0;
+    state.sort = restore && restore.sort ? restore.sort : null;
+    state.dir = restore && restore.dir ? restore.dir : "asc";
+    if (restore && restore.ps) { state.pageMode = restore.ps; }
+    state.pageSize = state.pageMode === "auto" ? autoPageSize() : Number(state.pageMode);
     state.facets = [];
+    document.querySelector(".db-body").classList.remove("full");
     renderTableNav();
+    buildFacetShell();
     loadFacets();
     renderResults();
     syncUrl(true);
   }
 
-  // ---- facets (left panel) ----------------------------------------------
+  // ---- facets (left) ----------------------------------------------------
+  function buildFacetShell() {
+    $("facet-panel").innerHTML = `<input class="facet-search" id="facet-search" type="search" placeholder="search all columns…" value="${attr(state.q)}" /><div id="facet-body"></div>`;
+  }
   async function loadFacets() {
     const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
     if (state.q.trim()) params.set("q", state.q.trim());
@@ -447,65 +500,71 @@
       const data = await (await fetch("/api/facets?" + params.toString())).json();
       state.facets = data.error ? [] : (data.facets || []);
     } catch (_) { state.facets = []; }
-    renderFacetPanel();
+    renderFacets();
   }
-  function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined); }
-  function currentRange(col, fmin, fmax) {
-    const rf = rangeFilter(col);
-    return { lo: rf && rf.min != null ? rf.min : fmin, hi: rf && rf.max != null ? rf.max : fmax };
+  function renderFacets() {
+    const body = $("facet-body");
+    if (!body) return;
+    const groups = state.facets.map((f) => {
+      if (f.kind === "range") return renderRangeFacet(f);
+      if (f.kind === "time") return renderTimeFacet(f);
+      return renderValuesFacet(f);
+    }).join("");
+    const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
+    body.innerHTML = clear + (state.facets.length ? groups : '<div class="note">No columns to facet.</div>');
   }
-
   function renderValuesFacet(f) {
     const max = Math.max(1, ...f.values.map((v) => v.count));
     const vals = f.values.map((v) => {
       const on = hasFilter(f.name, v.value) ? " on" : "";
-      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}">
-        <span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span>
-        <span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span>
-      </button>`;
+      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}"><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span></button>`;
     }).join("");
     return `<div class="facet-group"><div class="facet-col">${esc(f.name)}</div>${vals}</div>`;
   }
-
   function renderRangeFacet(f) {
     const head = `<div class="facet-col">${esc(f.name)}</div>`;
-    if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range available.</div></div>`;
+    if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range.</div></div>`;
     if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${fmtNum(f.min)}</div></div>`;
-    const { lo, hi } = currentRange(f.name, f.min, f.max);
-    const step = (f.max - f.min) / 200 || 1;
-    const span = f.max - f.min;
-    const leftPct = ((lo - f.min) / span) * 100;
-    const widthPct = ((hi - lo) / span) * 100;
+    const rf = rangeFilter(f.name);
+    const lo = rf && rf.min != null ? rf.min : f.min, hi = rf && rf.max != null ? rf.max : f.max;
+    const step = (f.max - f.min) / 200 || 1, span = f.max - f.min;
     return `<div class="facet-group">${head}
       <div class="range-readout"><span data-rmin>${fmtNum(lo)}</span> <span class="rsep">–</span> <span data-rmax>${fmtNum(hi)}</span></div>
       <div class="range-slider" data-rcol="${attr(f.name)}" data-fmin="${f.min}" data-fmax="${f.max}">
-        <div class="rtrack"></div>
-        <div class="rsel" style="left:${leftPct}%;width:${widthPct}%"></div>
-        <input type="range" class="rng rng-lo" min="${f.min}" max="${f.max}" step="${step}" value="${lo}" aria-label="${attr(f.name)} minimum" />
-        <input type="range" class="rng rng-hi" min="${f.min}" max="${f.max}" step="${step}" value="${hi}" aria-label="${attr(f.name)} maximum" />
+        <div class="rtrack"></div><div class="rsel" style="left:${((lo - f.min) / span) * 100}%;width:${((hi - lo) / span) * 100}%"></div>
+        <input type="range" class="rng rng-lo" min="${f.min}" max="${f.max}" step="${step}" value="${lo}" />
+        <input type="range" class="rng rng-hi" min="${f.min}" max="${f.max}" step="${step}" value="${hi}" />
+      </div></div>`;
+  }
+  function renderTimeFacet(f) {
+    const head = `<div class="facet-col">${esc(f.name)}</div>`;
+    if (!f.min || !f.max) return `<div class="facet-group">${head}<div class="range-note">no dates.</div></div>`;
+    const tf = state.filters.find((x) => x.column === f.name && (x.tmin !== undefined || x.tmax !== undefined));
+    const lo = (tf && tf.tmin) || f.min, hi = (tf && tf.tmax) || f.max;
+    const bmax = Math.max(1, ...f.bins.map((b) => b.count));
+    const bars = f.bins.map((b) => `<div class="tb" style="height:${Math.round((b.count / bmax) * 100)}%" title="${attr(b.label)} · ${b.count}"></div>`).join("");
+    return `<div class="facet-group" data-tcol="${attr(f.name)}">${head}
+      <div class="range-readout"><span>${fmtDMY(lo)}</span> <span class="rsep">–</span> <span>${fmtDMY(hi)}</span></div>
+      <div class="thist">${bars}</div>
+      <div class="trange">
+        <input type="date" class="tdate tdate-lo" value="${attr(lo.slice(0, 10))}" />
+        <span class="rsep">–</span>
+        <input type="date" class="tdate tdate-hi" value="${attr(hi.slice(0, 10))}" />
       </div></div>`;
   }
 
-  function renderFacetPanel() {
-    const groups = state.facets.map((f) => f.kind === "range" ? renderRangeFacet(f) : renderValuesFacet(f)).join("");
-    const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
-    const body = state.facets.length ? groups : '<div class="note">No columns to facet.</div>';
-    $("facet-panel").innerHTML = `
-      <input class="facet-search" id="facet-search" type="search" placeholder="search all columns…" value="${attr(state.q)}" />
-      ${clear}${body}`;
-  }
-
-  // ---- results (right) --------------------------------------------------
+  // ---- results (table mode) --------------------------------------------
   function renderResults() {
     const t = state.tables.find((x) => x.name === state.selTable);
     const colCount = t ? `${t.column_count} columns` : "";
     const chips = state.filters.map((f, i) => {
-      const label = f.value !== undefined
-        ? `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`
-        : `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
-      return `<span class="fchip">${label}
-        <button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`;
+      let label;
+      if (f.value !== undefined) label = `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`;
+      else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tmin)}→${fmtDMY(f.tmax)}`;
+      else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
+      return `<span class="fchip">${label}<button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`;
     }).join("");
+    const exp = state.subview === "rows" ? `<span class="export"><span class="exlabel">export</span><button class="exlink" data-export="csv">csv</button><button class="exlink" data-export="json">json</button></span>` : "";
     $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
@@ -514,42 +573,48 @@
           <span class="seg">
             <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
             <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
-          </span>
-          <span class="export"><span class="exlabel">export</span>
-            <button class="exlink" data-export="csv">csv</button>
-            <button class="exlink" data-export="json">json</button>
-          </span>
+            <button data-sub="schema" class="${state.subview === "schema" ? "active" : ""}">schema</button>
+          </span>${exp}
         </span>
       </div>
       ${chips ? `<div class="active-filters">${chips}</div>` : ""}
       <div id="result-body"></div>`;
-    if (state.subview === "rows") loadRows(); else loadStats();
+    reloadBody();
+  }
+  function reloadBody() {
+    if (state.subview === "rows") loadRows();
+    else if (state.subview === "stats") loadStats();
+    else loadSchema();
   }
 
   async function loadRows() {
     const slot = $("result-body");
     if (!slot) return;
-    slot.innerHTML = '<div class="note">loading rows…</div>';
-    const params = new URLSearchParams({ db: state.selDb, table: state.selTable, limit: PAGE, offset: state.page * PAGE });
+    if (!slot.dataset.loaded) slot.innerHTML = '<div class="note">loading rows…</div>';
+    const size = state.pageSize;
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable, limit: size, offset: state.page * size });
     if (state.q.trim()) params.set("q", state.q.trim());
     if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    if (state.sort) { params.set("sort", state.sort); params.set("dir", state.dir); }
     try {
       const data = await (await fetch("/api/preview?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       state.total = data.total || 0;
       const cols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">No rows match the current filters.</div>'; return; }
-      const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
+      const head = cols.map((c) => {
+        const ind = state.sort === c ? `<span class="ind">${state.dir === "asc" ? "▲" : "▼"}</span>` : "";
+        return `<th class="sortable" data-sortcol="${attr(c)}">${esc(c)}${ind}</th>`;
+      }).join("");
       const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
-      const from = state.page * PAGE + 1, to = state.page * PAGE + rows.length;
-      const lastPage = (state.page + 1) * PAGE >= state.total;
-      slot.innerHTML = `<div class="preview-wrap"><table class="preview">
-        <thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-        <div class="pager">
-          <button data-page="prev" ${state.page === 0 ? "disabled" : ""}>‹ prev</button>
-          <span class="range">showing <b>${from}–${to}</b> of <b>${state.total}</b></span>
-          <button data-page="next" ${lastPage ? "disabled" : ""}>next ›</button>
-        </div>`;
+      const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
+      const opts = ["auto", "10", "25", "50", "100"].map((o) => `<option value="${o}"${state.pageMode === o ? " selected" : ""}>${o === "auto" ? "auto" : o + "/page"}</option>`).join("");
+      slot.dataset.loaded = "1";
+      slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
+        <div class="pager"><button data-page="prev" ${state.page === 0 ? "disabled" : ""}>‹ prev</button>
+        <span class="range">showing <b>${from}–${to}</b> of <b>${state.total}</b></span>
+        <button data-page="next" ${last ? "disabled" : ""}>next ›</button>
+        <select class="psize" data-psize aria-label="rows per page">${opts}</select></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function cell(v) {
@@ -562,9 +627,8 @@
     const slot = $("result-body");
     if (!slot) return;
     slot.innerHTML = '<div class="note">computing stats…</div>';
-    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
     try {
-      const data = await (await fetch("/api/stats?" + params.toString())).json();
+      const data = await (await fetch("/api/stats?" + new URLSearchParams({ db: state.selDb, table: state.selTable }))).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       slot.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
@@ -575,47 +639,88 @@
     if (c.numeric && c.histogram && c.histogram.length) {
       const max = Math.max(1, ...c.histogram.map((b) => b.count));
       const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${fmtNum(b.lo)}, ${fmtNum(b.hi)}) · ${b.count}"></div>`).join("");
-      body = `<div class="hist">${bars}</div>
+      body = `<div class="hist" data-col="${attr(c.name)}" data-min="${c.min}" data-max="${c.max}">${bars}</div>
         <div class="hist-axis"><span>${fmtNum(c.min)}</span><span>${fmtNum(c.max)}</span></div>
+        <div class="hist-hint">drag across to filter this range</div>
         <div class="stat-nums"><span><b>min</b> ${fmtNum(c.min)}</span><span><b>avg</b> ${fmtNum(c.avg)}</span><span><b>max</b> ${fmtNum(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
-      body = `<div class="toplist">` + c.top.map((t) =>
-        `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}">
-          <span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span>
-          <span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
+      body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
     } else { body = '<div class="note">no distribution available.</div>'; }
     return `<div class="stat-card"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
   }
 
-  // ---- filter mutations -------------------------------------------------
+  async function loadSchema() {
+    const slot = $("result-body");
+    if (!slot) return;
+    slot.innerHTML = '<div class="note">loading schema…</div>';
+    try {
+      const data = await (await fetch("/api/schema?" + new URLSearchParams({ db: state.selDb, table: state.selTable }))).json();
+      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      const cols = data.columns || [];
+      const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td></tr>`).join("");
+      const ddlCols = cols.map((c) => `  ${quoteId(c.name)} ${c.col_type}${c.nullable ? "" : " NOT NULL"}${c.default ? " DEFAULT " + c.default : ""}`).join(",\n");
+      const ddl = `CREATE TABLE ${quoteId(state.selTable)} (\n${ddlCols}\n);`;
+      slot.innerHTML = `<table class="schema"><thead><tr><th>column</th><th>type</th><th>null</th><th>key</th><th>default</th></tr></thead><tbody>${rows}</tbody></table><div class="ddl">${esc(ddl)}</div>`;
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  function quoteId(n) { return '"' + String(n).replace(/"/g, '""') + '"'; }
+
+  // ---- query mode -------------------------------------------------------
+  function enterQueryMode(restore) {
+    state.mode = "query"; state.selTable = null;
+    state.sql = (restore && restore.sql) || state.sql || (state.tables[0] ? `SELECT * FROM ${quoteId(state.tables[0].name)} LIMIT 100` : DEFAULT_SQL);
+    document.querySelector(".db-body").classList.add("full");
+    $("facet-panel").innerHTML = "";
+    renderTableNav();
+    $("results").innerHTML = `
+      <div class="qeditor">
+        <div class="qbar"><span class="qtitle">query</span><span class="qhint">read-only · runs against ${esc(basename(state.selDb))}</span></div>
+        <textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea>
+        <div><button class="runbtn" data-run>▶ run</button> <span class="qhint">⌘/Ctrl + Enter</span></div>
+        <div id="query-result"></div>
+      </div>`;
+    syncUrl(true);
+    if (restore && restore.sql) runQuery();
+  }
+  async function runQuery() {
+    const ta = $("sql-input"); if (ta) state.sql = ta.value;
+    const slot = $("query-result");
+    slot.innerHTML = '<div class="note">running…</div>';
+    syncUrl(false);
+    try {
+      const data = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql: state.sql }))).json();
+      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      const cols = data.columns || [], rows = data.rows || [];
+      if (!rows.length) { slot.innerHTML = '<div class="note">Query returned no rows.</div>'; return; }
+      const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
+      const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
+      slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+
+  // ---- mutations --------------------------------------------------------
   function toggleFilter(column, value) {
     const i = state.filters.findIndex((f) => f.column === column && f.value === value);
     if (i >= 0) state.filters.splice(i, 1); else state.filters.push({ column, value });
-    state.page = 0;
-    if (state.subview !== "rows") state.subview = "rows";
-    loadFacets(); renderResults(); syncUrl(false);
+    afterFilterChange();
   }
   function setRange(col, lo, hi, fmin, fmax) {
-    state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined));
+    state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined && f.tmin === undefined));
     const eps = (fmax - fmin) / 1000;
     if (lo > fmin + eps || hi < fmax - eps) state.filters.push({ column: col, min: lo, max: hi });
+    afterFilterChange();
+  }
+  function setTRange(col, tmin, tmax, fmin, fmax) {
+    state.filters = state.filters.filter((f) => !(f.column === col && (f.tmin !== undefined || f.tmax !== undefined)));
+    if (tmin > fmin.slice(0, 10) || tmax < fmax.slice(0, 10)) state.filters.push({ column: col, tmin, tmax });
+    afterFilterChange();
+  }
+  function afterFilterChange() {
     state.page = 0;
     if (state.subview !== "rows") state.subview = "rows";
     loadFacets(); renderResults(); syncUrl(false);
   }
-  // Download the current filtered set (all rows) as csv/json.
-  function downloadExport(format) {
-    const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });
-    if (state.q.trim()) p.set("q", state.q.trim());
-    if (state.filters.length) p.set("filter", JSON.stringify(state.filters));
-    const a = document.createElement("a");
-    a.href = "/api/export?" + p.toString();
-    a.download = `${state.selTable}.${format}`;
-    document.body.appendChild(a); a.click(); a.remove();
-  }
-
-  // Live (un-committed) drag: clamp the two thumbs and redraw the selection.
   function liveRange(input) {
     const box = input.closest(".range-slider");
     const lo = box.querySelector(".rng-lo"), hi = box.querySelector(".rng-hi");
@@ -623,11 +728,29 @@
     if (a > b) { if (input === lo) { a = b; lo.value = a; } else { b = a; hi.value = b; } }
     const fmin = parseFloat(box.dataset.fmin), fmax = parseFloat(box.dataset.fmax), span = (fmax - fmin) || 1;
     const sel = box.querySelector(".rsel");
-    sel.style.left = ((a - fmin) / span * 100) + "%";
-    sel.style.width = ((b - a) / span * 100) + "%";
-    const grp = box.parentElement;
-    grp.querySelector("[data-rmin]").textContent = fmtNum(a);
-    grp.querySelector("[data-rmax]").textContent = fmtNum(b);
+    sel.style.left = ((a - fmin) / span * 100) + "%"; sel.style.width = ((b - a) / span * 100) + "%";
+    box.parentElement.querySelector("[data-rmin]").textContent = fmtNum(a);
+    box.parentElement.querySelector("[data-rmax]").textContent = fmtNum(b);
+  }
+  function downloadExport(format) {
+    const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });
+    if (state.q.trim()) p.set("q", state.q.trim());
+    if (state.filters.length) p.set("filter", JSON.stringify(state.filters));
+    const a = document.createElement("a");
+    a.href = "/api/export?" + p.toString(); a.download = `${state.selTable}.${format}`;
+    document.body.appendChild(a); a.click(); a.remove();
+  }
+  function sortBy(col) {
+    if (state.sort === col) {
+      if (state.dir === "asc") state.dir = "desc";
+      else { state.sort = null; state.dir = "asc"; }
+    } else { state.sort = col; state.dir = "asc"; }
+    state.page = 0; loadRows(); syncUrl(false);
+  }
+  function setPageSize(mode) {
+    state.pageMode = mode;
+    state.pageSize = mode === "auto" ? autoPageSize() : Number(mode);
+    state.page = 0; loadRows(); syncUrl(false);
   }
 
   // ---- events -----------------------------------------------------------
@@ -636,26 +759,18 @@
   document.addEventListener("click", (ev) => {
     const openDb = ev.target.closest("[data-open-db]");
     if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
-    const dbc = ev.target.closest("[data-db]");
-    if (dbc) { selectDb(dbc.dataset.db); return; }
-    const tc = ev.target.closest("[data-table]");
-    if (tc) { selectTable(tc.dataset.table); return; }
-    const sub = ev.target.closest("[data-sub]");
-    if (sub) { state.subview = sub.dataset.sub; renderResults(); syncUrl(true); return; }
-    const rm = ev.target.closest("[data-rmfilter]");
-    if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); state.page = 0; loadFacets(); renderResults(); syncUrl(false); return; }
-    const facet = ev.target.closest("[data-fcol]");
-    if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
-    const ex = ev.target.closest("[data-export]");
-    if (ex) { downloadExport(ex.dataset.export); return; }
-    if (ev.target.id === "facet-clear") { state.filters = []; state.page = 0; loadFacets(); renderResults(); syncUrl(false); return; }
+    const dbc = ev.target.closest("[data-db]"); if (dbc) { selectDb(dbc.dataset.db); return; }
+    if (ev.target.closest("[data-querymode]")) { enterQueryMode(); return; }
+    const tc = ev.target.closest("[data-table]"); if (tc) { selectTable(tc.dataset.table); return; }
+    const sub = ev.target.closest("[data-sub]"); if (sub) { state.subview = sub.dataset.sub; renderResults(); syncUrl(true); return; }
+    const sc = ev.target.closest("[data-sortcol]"); if (sc) { sortBy(sc.dataset.sortcol); return; }
+    const rm = ev.target.closest("[data-rmfilter]"); if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); afterFilterChange(); return; }
+    const facet = ev.target.closest("[data-fcol]"); if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
+    if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
+    const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
+    if (ev.target.closest("[data-run]")) { runQuery(); return; }
     const pg = ev.target.closest("[data-page]");
-    if (pg) {
-      if (pg.dataset.page === "prev" && state.page > 0) state.page--;
-      else if (pg.dataset.page === "next") state.page++;
-      loadRows(); syncUrl(false);
-      return;
-    }
+    if (pg) { if (pg.dataset.page === "prev" && state.page > 0) state.page--; else if (pg.dataset.page === "next") state.page++; loadRows(); syncUrl(false); return; }
   });
 
   document.addEventListener("input", (ev) => {
@@ -663,66 +778,104 @@
       state.q = ev.target.value; state.page = 0;
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); syncUrl(false); }, 250);
-    } else if (ev.target.classList.contains("rng")) {
-      liveRange(ev.target);
+    } else if (ev.target.classList.contains("rng")) { liveRange(ev.target); }
+    else if (ev.target.id === "sql-input") { state.sql = ev.target.value; }
+  });
+
+  document.addEventListener("change", (ev) => {
+    if (ev.target.dataset && ev.target.dataset.psize !== undefined) { setPageSize(ev.target.value); return; }
+    if (ev.target.classList.contains("rng")) {
+      const box = ev.target.closest(".range-slider");
+      const a = parseFloat(box.querySelector(".rng-lo").value), b = parseFloat(box.querySelector(".rng-hi").value);
+      setRange(box.dataset.rcol, Math.min(a, b), Math.max(a, b), parseFloat(box.dataset.fmin), parseFloat(box.dataset.fmax));
+    } else if (ev.target.classList.contains("tdate")) {
+      const grp = ev.target.closest("[data-tcol]");
+      const lo = grp.querySelector(".tdate-lo").value, hi = grp.querySelector(".tdate-hi").value;
+      const f = state.facets.find((x) => x.name === grp.dataset.tcol) || {};
+      setTRange(grp.dataset.tcol, lo, hi, (f.min || lo), (f.max || hi));
     }
   });
 
-  // Commit a range only on release, so dragging doesn't spam the backend.
-  document.addEventListener("change", (ev) => {
-    if (ev.target.classList.contains("rng")) {
-      const box = ev.target.closest(".range-slider");
-      const a = parseFloat(box.querySelector(".rng-lo").value);
-      const b = parseFloat(box.querySelector(".rng-hi").value);
-      setRange(box.dataset.rcol, Math.min(a, b), Math.max(a, b), parseFloat(box.dataset.fmin), parseFloat(box.dataset.fmax));
-    }
+  document.addEventListener("keydown", (ev) => {
+    if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
   });
+
+  // brush-select on stats histograms
+  document.addEventListener("mousedown", (ev) => {
+    const hist = ev.target.closest(".hist[data-col]"); if (!hist) return;
+    const rect = hist.getBoundingClientRect();
+    brush = { hist, rect, col: hist.dataset.col, min: parseFloat(hist.dataset.min), max: parseFloat(hist.dataset.max), x0: ev.clientX };
+    let ov = hist.querySelector(".brush-sel"); if (!ov) { ov = document.createElement("div"); ov.className = "brush-sel"; hist.appendChild(ov); }
+    drawBrush(ev.clientX); ev.preventDefault();
+  });
+  document.addEventListener("mousemove", (ev) => { if (brush) drawBrush(ev.clientX); });
+  document.addEventListener("mouseup", (ev) => {
+    if (!brush) return; const b = brush; brush = null;
+    const f0 = clamp((Math.min(b.x0, ev.clientX) - b.rect.left) / b.rect.width, 0, 1);
+    const f1 = clamp((Math.max(b.x0, ev.clientX) - b.rect.left) / b.rect.width, 0, 1);
+    const ov = b.hist.querySelector(".brush-sel"); if (ov) ov.remove();
+    if (Math.abs(f1 - f0) < 0.02) return;
+    const round = (x) => Math.round(x * 1000) / 1000;
+    setRange(b.col, round(b.min + f0 * (b.max - b.min)), round(b.min + f1 * (b.max - b.min)), b.min, b.max);
+  });
+  function drawBrush(x) {
+    const ov = brush.hist.querySelector(".brush-sel"); if (!ov) return;
+    const l = Math.min(brush.x0, x) - brush.rect.left, w = Math.abs(x - brush.x0);
+    ov.style.left = clamp(l, 0, brush.rect.width) + "px"; ov.style.width = clamp(w, 0, brush.rect.width) + "px";
+  }
 
   // ---- websocket --------------------------------------------------------
   function updateCounts() { $("sl-counts").textContent = `${plural(state.history.length, "command")} · ${plural(state.databases.length, "database")}`; }
-  function setStatus(live, text) {
-    $("status").classList.toggle("live", live); $("status-text").textContent = text;
-    $("statusline").classList.toggle("live", live); $("sl-state").textContent = text;
-  }
-  function apply(s) {
-    state.history = s.history || [];
-    renderLedger();
-    refreshDbExistence(s.databases || []);
-  }
+  function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = text; }
+  function apply(s) { state.history = s.history || []; renderLedger(); refreshDbExistence(s.databases || []); }
   async function refreshDbExistence(fallbackPaths) {
     try {
       const data = await (await fetch("/api/databases")).json();
       if (data.databases) { state.databases = data.databases; afterDbs(); return; }
-    } catch (_) { /* fall through */ }
-    state.databases = fallbackPaths.map((p) => ({ path: p, exists: true }));
-    afterDbs();
+    } catch (_) {}
+    state.databases = fallbackPaths.map((p) => ({ path: p, exists: true })); afterDbs();
   }
   function afterDbs() {
     updateCounts();
-    // Drop a selection that vanished.
     if (state.selDb && !state.databases.some((d) => d.path === state.selDb)) {
       state.selDb = null; state.selTable = null; state.tables = [];
       $("table-nav").hidden = true; $("facet-panel").innerHTML = "";
     }
     renderDbNav();
-    // Restore a database/table requested by the URL, once databases are known.
     if (pendingNav) {
       const nav = pendingNav; pendingNav = null;
-      if (nav.db && state.databases.some((d) => d.path === nav.db)) {
-        suppressSync = true;
-        selectDb(nav.db, nav).then(() => { suppressSync = false; syncUrl(false); });
-        return;
-      }
+      const dbPath = resolveDb(nav);
+      if (dbPath) { suppressSync = true; selectDb(dbPath, nav).then(() => { suppressSync = false; syncUrl(false); }); return; }
     }
-    // Otherwise auto-select the first database so the default tab isn't empty.
     if (!state.selDb && state.databases.length) selectDb(state.databases[0].path);
+    else scheduleRefresh();
   }
-
+  // Re-pull the open table when a new command may have changed the database.
+  function scheduleRefresh() {
+    if (state.tab !== "databases" || state.mode !== "table" || !state.selDb) return;
+    clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(refreshOpenView, 150);
+  }
+  async function refreshOpenView() {
+    if (!state.selDb || state.mode !== "table") return;
+    try {
+      const data = await (await fetch("/api/tables?db=" + encodeURIComponent(state.selDb))).json();
+      if (!data.error) {
+        state.tables = data.tables || [];
+        renderTableNav();
+        if (state.selTable && !state.tables.some((t) => t.name === state.selTable)) {
+          if (state.tables.length) { selectTable(state.tables[0].name); return; }
+          state.selTable = null; $("facet-panel").innerHTML = ""; $("results").innerHTML = '<div class="note">This database has no tables yet.</div>'; return;
+        }
+      }
+    } catch (_) {}
+    if (state.selTable) { loadFacets(); reloadBody(); }
+  }
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
     ws.onopen = () => setStatus(true, "live");
-    ws.onmessage = (ev) => { try { apply(JSON.parse(ev.data)); } catch (_) {} };
+    ws.onmessage = (ev) => { try { apply(JSON.parse(ev.data)); scheduleRefresh(); } catch (_) {} };
     ws.onclose = () => { setStatus(false, "reconnecting"); setTimeout(connect, 1500); };
     ws.onerror = () => ws.close();
   }
@@ -733,13 +886,25 @@
   $("self-link").textContent = location.host;
   $("sl-port").textContent = ":" + (location.port || (location.protocol === "https:" ? "443" : "80"));
 
-  // Restore from the URL on load (db/table applied once databases arrive), and
-  // honour browser back/forward.
+  // Default page size follows the window height; recompute on resize in auto mode.
+  state.pageSize = autoPageSize();
+  let resizeTimer = null;
+  window.addEventListener("resize", () => {
+    if (state.pageMode !== "auto") return;
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(() => {
+      const n = autoPageSize();
+      if (n !== state.pageSize) {
+        state.pageSize = n;
+        if (state.tab === "databases" && state.mode === "table" && state.subview === "rows" && state.selTable) loadRows();
+      }
+    }, 200);
+  });
+
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
   pendingNav = initial;
-  window.addEventListener("popstate", () => { restoreFromNav(parseUrl()); });
-
+  window.addEventListener("popstate", () => restoreFromNav(parseUrl()));
   connect();
 })();
 </script>

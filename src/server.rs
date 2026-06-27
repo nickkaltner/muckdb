@@ -53,7 +53,11 @@ pub async fn run() -> Result<()> {
         .route("/api/stats", get(api_stats))
         .route("/api/facets", get(api_facets))
         .route("/api/export", get(api_export))
+        .route("/api/schema", get(api_schema))
+        .route("/api/query", get(api_query))
         .route("/ws", get(ws_handler))
+        // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
+        .fallback(get(index))
         .with_state(state);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], PORT));
@@ -146,6 +150,14 @@ async fn api_state() -> Response {
     state_response()
 }
 
+/// A short, stable id for a database path, for clean URLs (/db/<id>/...).
+fn db_id(path: &str) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut h = std::collections::hash_map::DefaultHasher::new();
+    path.hash(&mut h);
+    format!("{:016x}", h.finish())[..8].to_string()
+}
+
 async fn api_databases() -> Response {
     match store::load_state() {
         Ok(state) => {
@@ -154,7 +166,7 @@ async fn api_databases() -> Response {
                 .into_iter()
                 .map(|p| {
                     let exists = Path::new(&p).exists();
-                    json!({ "path": p, "exists": exists })
+                    json!({ "id": db_id(&p), "path": p, "exists": exists })
                 })
                 .collect();
             Json(json!({ "databases": dbs })).into_response()
@@ -185,6 +197,8 @@ struct PreviewParams {
     q: Option<String>,
     /// JSON array of `{ "column": .., "value": .. }` facet filters.
     filter: Option<String>,
+    sort: Option<String>,
+    dir: Option<String>,
 }
 
 /// Parse the JSON `filter` query param into facet filters (empty on absence/error).
@@ -197,7 +211,16 @@ async fn api_preview(Query(p): Query<PreviewParams>) -> Response {
     let limit = p.limit.unwrap_or(PREVIEW_LIMIT).min(1000);
     let offset = p.offset.unwrap_or(0);
     let filters = parse_filters(p.filter.as_deref());
-    match introspect::preview(&p.db, &p.table, limit, offset, p.q.as_deref(), &filters) {
+    match introspect::preview(
+        &p.db,
+        &p.table,
+        limit,
+        offset,
+        p.q.as_deref(),
+        &filters,
+        p.sort.as_deref(),
+        p.dir.as_deref(),
+    ) {
         Ok(preview) => Json(preview).into_response(),
         Err(e) => error_json(&e),
     }
@@ -278,6 +301,26 @@ async fn api_export(Query(p): Query<ExportParams>) -> Response {
             )
                 .into_response()
         }
+        Err(e) => error_json(&e),
+    }
+}
+
+async fn api_schema(Query(p): Query<StatsParams>) -> Response {
+    match introspect::schema(&p.db, &p.table) {
+        Ok(cols) => Json(json!({ "columns": cols })).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct QueryParams {
+    db: String,
+    sql: String,
+}
+
+async fn api_query(Query(p): Query<QueryParams>) -> Response {
+    match introspect::query(&p.db, &p.sql) {
+        Ok(result) => Json(result).into_response(),
         Err(e) => error_json(&e),
     }
 }

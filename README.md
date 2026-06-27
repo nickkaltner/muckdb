@@ -71,10 +71,17 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | Endpoint | Description |
 |----------|-------------|
 | `GET /api/state` | history + known databases |
-| `GET /api/databases` | databases with existence flags |
+| `GET /api/databases` | databases with ids + existence flags |
 | `GET /api/tables?db=PATH` | tables/views in a database |
-| `GET /api/preview?db=PATH&table=NAME&limit=N` | first N rows |
+| `GET /api/preview?db&table&limit&offset&q&filter&sort&dir` | a page of rows (filtered/sorted) |
+| `GET /api/facets?db&table&q&filter` | per-column facets (values, numeric range, date range) |
+| `GET /api/stats?db&table` | per-column stats + histograms |
+| `GET /api/schema?db&table` | column definitions |
+| `GET /api/query?db&sql` | run a read-only query |
+| `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
 | `GET /ws` | WebSocket; pushes state on every change |
+
+The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`.
 
 ## Development
 
