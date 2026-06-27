@@ -99,6 +99,11 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let db_path = detect_db_path(args, &cwd);
+    // Group this invocation under a session if the agent set one.
+    let session = std::env::var("MUCKDB_SESSION")
+        .ok()
+        .filter(|s| !s.is_empty())
+        .map(|s| crate::session::slug(&s));
     let id = store::now_millis()
         .wrapping_mul(1000)
         .wrapping_add(std::process::id() as u64);
@@ -111,6 +116,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         db_path: db_path.clone(),
         phase: Phase::Start,
         exit_code: None,
+        session: session.clone(),
     })?;
 
     // Inherit stdio so muckdb behaves exactly like duckdb (interactive shell,
@@ -129,6 +135,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         db_path,
         phase: Phase::End,
         exit_code: Some(code),
+        session,
     })?;
 
     Ok(code)

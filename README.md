@@ -7,9 +7,11 @@ straight through — and muckdb quietly does two extra things:
 1. **Self-serves a live web view.** The first time you run it (or any time you
    run `muckdb --display`), it launches a background daemon that serves a web UI
    on **port 11000**, advertised over **mDNS** so it's discoverable on your LAN.
-2. **Keeps a pond-survey ledger.** Every invocation is recorded, and whenever a
-   command touches a database, the web view presents that database's tables and a
-   preview of its rows — updating in real time over a WebSocket.
+2. **Keeps a live ledger.** Every invocation is recorded, and whenever a command
+   touches a database, the web view presents that database's tables — rows
+   (with search, facets, sorting, pagination), per-column stats with histograms,
+   schema, a SQL query editor, and CSV/JSON export — updating in real time over a
+   WebSocket. It also hosts **sessions** (see below).
 
 It's a drop-in for the duckdb CLI, so exit codes, the interactive shell, and
 piping all behave exactly as before.
@@ -49,6 +51,39 @@ muckdb --stop                # stop the daemon
 Then open <http://localhost:11000> (or find `muckdb` via mDNS:
 `avahi-browse _muckdb._tcp` on Linux, `dns-sd -B _muckdb._tcp` on macOS).
 
+## Sessions (agent dashboards)
+
+A **session** is a named dashboard of **tiles** (panels) that a tool like Claude
+Code can post to from the CLI and update by name. Tiles are markdown notes or
+**data views** — backed by a duckdb view or inline SQL — rendered as a chart and
+explorable as a faceted search. Set `MUCKDB_SESSION` and your commands are also
+grouped under that session in the ledger.
+
+```sh
+muckdb session create analysis --title "Pond analysis"
+
+# a markdown panel (text or - for stdin)
+muckdb session post analysis --name notes --title Notes \
+  --md "# Findings\n\n- pH trends **down** over time"
+
+# a data panel from a duckdb view, charted as a bar
+muckdb mydb.db -c "CREATE VIEW by_species AS SELECT species, count(*) n FROM readings GROUP BY 1"
+muckdb session tile analysis --name species --db mydb.db --view by_species \
+  --chart bar --x species --y n --title "By species"
+
+# or straight from inline SQL, as a scatter
+muckdb session tile analysis --name temp --db mydb.db \
+  --sql "SELECT temp_c, ph FROM readings" --chart scatter --x temp_c --y ph
+
+muckdb session list
+muckdb session rm analysis --tile temp     # or: rm analysis (whole session)
+```
+
+Re-running `post`/`tile` with the same `--name` updates that tile in place; the
+dashboard updates live. Charts: `bar | line | area | scatter | pie | table`.
+Each data tile has an **explore** button that opens the view in the faceted
+table explorer.
+
 ## How it works
 
 - **CLI role** (the default): muckdb ensures the daemon is running, appends a
@@ -79,7 +114,9 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/schema?db&table` | column definitions |
 | `GET /api/query?db&sql` | run a read-only query |
 | `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
-| `GET /ws` | WebSocket; pushes state on every change |
+| `GET /api/sessions` | session dashboards (summaries) |
+| `GET /api/session?id=ID` | one session with its tiles |
+| `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 
 The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`.
 

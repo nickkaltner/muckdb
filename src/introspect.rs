@@ -15,6 +15,8 @@ pub struct TableInfo {
     pub name: String,
     pub column_count: i64,
     pub estimated_size: Option<i64>,
+    #[serde(default)]
+    pub is_view: bool,
 }
 
 /// A page of a table's rows, with columns in table order.
@@ -284,8 +286,12 @@ pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
     }
     let rows = query_json(
         db,
-        "SELECT schema_name, table_name, column_count, estimated_size \
-         FROM duckdb_tables() ORDER BY schema_name, table_name",
+        "SELECT schema_name, table_name AS name, column_count, estimated_size, false AS is_view \
+           FROM duckdb_tables() \
+         UNION ALL \
+         SELECT schema_name, view_name AS name, column_count, NULL AS estimated_size, true AS is_view \
+           FROM duckdb_views() WHERE NOT internal \
+         ORDER BY name",
     )?;
     let tables = rows
         .into_iter()
@@ -296,12 +302,13 @@ pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
                 .unwrap_or("main")
                 .to_string(),
             name: r
-                .get("table_name")
+                .get("name")
                 .and_then(Value::as_str)
                 .unwrap_or("")
                 .to_string(),
             column_count: r.get("column_count").and_then(Value::as_i64).unwrap_or(0),
             estimated_size: r.get("estimated_size").and_then(Value::as_i64),
+            is_view: r.get("is_view").and_then(Value::as_bool).unwrap_or(false),
         })
         .collect();
     Ok(tables)

@@ -20,7 +20,7 @@ use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::facade::PORT;
-use crate::{introspect, paths, store};
+use crate::{introspect, paths, session, store};
 
 const PREVIEW_LIMIT: u32 = 25;
 
@@ -55,6 +55,9 @@ pub async fn run() -> Result<()> {
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
         .route("/api/query", get(api_query))
+        .route("/api/sessions", get(api_sessions))
+        .route("/api/session", get(api_session))
+        .route("/chart.js", get(chart_js))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -88,9 +91,26 @@ fn register_mdns() -> Result<mdns_sd::ServiceDaemon> {
     Ok(mdns)
 }
 
-/// Watch the history store and broadcast fresh state on every change.
+/// The full snapshot pushed to browsers: history + databases + session summaries.
+fn snapshot_json() -> Option<String> {
+    let state = store::load_state().ok()?;
+    let sessions: Vec<_> = session::list()
+        .unwrap_or_default()
+        .into_iter()
+        .map(|s| json!({ "id": s.id, "title": s.title, "updated": s.updated, "tiles": s.tiles.len() }))
+        .collect();
+    serde_json::to_string(&json!({
+        "history": state.history,
+        "databases": state.databases,
+        "sessions": sessions,
+    }))
+    .ok()
+}
+
+/// Watch the history store and session files; broadcast fresh state on changes.
 fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
     let data_dir = paths::data_dir()?;
+    let sessions_dir = session::sessions_dir()?;
     let (raw_tx, raw_rx) = mpsc::channel();
 
     let mut watcher = notify::recommended_watcher(move |res: notify::Result<notify::Event>| {
@@ -114,16 +134,18 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
     watcher
         .watch(&data_dir, RecursiveMode::NonRecursive)
         .with_context(|| format!("watching {data_dir:?}"))?;
+    watcher
+        .watch(&sessions_dir, RecursiveMode::NonRecursive)
+        .with_context(|| format!("watching {sessions_dir:?}"))?;
 
     thread::spawn(move || {
         // The watcher is moved in so it lives as long as this thread.
         let _watcher = watcher;
-        // Dedupe: only broadcast when the derived state actually changed, so a
-        // stray filesystem event never turns into a client-side refresh storm.
+        // Dedupe: only broadcast when the snapshot actually changed, so a stray
+        // filesystem event never turns into a client-side refresh storm.
         let mut last_sent = String::new();
         for _ in raw_rx {
-            if let Ok(state) = store::load_state()
-                && let Ok(s) = serde_json::to_string(&state)
+            if let Some(s) = snapshot_json()
                 && s != last_sent
             {
                 last_sent.clone_from(&s);
@@ -325,6 +347,41 @@ async fn api_query(Query(p): Query<QueryParams>) -> Response {
     }
 }
 
+async fn api_sessions() -> Response {
+    match session::list() {
+        Ok(sessions) => {
+            let out: Vec<_> = sessions
+                .into_iter()
+                .map(|s| json!({ "id": s.id, "title": s.title, "updated": s.updated, "tiles": s.tiles.len() }))
+                .collect();
+            Json(json!({ "sessions": out })).into_response()
+        }
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct SessionParams {
+    id: String,
+}
+
+async fn api_session(Query(p): Query<SessionParams>) -> Response {
+    match session::load(&p.id) {
+        Ok(Some(s)) => Json(s).into_response(),
+        Ok(None) => (StatusCode::OK, Json(json!({ "error": "no such session" }))).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+/// Serve the vendored Chart.js for the session dashboards.
+async fn chart_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/chart.umd.min.js"),
+    )
+        .into_response()
+}
+
 fn error_json(e: &anyhow::Error) -> Response {
     (StatusCode::OK, Json(json!({ "error": format!("{e:#}") }))).into_response()
 }
@@ -335,8 +392,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Resp
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // Send the current snapshot immediately so a fresh client is populated.
-    if let Ok(st) = store::load_state()
-        && let Ok(s) = serde_json::to_string(&st)
+    if let Some(s) = snapshot_json()
         && socket.send(Message::Text(s.into())).await.is_err()
     {
         return;

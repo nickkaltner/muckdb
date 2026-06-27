@@ -36,6 +36,9 @@ pub struct Record {
     pub phase: Phase,
     #[serde(default)]
     pub exit_code: Option<i32>,
+    /// The session this invocation belongs to (from `MUCKDB_SESSION`), if any.
+    #[serde(default)]
+    pub session: Option<String>,
 }
 
 /// A folded view of one invocation, derived from its `Start`/`End` records.
@@ -48,6 +51,7 @@ pub struct Invocation {
     pub db_path: Option<String>,
     pub exit_code: Option<i32>,
     pub running: bool,
+    pub session: Option<String>,
 }
 
 /// The derived state the daemon serves: invocation history (newest last) plus
@@ -115,6 +119,7 @@ pub fn derive_state(records: &[Record]) -> State {
                 db_path: rec.db_path.clone(),
                 exit_code: None,
                 running: true,
+                session: rec.session.clone(),
             }),
             Phase::End => {
                 if let Some(inv) = history.iter_mut().rev().find(|i| i.id == rec.id) {
@@ -159,6 +164,7 @@ mod tests {
             db_path: db.map(str::to_string),
             phase,
             exit_code: exit,
+            session: None,
         }
     }
 

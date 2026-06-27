@@ -6,6 +6,7 @@ mod facade;
 mod introspect;
 mod paths;
 mod server;
+mod session;
 mod store;
 
 use std::process::exit;
@@ -31,6 +32,8 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         }
         Some("--status") => daemon::status(),
         Some("--stop") => daemon::stop(),
+        // Session dashboards: `muckdb session <create|list|post|tile|rm> ...`
+        Some("session") => session::cli(&args[1..]),
         Some("--display") => {
             facade::ensure_daemon()?;
             let url = format!("http://localhost:{}", facade::PORT);
