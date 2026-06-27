@@ -25,7 +25,7 @@ LINUX="$(sha x86_64-unknown-linux-gnu)"
 
 cat <<EOF
 class Muckdb < Formula
-  desc "Facade over the duckdb CLI with a live web view"
+  desc "Live web view and history for your duckdb databases"
   homepage "https://github.com/${REPO}"
   version "${VERSION}"
   license "MIT"

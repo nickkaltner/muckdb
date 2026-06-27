@@ -1,8 +1,8 @@
 # muckdb
 
-A thin facade over the [DuckDB](https://duckdb.org) CLI. Run `muckdb` exactly
-like you'd run `duckdb` — every argument is passed straight through — and muckdb
-quietly does two extra things:
+muckdb runs the [DuckDB](https://duckdb.org) CLI for you and adds a live web
+view. Run `muckdb` exactly like you'd run `duckdb` — every argument is passed
+straight through — and muckdb quietly does two extra things:
 
 1. **Self-serves a live web view.** The first time you run it (or any time you
    run `muckdb --display`), it launches a background daemon that serves a web UI
@@ -51,7 +51,7 @@ Then open <http://localhost:11000> (or find `muckdb` via mDNS:
 
 ## How it works
 
-- **Facade role** (the default): muckdb ensures the daemon is running, appends a
+- **CLI role** (the default): muckdb ensures the daemon is running, appends a
   record of the invocation to a shared on-disk log, then runs `duckdb` with your
   arguments, inheriting stdin/stdout/stderr.
 - **Daemon role**: a detached background process (`nohup`-style) running an
@@ -62,7 +62,7 @@ Then open <http://localhost:11000> (or find `muckdb` via mDNS:
   `~/Library/Application Support/muckdb/` on macOS). The CLI and daemon are
   decoupled — the CLI never talks to the daemon directly.
 - **Database views**: the daemon reads databases by shelling out to
-  `duckdb -readonly -json`, staying true to the "facade over the CLI" design.
+  `duckdb -readonly -json`, so reads go through the same CLI you'd use by hand.
 
 ### API
 
