@@ -24,6 +24,10 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--glow), var(--bg); background-attachment: fixed; color: var(--fg); font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  /* faint CRT scanlines — the terminal cue (kept very subtle) */
+  body::after { content: ""; position: fixed; inset: 0; z-index: 9999; pointer-events: none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,0.13) 0, rgba(0,0,0,0.13) 1px, transparent 1px, transparent 3px); opacity: 0.55; }
+  @media (prefers-reduced-motion: reduce) { body::after { display: none; } }
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
   ::selection { background: rgba(255, 122, 26, 0.28); }
@@ -416,7 +420,7 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
-    theme: "pastel",
+    theme: "slate",
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
@@ -459,18 +463,18 @@
     },
     slate: {
       label: "slate", vars: {
-        bg: "#17191c", surface: "#1f2226", raised: "#282c31", line: "#363b42", "line-soft": "#22262b",
-        fg: "#dfe3e8", muted: "#8a929d", faint: "#5b626c",
-        orange: "#caa46f", amber: "#dcc191", ember: "#a07f54", "orange-dim": "#7e6747", teal: "#86b3b0",
-        ok: "#9cb98c", fail: "#cf938b",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(180,185,195,0.04), transparent 70%)",
+        bg: "#0e1116", surface: "#161b22", raised: "#1e2630", line: "#323d4a", "line-soft": "#222b35",
+        fg: "#e9eef5", muted: "#97a4b6", faint: "#5e6b7c",
+        orange: "#f0b95e", amber: "#ffd488", ember: "#d2913c", "orange-dim": "#b07d3a", teal: "#5ec8bd",
+        ok: "#8fce8a", fail: "#e58a80",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(240,185,94,0.06), transparent 70%)",
       },
-      chart: ["#c2a06f", "#7fa6a0", "#b08fa0", "#9aa6c0", "#a7b58c", "#c79b8f", "#8fb0bf", "#b6a8c4"],
+      chart: ["#e3ab5e", "#5fbcae", "#8ea2e6", "#cf8aa0", "#9cc97f", "#d0a06a", "#79b8d6", "#b394d8"],
     },
   };
   function applyTheme(name) {
-    const t = THEMES[name] || THEMES.pastel;
-    state.theme = THEMES[name] ? name : "pastel";
+    const t = THEMES[name] || THEMES.slate;
+    state.theme = THEMES[name] ? name : "slate";
     const root = document.documentElement.style;
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
     PAL = t.chart.slice();
@@ -1084,7 +1088,7 @@
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   // The active chart palette — set by applyTheme().
-  let PAL = THEMES.pastel.chart.slice();
+  let PAL = THEMES.slate.chart.slice();
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1536,7 +1540,7 @@
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
   }
-  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "pastel");
+  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "slate");
 
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
