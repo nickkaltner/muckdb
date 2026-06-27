@@ -84,6 +84,9 @@ dashboard updates live. Charts: `bar | line | area | scatter | pie | table`.
 Each data tile has an **explore** button that opens the view in the faceted
 table explorer.
 
+**Try it:** `./demo.sh` seeds sample data (sales, a regular sensor series, and an
+irregular event stream) and builds a demo dashboard, then prints the URL.
+
 ## How it works
 
 - **CLI role** (the default): muckdb ensures the daemon is running, appends a

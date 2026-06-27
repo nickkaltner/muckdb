@@ -264,7 +264,9 @@
   .statusline.live .seg-state { color: var(--fg); }
   .seg-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-right: 8px; }
   .statusline.live .seg-state::before { background: var(--ok); }
-  .seg-spacer { flex: 1; border-right: 1px solid var(--line); }
+  .seg-db { flex: 1; min-width: 0; color: var(--orange-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .seg-db::before { content: "⛁ "; color: var(--faint); }
+  .seg-db:empty::before { content: ""; }
   .seg-clock { color: var(--fg); }
   .seg-port { color: var(--orange-dim); border-right: 0; }
 
@@ -327,7 +329,7 @@
     <span class="seg-item seg-brand">MUCKDB</span>
     <span class="seg-item seg-state" id="sl-state">connecting</span>
     <span class="seg-item seg-counts" id="sl-counts">0 commands · 0 databases</span>
-    <span class="seg-spacer"></span>
+    <span class="seg-item seg-db" id="sl-db"></span>
     <span class="seg-item seg-clock" id="sl-clock">--:--:--</span>
     <span class="seg-item seg-port" id="sl-port">:----</span>
   </footer>
@@ -498,7 +500,9 @@
   }
 
   // ---- nav --------------------------------------------------------------
+  function updateDbStatus() { const el = $("sl-db"); if (el) el.textContent = state.selDb || ""; }
   function renderDbNav() {
+    updateDbStatus();
     const dbs = state.databases;
     $("tab-n-databases").textContent = dbs.length;
     if (!dbs.length) {
