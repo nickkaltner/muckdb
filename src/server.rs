@@ -51,6 +51,7 @@ pub async fn run() -> Result<()> {
         .route("/api/tables", get(api_tables))
         .route("/api/preview", get(api_preview))
         .route("/api/stats", get(api_stats))
+        .route("/api/facets", get(api_facets))
         .route("/ws", get(ws_handler))
         .with_state(state);
 
@@ -178,20 +179,24 @@ struct PreviewParams {
     db: String,
     table: String,
     limit: Option<u32>,
+    offset: Option<u32>,
     /// Free-text search across all columns.
     q: Option<String>,
     /// JSON array of `{ "column": .., "value": .. }` facet filters.
     filter: Option<String>,
 }
 
+/// Parse the JSON `filter` query param into facet filters (empty on absence/error).
+fn parse_filters(raw: Option<&str>) -> Vec<introspect::Filter> {
+    raw.and_then(|s| serde_json::from_str(s).ok())
+        .unwrap_or_default()
+}
+
 async fn api_preview(Query(p): Query<PreviewParams>) -> Response {
     let limit = p.limit.unwrap_or(PREVIEW_LIMIT).min(1000);
-    let filters: Vec<introspect::Filter> = p
-        .filter
-        .as_deref()
-        .and_then(|s| serde_json::from_str(s).ok())
-        .unwrap_or_default();
-    match introspect::preview(&p.db, &p.table, limit, p.q.as_deref(), &filters) {
+    let offset = p.offset.unwrap_or(0);
+    let filters = parse_filters(p.filter.as_deref());
+    match introspect::preview(&p.db, &p.table, limit, offset, p.q.as_deref(), &filters) {
         Ok(preview) => Json(preview).into_response(),
         Err(e) => error_json(&e),
     }
@@ -206,6 +211,22 @@ struct StatsParams {
 async fn api_stats(Query(p): Query<StatsParams>) -> Response {
     match introspect::stats(&p.db, &p.table) {
         Ok(stats) => Json(stats).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct FacetsParams {
+    db: String,
+    table: String,
+    q: Option<String>,
+    filter: Option<String>,
+}
+
+async fn api_facets(Query(p): Query<FacetsParams>) -> Response {
+    let filters = parse_filters(p.filter.as_deref());
+    match introspect::facets(&p.db, &p.table, p.q.as_deref(), &filters) {
+        Ok(facets) => Json(json!({ "facets": facets })).into_response(),
         Err(e) => error_json(&e),
     }
 }

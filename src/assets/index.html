@@ -6,59 +6,32 @@
 <title>muckdb — live console</title>
 <style>
   :root {
-    --bg: #1c1a18;
-    --surface: #24211e;
-    --raised: #2c2825;
-    --line: #38332e;
-    --line-soft: #2f2a26;
-    --fg: #e7e0d8;
-    --muted: #9a8f82;
-    --faint: #6f665c;
-    --orange: #ff7a1a;
-    --orange-dim: #c2611a;
-    --ok: #8aa66b;
-    --fail: #d2563f;
+    --bg: #1c1a18; --surface: #24211e; --raised: #2c2825;
+    --line: #38332e; --line-soft: #2f2a26;
+    --fg: #e7e0d8; --muted: #9a8f82; --faint: #6f665c;
+    --orange: #ff7a1a; --orange-dim: #c2611a; --ok: #8aa66b; --fail: #d2563f;
     --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-    --titlebar-h: 46px;
-    --tabs-h: 38px;
-    --statusline-h: 30px;
+    --titlebar-h: 46px; --tabs-h: 38px; --statusline-h: 30px;
   }
-
   * { box-sizing: border-box; }
   html, body { height: 100%; }
-
   body {
-    margin: 0;
-    background: var(--bg);
-    color: var(--fg);
-    font-family: var(--mono);
-    font-size: 14px;
-    line-height: 1.5;
-    -webkit-font-smoothing: antialiased;
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased;
   }
-
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
   ::selection { background: rgba(255, 122, 26, 0.28); }
   :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 3px; }
 
-  /* ---- titlebar -------------------------------------------------------- */
-  .titlebar {
-    height: var(--titlebar-h);
-    display: flex; align-items: center; gap: 14px;
-    padding: 0 18px;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--raised), var(--surface));
-  }
+  /* titlebar */
+  .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); }
   .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
   .wordmark .db { color: var(--orange); }
   .subtitle { font-size: 11px; letter-spacing: 0.24em; text-transform: uppercase; color: var(--faint); }
   .titlebar .spacer { flex: 1; }
-  .conn {
-    display: inline-flex; align-items: center; gap: 8px;
-    font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted);
-  }
+  .conn { display: inline-flex; align-items: center; gap: 8px; font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
   .cursor { width: 8px; height: 15px; background: var(--faint); display: inline-block; }
   .conn.live { color: var(--fg); }
   .conn.live .cursor { background: var(--orange); animation: blink 1.1s steps(1) infinite; }
@@ -66,55 +39,31 @@
   .host { font-size: 12px; color: var(--muted); padding: 3px 9px; border: 1px solid var(--line); border-radius: 5px; }
   .host:hover { color: var(--fg); border-color: var(--orange-dim); text-decoration: none; }
 
-  /* ---- tab strip ------------------------------------------------------- */
-  .tabs {
-    height: var(--tabs-h);
-    display: flex; align-items: stretch;
-    padding: 0 10px;
-    border-bottom: 1px solid var(--line);
-    background: var(--surface);
-  }
-  .tab {
-    font: inherit; font-size: 12px;
-    letter-spacing: 0.16em; text-transform: uppercase;
-    background: none; border: 0; border-bottom: 2px solid transparent;
-    color: var(--muted); padding: 0 16px; cursor: pointer;
-  }
+  /* tab strip */
+  .tabs { height: var(--tabs-h); display: flex; align-items: stretch; padding: 0 10px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .tab { font: inherit; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 16px; cursor: pointer; }
   .tab:hover { color: var(--fg); }
   .tab.active { color: var(--orange); border-bottom-color: var(--orange); }
   .tab .badge-n { color: var(--faint); margin-left: 7px; }
   .tab.active .badge-n { color: var(--orange-dim); }
-  .tabs-spacer { flex: 1; }
-  .tabs-hint { display: flex; align-items: center; font-size: 11px; color: var(--faint); padding-right: 8px; }
 
-  /* ---- views ----------------------------------------------------------- */
-  main {
-    height: calc(100vh - var(--titlebar-h) - var(--tabs-h) - var(--statusline-h));
-    overflow: hidden;
-  }
+  /* views */
+  main { height: calc(100vh - var(--titlebar-h) - var(--tabs-h) - var(--statusline-h)); overflow: hidden; }
   .view { display: none; height: 100%; }
   .view.active { display: block; }
   .view.scroll { overflow: auto; }
+  .view.flex.active { display: flex; flex-direction: column; }
 
-  .panel-head {
-    display: flex; align-items: center; gap: 9px;
-    margin-bottom: 14px; padding-bottom: 9px;
-    border-bottom: 1px solid var(--line-soft);
-  }
+  .panel-head { display: flex; align-items: center; gap: 9px; margin-bottom: 14px; padding-bottom: 9px; border-bottom: 1px solid var(--line-soft); }
   .panel-head .label { font-size: 11px; letter-spacing: 0.26em; text-transform: uppercase; color: var(--muted); }
   .panel-head .count { font-size: 11px; color: var(--faint); }
   .panel-head .count::before { content: "["; color: var(--line); }
-  .panel-head .count::after  { content: "]"; color: var(--line); }
+  .panel-head .count::after { content: "]"; color: var(--line); }
 
-  /* ---- ledger ---------------------------------------------------------- */
+  /* ledger */
   #view-ledger { padding: 16px 18px; }
   .ledger { list-style: none; margin: 0; padding: 0; max-width: 1100px; }
-  .entry {
-    padding: 8px 10px 8px 11px;
-    border-left: 2px solid var(--line);
-    margin-bottom: 4px; background: var(--surface);
-    border-radius: 0 4px 4px 0;
-  }
+  .entry { padding: 8px 10px 8px 11px; border-left: 2px solid var(--line); margin-bottom: 4px; background: var(--surface); border-radius: 0 4px 4px 0; }
   .entry.ok { border-left-color: var(--ok); }
   .entry.run { border-left-color: var(--orange); }
   .entry.fail { border-left-color: var(--fail); }
@@ -128,76 +77,65 @@
   .entry .meta .db { color: var(--orange-dim); cursor: pointer; }
   .entry .meta .db:hover { color: var(--orange); }
   .badge { font-size: 10px; letter-spacing: 0.06em; padding: 0 6px; border-radius: 3px; border: 1px solid currentColor; }
-  .badge.ok { color: var(--ok); }
-  .badge.run { color: var(--orange); }
-  .badge.fail { color: var(--fail); }
+  .badge.ok { color: var(--ok); } .badge.run { color: var(--orange); } .badge.fail { color: var(--fail); }
 
-  /* ---- databases: rail + workspace ------------------------------------- */
-  .db-layout { display: grid; grid-template-columns: 250px 1fr; height: 100%; }
-  .db-rail { border-right: 1px solid var(--line); padding: 14px 12px; overflow: auto; }
-  .rail-list { list-style: none; margin: 0; padding: 0; }
-  .rail-item {
-    display: block; width: 100%; text-align: left; font: inherit;
-    background: none; border: 0; border-left: 2px solid transparent;
-    color: var(--fg); padding: 8px 10px; cursor: pointer; border-radius: 0 4px 4px 0;
-  }
-  .rail-item:hover { background: var(--raised); }
-  .rail-item.active { background: var(--raised); border-left-color: var(--orange); }
-  .rail-item .rname { font-size: 13px; }
-  .rail-item .rdir { display: block; font-size: 11px; color: var(--faint); }
-  .rail-item .rmissing { font-size: 10px; text-transform: uppercase; color: var(--fail); letter-spacing: 0.08em; }
+  /* databases shell: two horizontal nav rows + body */
+  .navrow { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
+  .navrow .rowlabel { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); margin-right: 6px; flex: none; }
+  .navchip { font: inherit; font-size: 12px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--fg); cursor: pointer; flex: none; }
+  .navchip:hover { border-color: var(--orange-dim); }
+  .navchip.active { border-color: var(--orange); color: var(--orange); }
+  .navchip .sub { color: var(--faint); margin-left: 7px; font-size: 11px; }
+  .navchip.l1 { background: var(--raised); }
 
-  .db-workspace { overflow: auto; padding: 14px 18px; }
-  .ws-empty { color: var(--muted); font-family: var(--sans); padding: 30px 4px; }
+  .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
+  .facet-panel { border-right: 1px solid var(--line); overflow: auto; padding: 12px 12px 24px; }
+  .results { overflow: auto; padding: 14px 18px 24px; }
 
-  .tabnav { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--line-soft); }
-  .tnav {
-    font: inherit; font-size: 12px; padding: 5px 11px;
-    border: 1px solid var(--line); border-radius: 5px; background: var(--surface);
-    color: var(--fg); cursor: pointer;
-  }
-  .tnav .n { color: var(--faint); margin-left: 7px; }
-  .tnav:hover { border-color: var(--orange-dim); }
-  .tnav.active { border-color: var(--orange); color: var(--orange); }
+  /* facet panel */
+  .facet-search { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 11px; margin-bottom: 6px; }
+  .facet-search:focus { outline: none; border-color: var(--orange-dim); }
+  .facet-clear { font-size: 11px; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 2px 0 10px; }
+  .facet-clear:hover { color: var(--orange); }
+  .facet-group { margin-bottom: 14px; }
+  .facet-col { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .facet-val { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 4px 6px; border-radius: 4px; position: relative; }
+  .facet-val:hover { background: var(--raised); }
+  .facet-val .box { width: 13px; height: 13px; border: 1px solid var(--line); border-radius: 3px; z-index: 1; }
+  .facet-val.on .box { background: var(--orange); border-color: var(--orange); }
+  .facet-val .fv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
+  .facet-val.on .fv { color: var(--orange); }
+  .facet-val .fc { color: var(--faint); z-index: 1; }
+  .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: rgba(194, 97, 26, 0.13); border-radius: 4px; }
 
-  /* ---- table panel ----------------------------------------------------- */
+  /* results header + filters */
   .tp-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
   .tp-name { font-size: 16px; color: var(--fg); }
   .tp-rows { font-size: 12px; color: var(--faint); }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; margin-left: auto; }
-  .seg button {
-    font: inherit; font-size: 12px; background: var(--surface); color: var(--muted);
-    border: 0; padding: 5px 14px; cursor: pointer;
-  }
+  .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button.active { background: var(--orange); color: #1c1a18; font-weight: 700; }
-
-  .filters { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
-  .search {
-    font: inherit; font-size: 13px; flex: 1; min-width: 180px;
-    background: var(--bg); color: var(--fg);
-    border: 1px solid var(--line); border-radius: 5px; padding: 7px 11px;
-  }
-  .search::placeholder { color: var(--faint); }
-  .search:focus { outline: none; border-color: var(--orange-dim); }
-  .fchip {
-    display: inline-flex; align-items: center; gap: 7px; font-size: 12px;
-    background: var(--raised); border: 1px solid var(--orange-dim); color: var(--fg);
-    padding: 4px 6px 4px 10px; border-radius: 5px;
-  }
+  .active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+  .fchip { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; background: var(--raised); border: 1px solid var(--orange-dim); color: var(--fg); padding: 4px 6px 4px 10px; border-radius: 5px; }
   .fchip .col { color: var(--orange); }
   .fchip .x { cursor: pointer; color: var(--muted); border: 0; background: none; font: inherit; padding: 0 2px; }
   .fchip .x:hover { color: var(--fail); }
 
-  .preview-wrap { border: 1px solid var(--line); border-radius: 5px; overflow: auto; max-height: calc(100vh - 320px); }
+  /* rows table + pager */
+  .preview-wrap { border: 1px solid var(--line); border-radius: 5px; overflow: auto; max-height: calc(100vh - 360px); }
   table.preview { border-collapse: collapse; width: 100%; font-size: 12px; }
   table.preview th, table.preview td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
   table.preview thead th { position: sticky; top: 0; background: var(--raised); color: var(--orange); border-bottom: 1px solid var(--orange-dim); letter-spacing: 0.03em; }
   table.preview tbody tr:hover { background: var(--raised); }
   table.preview td.null { color: var(--faint); }
-  .preview-foot { font-size: 11px; color: var(--faint); margin-top: 6px; }
+  .pager { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
+  .pager button { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 12px; cursor: pointer; }
+  .pager button:hover:not(:disabled) { border-color: var(--orange-dim); }
+  .pager button:disabled { opacity: 0.35; cursor: default; }
+  .pager .range b { color: var(--fg); font-weight: 400; }
 
-  /* ---- stats ----------------------------------------------------------- */
+  /* stats */
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
   .stat-card { border: 1px solid var(--line); border-radius: 6px; background: var(--surface); padding: 12px 14px; }
   .stat-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
@@ -205,21 +143,14 @@
   .stat-type { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--orange-dim); }
   .stat-meta { font-size: 11px; color: var(--faint); margin-bottom: 10px; }
   .stat-meta b { color: var(--muted); font-weight: 400; }
-
   .hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin-top: 6px; }
   .hist .bar { flex: 1; background: var(--orange-dim); min-height: 2px; border-radius: 1px 1px 0 0; }
   .hist .bar:hover { background: var(--orange); }
   .hist-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 5px; }
   .stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
   .stat-nums b { color: var(--fg); font-weight: 400; }
-
   .toplist { display: flex; flex-direction: column; gap: 4px; }
-  .toprow {
-    display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px;
-    font: inherit; font-size: 12px; text-align: left;
-    background: none; border: 0; color: var(--fg); cursor: pointer;
-    padding: 3px 4px; border-radius: 4px; position: relative;
-  }
+  .toprow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font: inherit; font-size: 12px; text-align: left; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 3px 4px; border-radius: 4px; position: relative; }
   .toprow:hover { background: var(--raised); }
   .toprow .tv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .toprow .tc { color: var(--faint); z-index: 1; }
@@ -227,27 +158,20 @@
 
   .note { font-size: 12px; color: var(--muted); padding: 4px 0; }
   .note.err { color: var(--fail); }
-  .empty {
-    font-family: var(--sans); font-size: 13px; color: var(--muted);
-    border: 1px dashed var(--line); border-radius: 6px; padding: 20px; line-height: 1.6;
-  }
+  .empty { font-family: var(--sans); font-size: 13px; color: var(--muted); border: 1px dashed var(--line); border-radius: 6px; padding: 20px; line-height: 1.6; }
   .empty code { font-family: var(--mono); color: var(--orange); background: var(--raised); padding: 1px 6px; border-radius: 3px; }
 
-  /* ---- sessions placeholder -------------------------------------------- */
+  /* sessions */
   #view-sessions { padding: 40px 18px; }
   .todo { max-width: 640px; margin: 0 auto; }
   .todo h2 { font-size: 18px; color: var(--fg); margin: 0 0 6px; }
   .todo .tag { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: #1c1a18; background: var(--orange); padding: 2px 8px; border-radius: 4px; }
-  .todo p { font-family: var(--sans); color: var(--muted); }
-  .todo ul { font-family: var(--sans); color: var(--muted); padding-left: 18px; }
+  .todo p, .todo ul { font-family: var(--sans); color: var(--muted); }
+  .todo ul { padding-left: 18px; }
   .todo code { color: var(--orange); }
 
-  /* ---- statusline ------------------------------------------------------ */
-  .statusline {
-    position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h);
-    display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em;
-    background: var(--surface); border-top: 1px solid var(--line);
-  }
+  /* statusline */
+  .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: var(--surface); border-top: 1px solid var(--line); }
   .statusline .seg-item { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted); border-right: 1px solid var(--line); }
   .seg-brand { background: var(--orange); color: #1c1a18 !important; font-weight: 700; letter-spacing: 0.14em; }
   .seg-state { text-transform: uppercase; letter-spacing: 0.16em; }
@@ -258,9 +182,9 @@
   .seg-clock { color: var(--fg); }
   .seg-port { color: var(--orange-dim); border-right: 0; }
 
-  @media (max-width: 860px) {
-    .db-layout { grid-template-columns: 1fr; }
-    .db-rail { border-right: 0; border-bottom: 1px solid var(--line); max-height: 180px; }
+  @media (max-width: 900px) {
+    .db-body { grid-template-columns: 1fr; }
+    .facet-panel { border-right: 0; border-bottom: 1px solid var(--line); max-height: 200px; }
     .subtitle, .seg-counts { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
@@ -279,44 +203,25 @@
   </header>
 
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="ledger">ledger<span class="badge-n" id="tab-n-ledger">0</span></button>
-    <button class="tab" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
+    <button class="tab active" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
     <button class="tab" data-tab="sessions">sessions</button>
-    <span class="tabs-spacer"></span>
-    <span class="tabs-hint" id="tabs-hint"></span>
+    <button class="tab" data-tab="ledger">ledger<span class="badge-n" id="tab-n-ledger">0</span></button>
   </nav>
 
   <main>
-    <!-- LEDGER -->
-    <section class="view active scroll" id="view-ledger" aria-label="Command history">
-      <div class="panel-head"><span class="label">history</span><span class="count" id="hist-count">0</span></div>
-      <ul class="ledger" id="ledger"></ul>
-      <div class="empty" id="ledger-empty">
-        No commands yet. Run <code>muckdb mydb.db</code> in your terminal and it streams in here.
-      </div>
-    </section>
-
     <!-- DATABASES -->
-    <section class="view" id="view-databases" aria-label="Databases">
-      <div class="db-layout">
-        <aside class="db-rail">
-          <div class="panel-head"><span class="label">databases</span><span class="count" id="db-count">0</span></div>
-          <ul class="rail-list" id="rail"></ul>
-          <div class="empty" id="rail-empty">
-            No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.
-          </div>
-        </aside>
-        <div class="db-workspace">
-          <div class="ws-empty" id="ws-empty">Select a database from the left to browse its tables.</div>
-          <div id="ws-content" hidden>
-            <div class="tabnav" id="table-tabs"></div>
-            <div id="table-panel"></div>
-          </div>
+    <section class="view flex active" id="view-databases" aria-label="Databases">
+      <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span></div>
+      <div class="navrow" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></div>
+      <div class="db-body">
+        <aside class="facet-panel" id="facet-panel"></aside>
+        <div class="results" id="results">
+          <div class="empty" id="db-empty">No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.</div>
         </div>
       </div>
     </section>
 
-    <!-- SESSIONS (todo) -->
+    <!-- SESSIONS -->
     <section class="view scroll" id="view-sessions" aria-label="Sessions">
       <div class="todo">
         <p><span class="tag">coming soon</span></p>
@@ -333,6 +238,13 @@
         <p>Nothing to configure yet — this tab will fill in once sessions land.</p>
       </div>
     </section>
+
+    <!-- LEDGER -->
+    <section class="view scroll" id="view-ledger" aria-label="Command history">
+      <div class="panel-head"><span class="label">history</span><span class="count" id="hist-count">0</span></div>
+      <ul class="ledger" id="ledger"></ul>
+      <div class="empty" id="ledger-empty">No commands yet. Run <code>muckdb mydb.db</code> in your terminal and it streams in here.</div>
+    </section>
   </main>
 
   <footer class="statusline" id="statusline">
@@ -348,9 +260,10 @@
 (() => {
   "use strict";
   const $ = (id) => document.getElementById(id);
+  const PAGE = 100;
 
   const state = {
-    tab: "ledger",
+    tab: "databases",
     history: [],
     databases: [],     // [{path, exists}]
     selDb: null,
@@ -358,30 +271,23 @@
     selTable: null,
     subview: "rows",   // "rows" | "stats"
     q: "",
-    filters: [],       // [{column, value}]
+    filters: [],       // [{column, value}] — multiple per column = OR
+    facets: [],        // [{name, values:[{value,count}]}]
+    page: 0,
+    total: 0,
   };
   let lastIds = new Set();
   let searchTimer = null;
 
   // ---- helpers ----------------------------------------------------------
-  function esc(s) {
-    return String(s).replace(/[&<>"']/g, (c) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-  }
+  function esc(s) { return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c])); }
   function attr(s) { return esc(s).replace(/`/g, "&#96;"); }
-  function fmtTime(ms) {
-    const d = new Date(ms);
-    return d.toLocaleTimeString([], { hour12: false }) +
-      "." + String(d.getMilliseconds()).padStart(3, "0").slice(0, 2);
-  }
+  function fmtTime(ms) { const d = new Date(ms); return d.toLocaleTimeString([], { hour12: false }) + "." + String(d.getMilliseconds()).padStart(3, "0").slice(0, 2); }
   function basename(p) { const i = p.replace(/\/+$/, "").lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
-  function dirname(p)  { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
+  function dirname(p) { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
   function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
-  function fmtNum(n) {
-    if (n === null || n === undefined) return "—";
-    if (Number.isInteger(n)) return String(n);
-    return (Math.round(n * 1000) / 1000).toString();
-  }
+  function fmtNum(n) { if (n === null || n === undefined) return "—"; return Number.isInteger(n) ? String(n) : (Math.round(n * 1000) / 1000).toString(); }
+  function hasFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val); }
 
   // ---- tabs -------------------------------------------------------------
   function setTab(tab) {
@@ -395,137 +301,152 @@
   function entryClass(inv) { return inv.running ? "run" : (inv.exit_code === 0 ? "ok" : "fail"); }
   function badge(inv) {
     if (inv.running) return '<span class="badge run">running</span>';
-    return inv.exit_code === 0
-      ? '<span class="badge ok">exit 0</span>'
-      : `<span class="badge fail">exit ${inv.exit_code}</span>`;
+    return inv.exit_code === 0 ? '<span class="badge ok">exit 0</span>' : `<span class="badge fail">exit ${inv.exit_code}</span>`;
   }
   function renderLedger() {
     const history = state.history;
     $("hist-count").textContent = history.length;
     $("tab-n-ledger").textContent = history.length;
     $("ledger-empty").style.display = history.length ? "none" : "block";
-
     const newIds = new Set(history.map((h) => h.id));
     $("ledger").innerHTML = history.slice().reverse().map((inv) => {
       const cls = entryClass(inv);
       const fresh = !lastIds.has(inv.id) ? " fresh" : "";
       const args = (inv.args || []).map(esc).join(" ");
-      const db = inv.db_path
-        ? `<span class="db" data-open-db="${attr(inv.db_path)}">${esc(basename(inv.db_path))}</span>` : "";
+      const db = inv.db_path ? `<span class="db" data-open-db="${attr(inv.db_path)}">${esc(basename(inv.db_path))}</span>` : "";
       return `<li class="entry ${cls}${fresh}">
         <div class="cmd"><span class="prompt">❯</span> <span class="prog">muckdb</span> ${args || "<em>(interactive shell)</em>"}</div>
-        <div class="meta"><span>${fmtTime(inv.ts)}</span>${badge(inv)}${db}</div>
-      </li>`;
+        <div class="meta"><span>${fmtTime(inv.ts)}</span>${badge(inv)}${db}</div></li>`;
     }).join("");
     lastIds = newIds;
   }
 
-  // ---- databases rail ---------------------------------------------------
-  function renderRail() {
+  // ---- db / table nav ---------------------------------------------------
+  function renderDbNav() {
     const dbs = state.databases;
-    $("db-count").textContent = dbs.length;
     $("tab-n-databases").textContent = dbs.length;
-    $("rail-empty").style.display = dbs.length ? "none" : "block";
-    $("rail").innerHTML = dbs.map((db) => {
-      const active = db.path === state.selDb ? " active" : "";
-      const missing = db.exists ? "" : '<span class="rmissing">missing</span>';
-      return `<li><button class="rail-item${active}" data-db="${attr(db.path)}">
-        <span class="rname">${esc(basename(db.path))}</span> ${missing}
-        <span class="rdir">${esc(dirname(db.path))}</span>
-      </button></li>`;
-    }).join("");
-
-    // If the selected database vanished, reset the workspace.
-    if (state.selDb && !dbs.some((d) => d.path === state.selDb)) {
-      state.selDb = null; state.selTable = null; state.tables = [];
-      $("ws-content").hidden = true; $("ws-empty").style.display = "block";
+    if (!dbs.length) {
+      $("db-chips").innerHTML = '<span class="note">none</span>';
+      $("table-nav").hidden = true;
+      $("facet-panel").innerHTML = "";
+      $("results").innerHTML = '<div class="empty">No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.</div>';
+      return;
     }
+    $("db-chips").innerHTML = dbs.map((db) => {
+      const active = db.path === state.selDb ? " active" : "";
+      const miss = db.exists ? "" : ' <span class="sub" style="color:var(--fail)">missing</span>';
+      return `<button class="navchip l1${active}" data-db="${attr(db.path)}" title="${attr(db.path)}">${esc(basename(db.path))}${miss}</button>`;
+    }).join(" ");
+  }
+  function renderTableNav() {
+    if (!state.tables.length) { $("table-nav").hidden = true; return; }
+    $("table-nav").hidden = false;
+    $("table-chips").innerHTML = state.tables.map((t) => {
+      const active = t.name === state.selTable ? " active" : "";
+      return `<button class="navchip${active}" data-table="${attr(t.name)}">${esc(t.name)}<span class="sub">${t.column_count}c</span></button>`;
+    }).join(" ");
   }
 
-  // ---- database selection ----------------------------------------------
   async function selectDb(path) {
-    state.selDb = path;
-    state.selTable = null; state.tables = [];
-    state.q = ""; state.filters = [];
-    renderRail();
-    $("ws-empty").style.display = "none";
-    $("ws-content").hidden = false;
-    $("table-tabs").innerHTML = '<span class="note">loading tables…</span>';
-    $("table-panel").innerHTML = "";
+    state.selDb = path; state.selTable = null; state.tables = [];
+    state.q = ""; state.filters = []; state.page = 0; state.facets = [];
+    renderDbNav();
+    $("facet-panel").innerHTML = "";
+    $("results").innerHTML = '<div class="note">loading tables…</div>';
     try {
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(path))).json();
-      if (data.error) { $("table-tabs").innerHTML = `<span class="note err">${esc(data.error)}</span>`; return; }
+      if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       state.tables = data.tables || [];
-      renderTableTabs();
+      renderTableNav();
       if (state.tables.length) selectTable(state.tables[0].name);
-      else $("table-panel").innerHTML = '<div class="note">This database has no tables yet.</div>';
-    } catch (e) {
-      $("table-tabs").innerHTML = `<span class="note err">${esc(String(e))}</span>`;
-    }
-  }
-  function renderTableTabs() {
-    $("table-tabs").innerHTML = state.tables.map((t) => {
-      const active = t.name === state.selTable ? " active" : "";
-      return `<button class="tnav${active}" data-table="${attr(t.name)}">${esc(t.name)}<span class="n">${t.column_count} cols</span></button>`;
-    }).join("");
-  }
-  function selectTable(name) {
-    state.selTable = name;
-    state.subview = "rows";
-    state.q = ""; state.filters = [];
-    renderTableTabs();
-    renderTablePanel();
+      else { $("results").innerHTML = '<div class="note">This database has no tables yet.</div>'; $("facet-panel").innerHTML = ""; }
+    } catch (e) { $("results").innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
 
-  // ---- table panel (rows / stats) --------------------------------------
-  function renderTablePanel() {
+  function selectTable(name) {
+    state.selTable = name; state.subview = "rows";
+    state.q = ""; state.filters = []; state.page = 0; state.facets = [];
+    renderTableNav();
+    loadFacets();
+    renderResults();
+  }
+
+  // ---- facets (left panel) ----------------------------------------------
+  async function loadFacets() {
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    try {
+      const data = await (await fetch("/api/facets?" + params.toString())).json();
+      state.facets = data.error ? [] : (data.facets || []);
+    } catch (_) { state.facets = []; }
+    renderFacetPanel();
+  }
+  function renderFacetPanel() {
+    const groups = state.facets.map((f) => {
+      const max = Math.max(1, ...f.values.map((v) => v.count));
+      const vals = f.values.map((v) => {
+        const on = hasFilter(f.name, v.value) ? " on" : "";
+        return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}">
+          <span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span>
+          <span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span>
+        </button>`;
+      }).join("");
+      return `<div class="facet-group"><div class="facet-col">${esc(f.name)}</div>${vals}</div>`;
+    }).join("");
+    const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
+    const body = state.facets.length ? groups : '<div class="note">No categorical columns to facet.</div>';
+    $("facet-panel").innerHTML = `
+      <input class="facet-search" id="facet-search" type="search" placeholder="search all columns…" value="${attr(state.q)}" />
+      ${clear}${body}`;
+  }
+
+  // ---- results (right) --------------------------------------------------
+  function renderResults() {
     const t = state.tables.find((x) => x.name === state.selTable);
-    const cols = t ? `${t.column_count} columns` : "";
-    $("table-panel").innerHTML = `
+    const colCount = t ? `${t.column_count} columns` : "";
+    const chips = state.filters.map((f, i) =>
+      `<span class="fchip"><span class="col">${esc(f.column)}</span> = ${esc(f.value)}
+        <button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`).join("");
+    $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
-        <span class="tp-rows">${cols}</span>
+        <span class="tp-rows">${colCount}</span>
         <span class="seg">
           <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
           <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
         </span>
       </div>
-      <div id="sub"></div>`;
-    if (state.subview === "rows") renderRowsSub(); else renderStatsSub();
-  }
-
-  function renderRowsSub() {
-    const chips = state.filters.map((f, i) =>
-      `<span class="fchip"><span class="col">${esc(f.column)}</span> = ${esc(f.value)}
-        <button class="x" data-rmfilter="${i}" aria-label="remove filter">✕</button></span>`).join("");
-    $("sub").innerHTML = `
-      <div class="filters">
-        <input class="search" id="search" type="search" placeholder="search all columns…" value="${attr(state.q)}" />
-        ${chips}
-      </div>
-      <div id="rows-slot"><div class="note">loading rows…</div></div>`;
-    loadRows();
+      ${chips ? `<div class="active-filters">${chips}</div>` : ""}
+      <div id="result-body"></div>`;
+    if (state.subview === "rows") loadRows(); else loadStats();
   }
 
   async function loadRows() {
-    const slot = $("rows-slot");
+    const slot = $("result-body");
     if (!slot) return;
-    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    slot.innerHTML = '<div class="note">loading rows…</div>';
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable, limit: PAGE, offset: state.page * PAGE });
     if (state.q.trim()) params.set("q", state.q.trim());
     if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
     try {
       const data = await (await fetch("/api/preview?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      state.total = data.total || 0;
       const cols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">No rows match the current filters.</div>'; return; }
       const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
       const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
+      const from = state.page * PAGE + 1, to = state.page * PAGE + rows.length;
+      const lastPage = (state.page + 1) * PAGE >= state.total;
       slot.innerHTML = `<div class="preview-wrap"><table class="preview">
         <thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
-        <div class="preview-foot">${plural(rows.length, "row")} shown · ${plural(cols.length, "column")}</div>`;
-    } catch (e) {
-      slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`;
-    }
+        <div class="pager">
+          <button data-page="prev" ${state.page === 0 ? "disabled" : ""}>‹ prev</button>
+          <span class="range">showing <b>${from}–${to}</b> of <b>${state.total}</b></span>
+          <button data-page="next" ${lastPage ? "disabled" : ""}>next ›</button>
+        </div>`;
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function cell(v) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
@@ -533,106 +454,111 @@
     return `<td>${esc(String(v))}</td>`;
   }
 
-  async function renderStatsSub() {
-    $("sub").innerHTML = '<div class="note">computing stats…</div>';
+  async function loadStats() {
+    const slot = $("result-body");
+    if (!slot) return;
+    slot.innerHTML = '<div class="note">computing stats…</div>';
     const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
     try {
       const data = await (await fetch("/api/stats?" + params.toString())).json();
-      if (data.error) { $("sub").innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
-      const cards = (data.columns || []).map((c) => statCard(c, data.row_count)).join("");
-      $("sub").innerHTML = `<div class="stats-grid">${cards}</div>`;
-    } catch (e) {
-      $("sub").innerHTML = `<div class="note err">${esc(String(e))}</div>`;
-    }
+      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      slot.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-
   function statCard(c, rowCount) {
     const meta = `<span class="stat-meta"><b>nulls</b> ${c.nulls} · <b>distinct</b> ${c.distinct} · <b>rows</b> ${rowCount}</span>`;
     let body = "";
     if (c.numeric && c.histogram && c.histogram.length) {
       const max = Math.max(1, ...c.histogram.map((b) => b.count));
-      const bars = c.histogram.map((b) =>
-        `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%"
-          title="[${fmtNum(b.lo)}, ${fmtNum(b.hi)}) · ${b.count}"></div>`).join("");
+      const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${fmtNum(b.lo)}, ${fmtNum(b.hi)}) · ${b.count}"></div>`).join("");
       body = `<div class="hist">${bars}</div>
         <div class="hist-axis"><span>${fmtNum(c.min)}</span><span>${fmtNum(c.max)}</span></div>
         <div class="stat-nums"><span><b>min</b> ${fmtNum(c.min)}</span><span><b>avg</b> ${fmtNum(c.avg)}</span><span><b>max</b> ${fmtNum(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
       body = `<div class="toplist">` + c.top.map((t) =>
-        `<button class="toprow" data-facet-col="${attr(c.name)}" data-facet-val="${attr(t.value)}">
+        `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}">
           <span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span>
-          <span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span>
-        </button>`).join("") + `</div>`;
-    } else {
-      body = '<div class="note">no distribution available.</div>';
-    }
-    return `<div class="stat-card">
-      <div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>
-      ${meta}${body}</div>`;
+          <span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
+    } else { body = '<div class="note">no distribution available.</div>'; }
+    return `<div class="stat-card"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
   }
 
-  function addFilter(column, value) {
-    if (!state.filters.some((f) => f.column === column && f.value === value)) {
-      state.filters.push({ column, value });
-    }
-    state.subview = "rows";
-    renderTablePanel();
+  // ---- filter mutations -------------------------------------------------
+  function toggleFilter(column, value) {
+    const i = state.filters.findIndex((f) => f.column === column && f.value === value);
+    if (i >= 0) state.filters.splice(i, 1); else state.filters.push({ column, value });
+    state.page = 0;
+    if (state.subview !== "rows") state.subview = "rows";
+    loadFacets();
+    renderResults();
   }
 
   // ---- events -----------------------------------------------------------
-  $("tabs").addEventListener("click", (ev) => {
-    const t = ev.target.closest(".tab");
-    if (t) setTab(t.dataset.tab);
-  });
+  $("tabs").addEventListener("click", (ev) => { const t = ev.target.closest(".tab"); if (t) setTab(t.dataset.tab); });
 
   document.addEventListener("click", (ev) => {
     const openDb = ev.target.closest("[data-open-db]");
     if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
-    const rail = ev.target.closest(".rail-item");
-    if (rail) { selectDb(rail.dataset.db); return; }
-    const tnav = ev.target.closest(".tnav");
-    if (tnav) { selectTable(tnav.dataset.table); return; }
+    const dbc = ev.target.closest("[data-db]");
+    if (dbc) { selectDb(dbc.dataset.db); return; }
+    const tc = ev.target.closest("[data-table]");
+    if (tc) { selectTable(tc.dataset.table); return; }
     const sub = ev.target.closest("[data-sub]");
-    if (sub) { state.subview = sub.dataset.sub; renderTablePanel(); return; }
+    if (sub) { state.subview = sub.dataset.sub; renderResults(); return; }
     const rm = ev.target.closest("[data-rmfilter]");
-    if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); renderTablePanel(); return; }
-    const facet = ev.target.closest("[data-facet-col]");
-    if (facet) { addFilter(facet.dataset.facetCol, facet.dataset.facetVal); return; }
+    if (rm) { state.filters.splice(Number(rm.dataset.rmfilter), 1); state.page = 0; loadFacets(); renderResults(); return; }
+    const facet = ev.target.closest("[data-fcol]");
+    if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
+    if (ev.target.id === "facet-clear") { state.filters = []; state.page = 0; loadFacets(); renderResults(); return; }
+    const pg = ev.target.closest("[data-page]");
+    if (pg) {
+      if (pg.dataset.page === "prev" && state.page > 0) state.page--;
+      else if (pg.dataset.page === "next") state.page++;
+      loadRows();
+      return;
+    }
   });
 
   document.addEventListener("input", (ev) => {
-    if (ev.target.id === "search") {
-      state.q = ev.target.value;
+    if (ev.target.id === "facet-search") {
+      state.q = ev.target.value; state.page = 0;
       clearTimeout(searchTimer);
-      searchTimer = setTimeout(loadRows, 250);
+      searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); }, 250);
     }
   });
 
   // ---- websocket --------------------------------------------------------
-  function updateCounts() {
-    $("sl-counts").textContent = `${plural(state.history.length, "command")} · ${plural(state.databases.length, "database")}`;
-  }
+  function updateCounts() { $("sl-counts").textContent = `${plural(state.history.length, "command")} · ${plural(state.databases.length, "database")}`; }
   function setStatus(live, text) {
-    $("status").classList.toggle("live", live);
-    $("status-text").textContent = text;
-    $("statusline").classList.toggle("live", live);
-    $("sl-state").textContent = text;
+    $("status").classList.toggle("live", live); $("status-text").textContent = text;
+    $("statusline").classList.toggle("live", live); $("sl-state").textContent = text;
   }
   function apply(s) {
     state.history = s.history || [];
     renderLedger();
-    updateCounts();
     refreshDbExistence(s.databases || []);
   }
   async function refreshDbExistence(fallbackPaths) {
     try {
       const data = await (await fetch("/api/databases")).json();
-      if (data.databases) { state.databases = data.databases; renderRail(); updateCounts(); return; }
+      if (data.databases) { state.databases = data.databases; afterDbs(); return; }
     } catch (_) { /* fall through */ }
     state.databases = fallbackPaths.map((p) => ({ path: p, exists: true }));
-    renderRail(); updateCounts();
+    afterDbs();
   }
+  function afterDbs() {
+    updateCounts();
+    // Drop a selection that vanished.
+    if (state.selDb && !state.databases.some((d) => d.path === state.selDb)) {
+      state.selDb = null; state.selTable = null; state.tables = [];
+      $("table-nav").hidden = true; $("facet-panel").innerHTML = "";
+    }
+    renderDbNav();
+    // Auto-select the first database so the default tab isn't empty.
+    if (!state.selDb && state.databases.length) selectDb(state.databases[0].path);
+  }
+
   function connect() {
     const proto = location.protocol === "https:" ? "wss" : "ws";
     const ws = new WebSocket(`${proto}://${location.host}/ws`);
@@ -642,7 +568,6 @@
     ws.onerror = () => ws.close();
   }
 
-  // ---- clock ------------------------------------------------------------
   function tick() { $("sl-clock").textContent = new Date().toLocaleTimeString([], { hour12: false }); }
   setInterval(tick, 1000); tick();
 

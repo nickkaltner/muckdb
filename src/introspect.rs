@@ -17,11 +17,15 @@ pub struct TableInfo {
     pub estimated_size: Option<i64>,
 }
 
-/// A bounded preview of a table's rows, with columns in table order.
+/// A page of a table's rows, with columns in table order.
 #[derive(Debug, Clone, Serialize)]
 pub struct Preview {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Value>>,
+    /// Total rows matching the current filters (across all pages).
+    pub total: i64,
+    pub offset: u32,
+    pub limit: u32,
 }
 
 /// Run a read-only query against `db` and parse `duckdb -json` output into rows.
@@ -86,12 +90,31 @@ pub struct Filter {
 pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> Option<String> {
     let mut clauses: Vec<String> = Vec::new();
 
+    // Group filters by column: values within a column combine with OR (a value
+    // is either of the chosen ones), and columns combine with AND.
+    let mut by_col: Vec<(String, Vec<String>)> = Vec::new();
     for f in filters {
-        clauses.push(format!(
-            "CAST({} AS VARCHAR) = '{}'",
-            quote_ident(&f.column),
-            escape_literal(&f.value)
-        ));
+        match by_col.iter_mut().find(|(c, _)| *c == f.column) {
+            Some((_, vals)) => vals.push(f.value.clone()),
+            None => by_col.push((f.column.clone(), vec![f.value.clone()])),
+        }
+    }
+    for (col, vals) in &by_col {
+        let ors: Vec<String> = vals
+            .iter()
+            .map(|v| {
+                format!(
+                    "CAST({} AS VARCHAR) = '{}'",
+                    quote_ident(col),
+                    escape_literal(v)
+                )
+            })
+            .collect();
+        clauses.push(if ors.len() == 1 {
+            ors.into_iter().next().unwrap()
+        } else {
+            format!("({})", ors.join(" OR "))
+        });
     }
 
     if let Some(q) = q.map(str::trim).filter(|q| !q.is_empty()) {
@@ -226,12 +249,14 @@ pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
     Ok(tables)
 }
 
-/// Preview up to `limit` rows of a table, optionally filtered by a free-text
-/// search and facet filters.
+/// Preview one page of a table's rows, optionally filtered by a free-text
+/// search and facet filters. Also returns the total matching row count so the
+/// caller can paginate.
 pub fn preview(
     db: &str,
     table: &str,
     limit: u32,
+    offset: u32,
     q: Option<&str>,
     filters: &[Filter],
 ) -> Result<Preview> {
@@ -241,16 +266,18 @@ pub fn preview(
     // Column order is authoritative from DESCRIBE (also drives text search and
     // the empty-result case).
     let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
+    let tbl = quote_ident(table);
 
     let where_sql = build_where(&columns, q, filters)
         .map(|w| format!(" WHERE {w}"))
         .unwrap_or_default();
-    let sql = format!(
-        "SELECT * FROM {}{} LIMIT {}",
-        quote_ident(table),
-        where_sql,
-        limit
-    );
+
+    let total = query_json(db, &format!("SELECT count(*) AS n FROM {tbl}{where_sql}"))?
+        .first()
+        .and_then(|r| r.get("n").and_then(Value::as_i64))
+        .unwrap_or(0);
+
+    let sql = format!("SELECT * FROM {tbl}{where_sql} LIMIT {limit} OFFSET {offset}");
     let rows = query_json(db, &sql)?;
 
     let data = rows
@@ -266,7 +293,75 @@ pub fn preview(
     Ok(Preview {
         columns,
         rows: data,
+        total,
+        offset,
+        limit,
     })
+}
+
+/// Top values (with counts) of one categorical column, for the facet panel.
+#[derive(Debug, Clone, Serialize)]
+pub struct ColumnFacet {
+    pub name: String,
+    pub values: Vec<TopValue>,
+}
+
+/// Compute facets for every categorical column. Each column's counts are
+/// computed with all active filters EXCEPT those on that column itself — the
+/// standard faceted-search behaviour that keeps a column's other values visible
+/// after you select one of them. The free-text search applies throughout.
+pub fn facets(
+    db: &str,
+    table: &str,
+    q: Option<&str>,
+    filters: &[Filter],
+) -> Result<Vec<ColumnFacet>> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist");
+    }
+    let cols = describe(db, table)?;
+    let all_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+    let tbl = quote_ident(table);
+
+    let mut out = Vec::new();
+    for (name, ty) in &cols {
+        if is_numeric(ty) {
+            continue; // facets are for categorical columns
+        }
+        let others: Vec<Filter> = filters
+            .iter()
+            .filter(|f| &f.column != name)
+            .cloned()
+            .collect();
+        let qc = quote_ident(name);
+        // Always exclude NULLs; AND that onto any other-column / search clause.
+        let not_null = format!("{qc} IS NOT NULL");
+        let where_sql = match build_where(&all_names, q, &others) {
+            Some(w) => format!(" WHERE {w} AND {not_null}"),
+            None => format!(" WHERE {not_null}"),
+        };
+        let rows = query_json(
+            db,
+            &format!(
+                "SELECT CAST({qc} AS VARCHAR) AS v, count(*) AS c FROM {tbl}{where_sql} \
+                 GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
+            ),
+        )?;
+        let values = rows
+            .into_iter()
+            .filter_map(|r| {
+                Some(TopValue {
+                    value: r.get("v").and_then(Value::as_str)?.to_string(),
+                    count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+                })
+            })
+            .collect();
+        out.push(ColumnFacet {
+            name: name.clone(),
+            values,
+        });
+    }
+    Ok(out)
 }
 
 /// Number of histogram buckets for numeric columns.
@@ -444,6 +539,44 @@ mod tests {
         assert_eq!(
             build_where(&cols, None, &filters).unwrap(),
             "CAST(\"name\" AS VARCHAR) = 'O''Hare'"
+        );
+    }
+
+    #[test]
+    fn build_where_groups_same_column_values_with_or() {
+        let cols = vec!["species".to_string()];
+        let filters = vec![
+            Filter {
+                column: "species".into(),
+                value: "coot".into(),
+            },
+            Filter {
+                column: "species".into(),
+                value: "teal".into(),
+            },
+        ];
+        assert_eq!(
+            build_where(&cols, None, &filters).unwrap(),
+            "(CAST(\"species\" AS VARCHAR) = 'coot' OR CAST(\"species\" AS VARCHAR) = 'teal')"
+        );
+    }
+
+    #[test]
+    fn build_where_joins_different_columns_with_and() {
+        let cols = vec!["a".to_string(), "b".to_string()];
+        let filters = vec![
+            Filter {
+                column: "a".into(),
+                value: "1".into(),
+            },
+            Filter {
+                column: "b".into(),
+                value: "2".into(),
+            },
+        ];
+        assert_eq!(
+            build_where(&cols, None, &filters).unwrap(),
+            "CAST(\"a\" AS VARCHAR) = '1' AND CAST(\"b\" AS VARCHAR) = '2'"
         );
     }
 
