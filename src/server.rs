@@ -58,6 +58,7 @@ pub async fn run() -> Result<()> {
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
         .route("/chart.js", get(chart_js))
+        .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -378,6 +379,15 @@ async fn chart_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/chart.umd.min.js"),
+    )
+        .into_response()
+}
+
+/// Serve the vendored Chart.js date adapter (enables time-axis charts).
+async fn chart_adapter_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/chart-adapter.js"),
     )
         .into_response()
 }

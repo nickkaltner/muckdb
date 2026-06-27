@@ -196,8 +196,23 @@
   .qeditor { display: flex; flex-direction: column; gap: 10px; }
   .qbar { display: flex; align-items: center; gap: 12px; }
   .qbar .qtitle { font-size: 16px; color: var(--fg); }
-  .sqlbox { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px; padding: 11px; min-height: 110px; resize: vertical; line-height: 1.5; }
-  .sqlbox:focus { outline: none; border-color: var(--orange-dim); }
+  .qrow { display: flex; align-items: center; gap: 10px; }
+  /* Overlay editor: a transparent textarea over a highlighted <pre>. Both must
+     share identical metrics so the caret lines up with the coloured text. */
+  .sqledit { position: relative; }
+  .sqledit .sql-hl, .sqledit .sqlbox {
+    margin: 0; width: 100%; min-height: 110px; box-sizing: border-box;
+    font-family: var(--mono); font-size: 13px; line-height: 1.5;
+    border: 1px solid var(--line); border-radius: 6px; padding: 11px;
+    white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word;
+  }
+  .sqledit .sql-hl { position: absolute; inset: 0; pointer-events: none; background: var(--bg); color: var(--fg); border-color: transparent; overflow: auto; }
+  .sqledit .sqlbox { position: relative; background: transparent; color: transparent; caret-color: var(--orange); resize: vertical; }
+  .sqledit .sqlbox:focus { outline: none; }
+  .sqledit:focus-within .sql-hl { border-color: var(--orange-dim); }
+  .sqledit .sqlbox::selection { background: rgba(255, 122, 26, 0.30); }
+  .sql-hl .s-kw { color: var(--orange); } .sql-hl .s-str { color: var(--ok); }
+  .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #7fb6ad; }
   .runbtn { font: inherit; font-size: 12px; background: var(--orange); color: #1c1a18; font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; }
   .runbtn:hover { background: var(--orange-dim); }
   .qhint { font-size: 11px; color: var(--faint); }
@@ -222,6 +237,12 @@
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 260px; }
   .panel-caption { font-size: 11px; color: var(--faint); margin-top: 8px; }
+  pre.sql { font-family: var(--mono); font-size: 12px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin: 0; overflow: auto; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
+  pre.sql .s-kw { color: var(--orange); }
+  pre.sql .s-str { color: var(--ok); }
+  pre.sql .s-num { color: #e8a33d; }
+  pre.sql .s-com { color: var(--faint); font-style: italic; }
+  pre.sql .s-id { color: #7fb6ad; }
   /* markdown */
   .md { font-family: var(--sans); color: var(--mist, var(--fg)); font-size: 14px; line-height: 1.55; }
   .md h1, .md h2, .md h3 { font-family: var(--mono); color: var(--fg); margin: 0 0 8px; }
@@ -312,6 +333,7 @@
   </footer>
 
 <script src="/chart.js"></script>
+<script src="/chart-adapter.js"></script>
 <script>
 (() => {
   "use strict";
@@ -330,7 +352,7 @@
     page: 0, total: 0,
     pageMode: "auto", pageSize: 25,
     sql: "",
-    sessions: [], selSession: null, sessionData: null, ledgerGroup: false,
+    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
@@ -729,10 +751,11 @@
     $("results").innerHTML = `
       <div class="qeditor">
         <div class="qbar"><span class="qtitle">query</span><span class="qhint">read-only · runs against ${esc(basename(state.selDb))}</span></div>
-        <textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea>
-        <div><button class="runbtn" data-run>▶ run</button> <span class="qhint">⌘/Ctrl + Enter</span></div>
+        <div class="sqledit"><pre class="sql-hl" aria-hidden="true"></pre><textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea></div>
+        <div class="qrow"><button class="runbtn" data-run>▶ run</button> <button class="panel-act" data-format>format</button> <span class="qhint">⌘/Ctrl + Enter</span></div>
         <div id="query-result"></div>
       </div>`;
+    syncEditor($("sql-input"));
     syncUrl(true);
     if (restore && restore.sql) runQuery();
   }
@@ -777,17 +800,21 @@
     destroyCharts();
     const tiles = s.tiles || [];
     $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("") : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
-    tiles.forEach((t) => { if (t.type === "view") loadTileChart(t); });
+    tiles.forEach((t) => {
+      if (t.type !== "view") return;
+      if (t.sql && state.tileMode[t.name] === "sql") showTileSql(t); else loadTileChart(t);
+    });
   }
   function panelHtml(t) {
     if (t.type === "markdown") {
       return `<div class="panel wide"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
+    const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     return `<div class="panel" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc((t.chart && t.chart.kind) || "table")}</span>
-        <span class="panel-actions">${explore}</span></div>
+        <span class="panel-actions">${sqlBtn}${explore}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div></div>`;
   }
   async function loadTileChart(t) {
@@ -814,32 +841,101 @@
   }
   const PAL = ["#ff7a1a", "#8aa66b", "#e8a33d", "#d2563f", "#7d9a8a", "#c2611a"];
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
-  function chartOpts(scatter) {
+  // Detect an x column whose values are dates/timestamps (ISO-ish), so the chart
+  // can use a real time axis (Chart.js then picks tick units/spacing by width).
+  function isDateish(vals) {
+    const sample = vals.filter((v) => v != null && v !== "").slice(0, 20);
+    if (!sample.length) return false;
+    return sample.every((v) => typeof v !== "number" &&
+      /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(String(v)) &&
+      !isNaN(Date.parse(String(v).replace(" ", "T"))));
+  }
+  const toMs = (v) => Date.parse(String(v).replace(" ", "T"));
+  function chartOpts(scatter, time) {
+    const x = time
+      ? { type: "time", grid: { color: "rgba(255,255,255,0.05)" }, ticks: { autoSkip: true, maxRotation: 0 } }
+      : { type: scatter ? "linear" : "category", grid: { color: "rgba(255,255,255,0.05)" } };
     return { responsive: true, maintainAspectRatio: false,
-      scales: { x: { grid: { color: "rgba(255,255,255,0.05)" }, type: scatter ? "linear" : "category" }, y: { grid: { color: "rgba(255,255,255,0.05)" } } },
+      scales: { x, y: { grid: { color: "rgba(255,255,255,0.05)" } } },
       plugins: { legend: { display: true, position: "bottom" } } };
   }
   function chartConfig(kind, spec, cols, rows) {
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
     if (!ys.length) ys = [cols[1] || cols[0]];
-    const labels = rows.map((r) => String(r[xi]));
-    if (kind === "scatter") {
-      const yi = cols.indexOf(ys[0]);
-      return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: +r[xi], y: +r[yi] })), backgroundColor: PAL[0] }] }, options: chartOpts(true) };
-    }
+    const timeX = isDateish(rows.map((r) => r[xi]));
+    const xv = (r) => (timeX ? toMs(r[xi]) : +r[xi]);
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
+      const labels = rows.map((r) => String(r[xi]));
       return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: labels.map((_, i) => PAL[i % PAL.length]) }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } };
+    }
+    if (kind === "scatter") {
+      const yi = cols.indexOf(ys[0]);
+      return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: PAL[0] }] }, options: chartOpts(true, timeX) };
     }
     const type = kind === "line" || kind === "area" ? "line" : "bar";
     const datasets = ys.map((c, i) => {
       const yi = cols.indexOf(c);
-      return { label: c, data: rows.map((r) => +r[yi]), borderColor: PAL[i % PAL.length],
+      return { label: c,
+        data: timeX ? rows.map((r) => ({ x: xv(r), y: +r[yi] })) : rows.map((r) => +r[yi]),
+        borderColor: PAL[i % PAL.length],
         backgroundColor: kind === "area" ? hexA(PAL[i % PAL.length], 0.25) : PAL[i % PAL.length],
         fill: kind === "area", tension: 0.25, pointRadius: type === "line" ? 2 : 0 };
     });
-    return { type, data: { labels, datasets }, options: chartOpts(false) };
+    const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
+    return { type, data, options: chartOpts(false, timeX) };
+  }
+
+  // ---- SQL formatting + highlighting (shared by tiles and the query editor) --
+  const SQL_KW = new Set(("SELECT FROM WHERE GROUP BY ORDER HAVING LIMIT OFFSET AS ON AND OR NOT IN IS NULL " +
+    "JOIN LEFT RIGHT INNER OUTER FULL CROSS UNION ALL EXCEPT INTERSECT WITH DISTINCT CASE WHEN THEN ELSE END " +
+    "CREATE OR REPLACE VIEW TABLE TEMP TEMPORARY ASC DESC OVER PARTITION CAST BETWEEN LIKE ILIKE USING VALUES " +
+    "INSERT INTO UPDATE SET DELETE COUNT SUM AVG MIN MAX").split(/\s+/));
+  function sqlFormat(sql) {
+    let s = String(sql).replace(/\s+/g, " ").trim();
+    s = s.replace(/\s*\b(FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|UNION ALL|UNION|EXCEPT|INTERSECT|(?:LEFT |RIGHT |INNER |FULL |CROSS )?JOIN)\b/gi, (m, k) => "\n" + k.toUpperCase());
+    s = s.replace(/\s*,\s*/g, ",\n  "); // one column per line
+    return s.replace(/^\n+/, "");
+  }
+  function sqlHi(src) {
+    const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const re = /('(?:[^']|'')*')|(--[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"]|"")*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g;
+    let out = "", m;
+    while ((m = re.exec(src))) {
+      if (m[1]) out += `<span class="s-str">${esc(m[1])}</span>`;
+      else if (m[2]) out += `<span class="s-com">${esc(m[2])}</span>`;
+      else if (m[3]) out += `<span class="s-id">${esc(m[3])}</span>`;
+      else if (m[4]) out += `<span class="s-num">${esc(m[4])}</span>`;
+      else if (m[5]) out += SQL_KW.has(m[5].toUpperCase()) ? `<span class="s-kw">${esc(m[5])}</span>` : esc(m[5]);
+      else out += esc(m[0]);
+    }
+    return out;
+  }
+  // Wire a transparent textarea over a highlighted <pre> so SQL input is coloured.
+  function syncEditor(ta) {
+    const hl = ta.previousElementSibling;
+    if (hl) { hl.innerHTML = sqlHi(ta.value) + "\n"; hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; }
+  }
+  function exploreTile(name) {
+    const t = (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name);
+    if (!t || !t.view) return;
+    setTab("databases");
+    selectDb(t.db, { table: t.view, sub: "rows" });
+  }
+  function sessionTile(name) { return (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name); }
+  function showTileSql(t) {
+    const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
+    if (!slot) return;
+    slot.style.height = "auto";
+    slot.innerHTML = `<pre class="sql">${sqlHi(sqlFormat(t.sql))}</pre>`;
+  }
+  function toggleTileSql(name) {
+    const t = sessionTile(name); if (!t) return;
+    state.tileMode[name] = state.tileMode[name] === "sql" ? "chart" : "sql";
+    const btn = document.querySelector(`[data-tsql="${cssEsc(name)}"]`);
+    if (btn) btn.classList.toggle("active", state.tileMode[name] === "sql");
+    if (state.tileMode[name] === "sql") showTileSql(t); else loadTileChart(t);
   }
   function exploreTile(name) {
     const t = (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name);
@@ -984,6 +1080,8 @@
     if (ev.target.closest("[data-run]")) { runQuery(); return; }
     const sess = ev.target.closest("[data-session]"); if (sess) { loadSession(sess.dataset.session, true); return; }
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
+    const ts = ev.target.closest("[data-tsql]"); if (ts) { toggleTileSql(ts.dataset.tsql); return; }
+    if (ev.target.closest("[data-format]")) { const ta = $("sql-input"); if (ta) { ta.value = sqlFormat(ta.value); state.sql = ta.value; syncEditor(ta); } return; }
     if (ev.target.id === "ledger-group") { state.ledgerGroup = !state.ledgerGroup; renderLedger(); return; }
     const pg = ev.target.closest("[data-page]");
     if (pg) { if (pg.dataset.page === "prev" && state.page > 0) state.page--; else if (pg.dataset.page === "next") state.page++; loadRows(); syncUrl(false); return; }
@@ -995,7 +1093,15 @@
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); syncUrl(false); }, 250);
     } else if (ev.target.classList.contains("rng")) { liveRange(ev.target); }
-    else if (ev.target.id === "sql-input") { state.sql = ev.target.value; }
+    else if (ev.target.id === "sql-input") { state.sql = ev.target.value; syncEditor(ev.target); }
+  });
+
+  // Keep the highlight layer aligned while scrolling; autoformat on blur.
+  document.addEventListener("scroll", (ev) => { if (ev.target.id === "sql-input") syncEditor(ev.target); }, true);
+  document.addEventListener("focusout", (ev) => {
+    if (ev.target.id === "sql-input" && ev.target.value.trim()) {
+      ev.target.value = sqlFormat(ev.target.value); state.sql = ev.target.value; syncEditor(ev.target);
+    }
   });
 
   document.addEventListener("change", (ev) => {
