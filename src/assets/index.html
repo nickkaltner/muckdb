@@ -3,211 +3,189 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>muckdb — pond survey</title>
+<title>muckdb — live console</title>
 <style>
   :root {
-    --silt: #0e1a16;
-    --silt-2: #0b1512;
-    --water: #16302a;
-    --water-2: #1c3a32;
-    --reed: #7d9a8a;
-    --reed-dim: #54695e;
-    --mist: #e3ede7;
-    --duckbill: #e8a33d;
-    --ripple: #3fb8a6;
-    --error: #e06a52;
-    --line: #24463c;
-    --mono: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+    --bg: #1c1a18;
+    --surface: #24211e;
+    --raised: #2c2825;
+    --line: #38332e;
+    --line-soft: #2f2a26;
+    --fg: #e7e0d8;
+    --muted: #9a8f82;
+    --faint: #6f665c;
+    --orange: #ff7a1a;
+    --orange-dim: #c2611a;
+    --ok: #8aa66b;
+    --fail: #d2563f;
+    --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    --titlebar-h: 46px;
+    --statusline-h: 30px;
   }
 
   * { box-sizing: border-box; }
-
   html, body { height: 100%; }
 
   body {
     margin: 0;
-    background:
-      radial-gradient(1200px 600px at 80% -10%, #14241f 0%, transparent 60%),
-      var(--silt);
-    color: var(--mist);
-    font-family: var(--sans);
-    font-size: 15px;
+    padding-bottom: var(--statusline-h);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--mono);
+    font-size: 14px;
     line-height: 1.5;
     -webkit-font-smoothing: antialiased;
   }
 
-  /* ---- header ---------------------------------------------------------- */
-  header {
-    position: relative;
-    overflow: hidden;
-    padding: 26px 28px 22px;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, var(--silt-2), transparent);
+  a { color: var(--orange); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  ::selection { background: rgba(255, 122, 26, 0.28); }
+
+  :focus-visible {
+    outline: 2px solid var(--orange);
+    outline-offset: 2px;
+    border-radius: 3px;
   }
-  /* concentric ripples watermark behind the title */
-  header::after {
-    content: "";
-    position: absolute;
-    top: -160px; right: -120px;
-    width: 420px; height: 420px;
-    border-radius: 50%;
-    background:
-      radial-gradient(circle, transparent 38%, rgba(63,184,166,.05) 39%, transparent 41%),
-      radial-gradient(circle, transparent 52%, rgba(63,184,166,.04) 53%, transparent 55%),
-      radial-gradient(circle, transparent 66%, rgba(63,184,166,.03) 67%, transparent 69%);
-    pointer-events: none;
-  }
-  .brand {
+
+  /* ---- titlebar -------------------------------------------------------- */
+  .titlebar {
+    height: var(--titlebar-h);
     display: flex;
-    align-items: baseline;
+    align-items: center;
     gap: 14px;
-    flex-wrap: wrap;
+    padding: 0 18px;
+    border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, var(--raised), var(--surface));
   }
-  .brand h1 {
-    margin: 0;
-    font-family: var(--mono);
-    font-weight: 600;
-    font-size: 30px;
+  .wordmark {
+    font-weight: 700;
+    font-size: 18px;
     letter-spacing: -0.5px;
   }
-  .brand h1 .db { color: var(--duckbill); }
-  .eyebrow {
-    font-family: var(--mono);
+  .wordmark .db { color: var(--orange); }
+  .subtitle {
     font-size: 11px;
-    letter-spacing: 0.28em;
+    letter-spacing: 0.24em;
     text-transform: uppercase;
-    color: var(--reed);
+    color: var(--faint);
   }
-  .endpoint {
-    margin-left: auto;
-    font-family: var(--mono);
-    font-size: 12px;
-    color: var(--reed);
-  }
-  .endpoint a { color: var(--ripple); text-decoration: none; }
-  .endpoint a:hover { text-decoration: underline; }
-
-  /* live status as a pond ripple */
-  .status {
+  .titlebar .spacer { flex: 1; }
+  .conn {
     display: inline-flex;
     align-items: center;
-    gap: 9px;
-    font-family: var(--mono);
+    gap: 8px;
     font-size: 11px;
-    letter-spacing: 0.22em;
+    letter-spacing: 0.18em;
     text-transform: uppercase;
-    color: var(--reed);
+    color: var(--muted);
   }
-  .dot {
-    position: relative;
-    width: 9px; height: 9px;
-    border-radius: 50%;
-    background: var(--reed-dim);
-    flex: none;
+  /* live = a blinking terminal block cursor */
+  .cursor {
+    width: 8px;
+    height: 15px;
+    background: var(--faint);
+    display: inline-block;
   }
-  .status.live .dot { background: var(--ripple); }
-  .status.live .dot::before {
-    content: "";
-    position: absolute; inset: -4px;
-    border-radius: 50%;
-    border: 1px solid var(--ripple);
-    animation: ripple 2.2s ease-out infinite;
+  .conn.live { color: var(--fg); }
+  .conn.live .cursor {
+    background: var(--orange);
+    animation: blink 1.1s steps(1) infinite;
   }
-  .status.live { color: var(--mist); }
-  @keyframes ripple {
-    0%   { transform: scale(.6); opacity: .8; }
-    100% { transform: scale(2.4); opacity: 0; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .host {
+    font-size: 12px;
+    color: var(--muted);
+    padding: 3px 9px;
+    border: 1px solid var(--line);
+    border-radius: 5px;
   }
+  .host:hover { color: var(--fg); border-color: var(--orange-dim); text-decoration: none; }
 
   /* ---- layout ---------------------------------------------------------- */
   main {
     display: grid;
-    grid-template-columns: minmax(320px, 0.8fr) 1.4fr;
-    gap: 1px;
-    background: var(--line);
-    min-height: calc(100vh - 92px);
+    grid-template-columns: minmax(330px, 0.82fr) 1.4fr;
+    min-height: calc(100vh - var(--titlebar-h) - var(--statusline-h));
   }
-  section { background: var(--silt); padding: 22px 24px; min-width: 0; }
+  section {
+    padding: 16px 18px;
+    min-width: 0;
+  }
+  section.history { border-right: 1px solid var(--line); }
 
   .panel-head {
     display: flex;
     align-items: center;
-    gap: 10px;
-    margin: 0 0 16px;
+    gap: 9px;
+    margin-bottom: 14px;
+    padding-bottom: 9px;
+    border-bottom: 1px solid var(--line-soft);
   }
   .panel-head .label {
-    font-family: var(--mono);
-    font-size: 12px;
+    font-size: 11px;
     letter-spacing: 0.26em;
     text-transform: uppercase;
-    color: var(--reed);
+    color: var(--muted);
   }
   .panel-head .count {
-    font-family: var(--mono);
     font-size: 11px;
-    color: var(--reed-dim);
-    background: var(--water);
-    padding: 1px 8px;
-    border-radius: 999px;
+    color: var(--faint);
   }
+  .panel-head .count::before { content: "["; color: var(--line); }
+  .panel-head .count::after  { content: "]"; color: var(--line); }
 
-  /* ---- history ledger -------------------------------------------------- */
+  /* ---- history (prompt log) -------------------------------------------- */
   .ledger { list-style: none; margin: 0; padding: 0; }
   .entry {
-    position: relative;
-    padding: 11px 12px 11px 16px;
+    padding: 8px 10px 8px 11px;
     border-left: 2px solid var(--line);
-    margin-bottom: 6px;
-    background: linear-gradient(90deg, var(--water-2), transparent 80%);
-    border-radius: 0 6px 6px 0;
+    margin-bottom: 4px;
+    background: var(--surface);
+    border-radius: 0 4px 4px 0;
   }
-  .entry.fresh { animation: drop .5s cubic-bezier(.2,.8,.2,1); }
-  @keyframes drop {
-    0%   { transform: translateY(-6px) scale(.99); opacity: 0; }
-    60%  { transform: translateY(1px); }
-    100% { transform: translateY(0) scale(1); opacity: 1; }
+  .entry.ok   { border-left-color: var(--ok); }
+  .entry.run  { border-left-color: var(--orange); }
+  .entry.fail { border-left-color: var(--fail); }
+  .entry.fresh { animation: printin 0.32s ease-out; }
+  @keyframes printin {
+    from { transform: translateX(-6px); opacity: 0; }
+    to   { transform: translateX(0); opacity: 1; }
   }
-  .entry.ok    { border-left-color: var(--ripple); }
-  .entry.run   { border-left-color: var(--duckbill); }
-  .entry.fail  { border-left-color: var(--error); }
-  .entry .cmd {
-    font-family: var(--mono);
-    font-size: 13px;
-    word-break: break-word;
-  }
-  .entry .cmd .prog { color: var(--reed); }
+  .entry .cmd { font-size: 13px; word-break: break-word; }
+  .entry .cmd .prompt { color: var(--orange); font-weight: 700; margin-right: 2px; }
+  .entry .cmd .prog { color: var(--muted); }
+  .entry .cmd em { color: var(--faint); font-style: normal; }
   .entry .meta {
     display: flex;
-    gap: 12px;
+    align-items: center;
+    gap: 11px;
     flex-wrap: wrap;
     margin-top: 5px;
-    font-family: var(--mono);
     font-size: 11px;
-    color: var(--reed-dim);
+    color: var(--faint);
   }
-  .entry .meta .db { color: var(--duckbill); }
+  .entry .meta .db { color: var(--orange-dim); }
   .badge {
-    font-family: var(--mono);
     font-size: 10px;
-    letter-spacing: 0.1em;
-    text-transform: uppercase;
-    padding: 1px 7px;
-    border-radius: 999px;
+    letter-spacing: 0.06em;
+    padding: 0 6px;
+    border-radius: 3px;
     border: 1px solid currentColor;
   }
-  .badge.ok   { color: var(--ripple); }
-  .badge.run  { color: var(--duckbill); }
-  .badge.fail { color: var(--error); }
+  .badge.ok   { color: var(--ok); }
+  .badge.run  { color: var(--orange); }
+  .badge.fail { color: var(--fail); }
 
   /* ---- databases ------------------------------------------------------- */
   .dblist { list-style: none; margin: 0; padding: 0; }
   .db-card {
     border: 1px solid var(--line);
-    border-radius: 8px;
-    margin-bottom: 10px;
+    border-radius: 6px;
+    margin-bottom: 8px;
     overflow: hidden;
-    background: var(--silt-2);
+    background: var(--surface);
   }
   .db-card > .db-head {
     display: flex;
@@ -215,140 +193,182 @@
     gap: 10px;
     width: 100%;
     text-align: left;
-    padding: 13px 15px;
+    padding: 11px 13px;
     background: none;
     border: 0;
     color: inherit;
     cursor: pointer;
     font: inherit;
   }
-  .db-card > .db-head:hover { background: var(--water); }
-  .db-card > .db-head .caret {
-    font-family: var(--mono);
-    color: var(--ripple);
-    transition: transform .18s ease;
-  }
-  .db-card.open > .db-head .caret { transform: rotate(90deg); }
-  .db-head .name {
-    font-family: var(--mono);
-    font-size: 14px;
-    color: var(--mist);
-  }
-  .db-head .dir {
-    font-family: var(--mono);
-    font-size: 11px;
-    color: var(--reed-dim);
-  }
+  .db-card > .db-head:hover { background: var(--raised); }
+  .db-head .caret { color: var(--orange); font-weight: 700; }
+  .db-head .caret::before { content: "[+]"; }
+  .db-card.open .db-head .caret::before { content: "[-]"; }
+  .db-head .name { font-size: 13px; color: var(--fg); }
+  .db-head .dir { font-size: 11px; color: var(--faint); }
   .db-head .missing {
     margin-left: auto;
-    font-family: var(--mono);
     font-size: 10px;
-    letter-spacing: 0.1em;
+    letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--error);
+    color: var(--fail);
   }
-  .db-body { display: none; padding: 4px 15px 15px; }
+  .db-body { display: none; padding: 2px 13px 13px; }
   .db-card.open .db-body { display: block; }
 
-  .tables { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+  .tables { display: flex; flex-wrap: wrap; gap: 7px; margin: 8px 0 2px; }
   .table-chip {
-    font-family: var(--mono);
+    font: inherit;
     font-size: 12px;
-    padding: 5px 11px;
+    padding: 5px 10px;
     border: 1px solid var(--line);
-    border-radius: 6px;
-    background: var(--water);
-    color: var(--mist);
+    border-radius: 5px;
+    background: var(--raised);
+    color: var(--fg);
     cursor: pointer;
   }
-  .table-chip .n { color: var(--reed); margin-left: 6px; font-size: 11px; }
-  .table-chip:hover { border-color: var(--ripple); }
-  .table-chip.active { border-color: var(--duckbill); color: var(--duckbill); }
+  .table-chip .n { color: var(--faint); margin-left: 7px; }
+  .table-chip:hover { border-color: var(--orange-dim); }
+  .table-chip.active { border-color: var(--orange); color: var(--orange); }
 
-  .note { font-family: var(--mono); font-size: 12px; color: var(--reed); }
-  .note.err { color: var(--error); }
+  .note { font-size: 12px; color: var(--muted); padding: 4px 0; }
+  .note.err { color: var(--fail); }
 
   .preview-wrap {
     margin-top: 12px;
     border: 1px solid var(--line);
-    border-radius: 6px;
+    border-radius: 5px;
     overflow: auto;
     max-height: 460px;
   }
-  table.preview { border-collapse: collapse; width: 100%; font-family: var(--mono); font-size: 12px; }
+  table.preview { border-collapse: collapse; width: 100%; font-size: 12px; }
   table.preview th, table.preview td {
     text-align: left;
-    padding: 7px 12px;
-    border-bottom: 1px solid var(--line);
+    padding: 6px 12px;
+    border-bottom: 1px solid var(--line-soft);
     white-space: nowrap;
   }
   table.preview thead th {
     position: sticky;
     top: 0;
-    background: var(--water-2);
-    color: var(--ripple);
-    letter-spacing: 0.04em;
+    background: var(--raised);
+    color: var(--orange);
+    border-bottom: 1px solid var(--orange-dim);
+    letter-spacing: 0.03em;
   }
-  table.preview tbody tr:hover { background: var(--water); }
-  table.preview td.null { color: var(--reed-dim); font-style: italic; }
-  .preview-foot { font-family: var(--mono); font-size: 11px; color: var(--reed-dim); margin-top: 6px; }
+  table.preview tbody tr:hover { background: var(--raised); }
+  table.preview td.null { color: var(--faint); }
+  .preview-foot { font-size: 11px; color: var(--faint); margin-top: 6px; }
 
   .empty {
-    font-family: var(--mono);
+    font-family: var(--sans);
     font-size: 13px;
-    color: var(--reed);
+    color: var(--muted);
     border: 1px dashed var(--line);
-    border-radius: 8px;
-    padding: 22px;
-    text-align: center;
+    border-radius: 6px;
+    padding: 20px;
+    line-height: 1.6;
   }
-  .empty code { color: var(--duckbill); }
+  .empty code {
+    font-family: var(--mono);
+    color: var(--orange);
+    background: var(--raised);
+    padding: 1px 6px;
+    border-radius: 3px;
+  }
+
+  /* ---- statusline (signature) ------------------------------------------ */
+  .statusline {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    height: var(--statusline-h);
+    display: flex;
+    align-items: stretch;
+    font-size: 11px;
+    letter-spacing: 0.04em;
+    background: var(--surface);
+    border-top: 1px solid var(--line);
+  }
+  .statusline .seg {
+    display: inline-flex;
+    align-items: center;
+    padding: 0 12px;
+    color: var(--muted);
+    border-right: 1px solid var(--line);
+  }
+  .seg-brand {
+    background: var(--orange);
+    color: #1c1a18 !important;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+  }
+  .seg-state { text-transform: uppercase; letter-spacing: 0.16em; }
+  .statusline.live .seg-state { color: var(--fg); }
+  .seg-state::before {
+    content: "";
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--faint);
+    margin-right: 8px;
+  }
+  .statusline.live .seg-state::before { background: var(--ok); }
+  .seg-spacer { flex: 1; border-right: 1px solid var(--line); }
+  .seg-clock { color: var(--fg); }
+  .seg-port { color: var(--orange-dim); border-right: 0; }
 
   @media (max-width: 820px) {
     main { grid-template-columns: 1fr; }
-    .endpoint { width: 100%; margin: 6px 0 0; }
+    section.history { border-right: 0; border-bottom: 1px solid var(--line); }
+    .subtitle { display: none; }
+    .seg-counts { display: none; }
   }
   @media (prefers-reduced-motion: reduce) {
     .entry.fresh { animation: none; }
-    .status.live .dot::before { animation: none; }
+    .conn.live .cursor { animation: none; }
   }
 </style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <h1>muck<span class="db">db</span></h1>
-      <span class="eyebrow">pond survey · live history &amp; data</span>
-      <span class="endpoint">
-        <span class="status" id="status"><span class="dot"></span><span id="status-text">connecting</span></span>
-        &nbsp;·&nbsp; <a id="self-link" href="/">this host</a>
-      </span>
-    </div>
+  <header class="titlebar">
+    <span class="wordmark">muck<span class="db">db</span></span>
+    <span class="subtitle">live console</span>
+    <span class="spacer"></span>
+    <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
+    <a class="host" id="self-link" href="/">localhost</a>
   </header>
 
   <main>
-    <section aria-label="Command history">
+    <section class="history" aria-label="Command history">
       <div class="panel-head">
-        <span class="label">Ledger</span>
+        <span class="label">history</span>
         <span class="count" id="hist-count">0</span>
       </div>
       <ul class="ledger" id="ledger"></ul>
       <div class="empty" id="ledger-empty">
-        No commands logged yet.<br />Run <code>muckdb mydb.db</code> to begin the survey.
+        No commands yet. Run <code>muckdb mydb.db</code> in your terminal and it streams in here.
       </div>
     </section>
 
     <section aria-label="Databases">
       <div class="panel-head">
-        <span class="label">Databases</span>
+        <span class="label">databases</span>
         <span class="count" id="db-count">0</span>
       </div>
       <ul class="dblist" id="dblist"></ul>
       <div class="empty" id="db-empty">
-        No databases touched yet.<br />A database appears here the moment muckdb opens one.
+        No databases yet. The moment a command opens one, it shows up here — expand it to browse tables and rows.
       </div>
     </section>
   </main>
+
+  <footer class="statusline" id="statusline">
+    <span class="seg seg-brand">MUCKDB</span>
+    <span class="seg seg-state" id="sl-state">connecting</span>
+    <span class="seg seg-counts" id="sl-counts">0 commands · 0 databases</span>
+    <span class="seg-spacer"></span>
+    <span class="seg seg-clock" id="sl-clock">--:--:--</span>
+    <span class="seg seg-port" id="sl-port">:----</span>
+  </footer>
 
 <script>
 (() => {
@@ -358,6 +378,7 @@
   // Selection + table-list cache survive re-renders.
   const ui = { openDbs: new Set(), selTable: {}, tablesCache: {} };
   let lastIds = new Set();
+  let histCount = 0, dbCount = 0;
 
   // ---- rendering --------------------------------------------------------
   function fmtTime(ms) {
@@ -367,6 +388,11 @@
   }
   function basename(p) { const i = p.replace(/\/+$/, "").lastIndexOf("/"); return i < 0 ? p : p.slice(i + 1); }
   function dirname(p)  { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
+  function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
+
+  function updateCounts() {
+    $("sl-counts").textContent = `${plural(histCount, "command")} · ${plural(dbCount, "database")}`;
+  }
 
   function entryClass(inv) {
     if (inv.running) return "run";
@@ -381,8 +407,10 @@
 
   function renderLedger(history) {
     const list = $("ledger");
+    histCount = history.length;
     $("hist-count").textContent = history.length;
     $("ledger-empty").style.display = history.length ? "none" : "block";
+    updateCounts();
 
     const newIds = new Set(history.map((h) => h.id));
     const rows = history.slice().reverse().map((inv) => {
@@ -392,7 +420,7 @@
       const db = inv.db_path
         ? `<span class="db">${esc(basename(inv.db_path))}</span>` : "";
       return `<li class="entry ${cls}${fresh}">
-        <div class="cmd"><span class="prog">muckdb</span> ${args || "<em>(shell)</em>"}</div>
+        <div class="cmd"><span class="prompt">❯</span> <span class="prog">muckdb</span> ${args || "<em>(interactive shell)</em>"}</div>
         <div class="meta">
           <span>${fmtTime(inv.ts)}</span>
           ${badge(inv)}
@@ -406,15 +434,17 @@
 
   function renderDatabases(databases) {
     const list = $("dblist");
+    dbCount = databases.length;
     $("db-count").textContent = databases.length;
     $("db-empty").style.display = databases.length ? "none" : "block";
+    updateCounts();
 
     list.innerHTML = databases.map((db) => {
       const open = ui.openDbs.has(db.path);
       const missing = db.exists ? "" : '<span class="missing">missing</span>';
       return `<li class="db-card ${open ? "open" : ""}" data-db="${esc(db.path)}">
         <button class="db-head" data-db="${esc(db.path)}">
-          <span class="caret">›</span>
+          <span class="caret"></span>
           <span><span class="name">${esc(basename(db.path))}</span>
             <span class="dir">${esc(dirname(db.path))}</span></span>
           ${missing}
@@ -472,14 +502,14 @@
       const bodyRows = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview">
         <thead><tr>${head}</tr></thead><tbody>${bodyRows}</tbody></table></div>
-        <div class="preview-foot">showing ${rows.length} row${rows.length === 1 ? "" : "s"} · ${cols.length} columns</div>`;
+        <div class="preview-foot">showing ${plural(rows.length, "row")} · ${plural(cols.length, "column")}</div>`;
     } catch (e) {
       slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`;
     }
   }
 
   function cell(v) {
-    if (v === null || v === undefined) return '<td class="null">∅</td>';
+    if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     return `<td>${esc(String(v))}</td>`;
   }
@@ -509,6 +539,8 @@
   function setStatus(live, text) {
     $("status").classList.toggle("live", live);
     $("status-text").textContent = text;
+    $("statusline").classList.toggle("live", live);
+    $("sl-state").textContent = text;
   }
   function apply(state) {
     renderLedger(state.history || []);
@@ -533,6 +565,13 @@
     ws.onerror = () => ws.close();
   }
 
+  // ---- statusline clock -------------------------------------------------
+  function tick() {
+    $("sl-clock").textContent = new Date().toLocaleTimeString([], { hour12: false });
+  }
+  setInterval(tick, 1000);
+  tick();
+
   // ---- helpers ----------------------------------------------------------
   function esc(s) {
     return String(s).replace(/[&<>"']/g, (c) =>
@@ -541,6 +580,7 @@
   function cssEsc(s) { return s.replace(/["\\]/g, "\\$&"); }
 
   $("self-link").textContent = location.host;
+  $("sl-port").textContent = ":" + (location.port || (location.protocol === "https:" ? "443" : "80"));
   connect();
 })();
 </script>
