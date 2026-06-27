@@ -1,0 +1,97 @@
+//! Daemon lifecycle: detach into the background, and the `--status` / `--stop`
+//! control commands.
+
+use std::fs;
+
+use anyhow::{Context, Result};
+use daemonize::Daemonize;
+
+use crate::facade::PORT;
+use crate::{paths, server};
+
+/// Detach from the terminal (fork + setsid), write the pidfile, redirect output
+/// to the daemon log, then run the server. Forking happens *before* any tokio
+/// runtime is created, which is the only safe ordering.
+pub fn serve() -> Result<()> {
+    let pid_file = paths::pid_file()?;
+    let log_path = paths::daemon_log()?;
+    let stdout = fs::File::create(&log_path).with_context(|| format!("creating {log_path:?}"))?;
+    let stderr = stdout.try_clone()?;
+
+    Daemonize::new()
+        .pid_file(&pid_file)
+        .stdout(stdout)
+        .stderr(stderr)
+        .start()
+        .context("failed to daemonize (another daemon may already hold the pidfile)")?;
+
+    // From here we are the detached daemon process.
+    let rt = tokio::runtime::Runtime::new().context("building tokio runtime")?;
+    rt.block_on(server::run())
+}
+
+/// Read the daemon pid from the pidfile, if present and parseable.
+fn read_pid() -> Option<i32> {
+    let path = paths::pid_file().ok()?;
+    let contents = fs::read_to_string(path).ok()?;
+    contents.trim().parse::<i32>().ok()
+}
+
+/// True if a process with the given pid currently exists.
+fn pid_alive(pid: i32) -> bool {
+    // signal 0 performs error checking without delivering a signal.
+    unsafe { libc::kill(pid, 0) == 0 }
+}
+
+/// Whether the daemon is accepting connections on the HTTP port.
+fn port_open() -> bool {
+    use std::net::{SocketAddr, TcpStream};
+    use std::time::Duration;
+    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
+}
+
+/// `muckdb --status`: report whether the daemon is running.
+pub fn status() -> Result<i32> {
+    let listening = port_open();
+    let pid = read_pid();
+    match (listening, pid) {
+        (true, Some(pid)) => {
+            println!("muckdb daemon running (pid {pid}) at http://localhost:{PORT}");
+            Ok(0)
+        }
+        (true, None) => {
+            println!("muckdb daemon running at http://localhost:{PORT} (no pidfile)");
+            Ok(0)
+        }
+        (false, Some(pid)) if pid_alive(pid) => {
+            println!("muckdb daemon process {pid} is alive but not yet serving on {PORT}");
+            Ok(0)
+        }
+        _ => {
+            println!("muckdb daemon is not running");
+            Ok(1)
+        }
+    }
+}
+
+/// `muckdb --stop`: terminate the daemon and clean up the pidfile.
+pub fn stop() -> Result<i32> {
+    let Some(pid) = read_pid() else {
+        println!("muckdb daemon is not running (no pidfile)");
+        return Ok(1);
+    };
+    if !pid_alive(pid) {
+        let _ = fs::remove_file(paths::pid_file()?);
+        println!("muckdb daemon was not running; cleaned up stale pidfile");
+        return Ok(1);
+    }
+    let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
+    if rc == 0 {
+        let _ = fs::remove_file(paths::pid_file()?);
+        println!("stopped muckdb daemon (pid {pid})");
+        Ok(0)
+    } else {
+        anyhow::bail!("failed to signal muckdb daemon (pid {pid})");
+    }
+}

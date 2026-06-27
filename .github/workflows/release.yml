@@ -1,0 +1,92 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: Build ${{ matrix.target }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-14
+            target: aarch64-apple-darwin
+          - os: macos-13
+            target: x86_64-apple-darwin
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+      - name: Build release
+        run: cargo build --release --target ${{ matrix.target }}
+      - name: Package
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          tar -C "target/${{ matrix.target }}/release" \
+            -czf "muckdb-${VERSION}-${{ matrix.target }}.tar.gz" muckdb
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: muckdb-*.tar.gz
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.tar.gz
+          generate_release_notes: true
+
+  bump-formula:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout muckdb (for the renderer script)
+        uses: actions/checkout@v4
+        with:
+          path: muckdb
+      - name: Checkout tap
+        uses: actions/checkout@v4
+        with:
+          repository: nickkaltner/homebrew-muckdb
+          token: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          path: tap
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: Render formula
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          mkdir -p tap/Formula
+          REPO="${GITHUB_REPOSITORY}" \
+            muckdb/scripts/render-formula.sh "$VERSION" dist > tap/Formula/muckdb.rb
+          cat tap/Formula/muckdb.rb
+      - name: Commit and push
+        run: |
+          cd tap
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add Formula/muckdb.rb
+          git commit -m "muckdb ${GITHUB_REF_NAME#v}" || { echo "no changes"; exit 0; }
+          git push

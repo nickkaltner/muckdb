@@ -1,0 +1,90 @@
+# muckdb
+
+A thin facade over the [DuckDB](https://duckdb.org) CLI. Run `muckdb` exactly
+like you'd run `duckdb` — every argument is passed straight through — and muckdb
+quietly does two extra things:
+
+1. **Self-serves a live web view.** The first time you run it (or any time you
+   run `muckdb --display`), it launches a background daemon that serves a web UI
+   on **port 11000**, advertised over **mDNS** so it's discoverable on your LAN.
+2. **Keeps a pond-survey ledger.** Every invocation is recorded, and whenever a
+   command touches a database, the web view presents that database's tables and a
+   preview of its rows — updating in real time over a WebSocket.
+
+It's a drop-in for the duckdb CLI, so exit codes, the interactive shell, and
+piping all behave exactly as before.
+
+## Install
+
+```sh
+brew install nickkaltner/muckdb/muckdb
+```
+
+This taps `nickkaltner/homebrew-muckdb` and installs a prebuilt binary. The
+`duckdb` CLI is pulled in as a dependency (muckdb shells out to it).
+
+### From source
+
+```sh
+cargo install --path .
+# or
+cargo build --release   # binary at target/release/muckdb
+```
+
+Requires the `duckdb` binary on your `PATH`.
+
+## Usage
+
+```sh
+muckdb                       # interactive duckdb shell (+ starts the daemon)
+muckdb mydata.db             # open a database (it appears in the web view)
+muckdb mydata.db -c "SELECT 42"
+muckdb -json :memory: -c "SELECT 1"
+
+muckdb --display             # ensure the daemon is up and open the web view
+muckdb --status              # is the daemon running?
+muckdb --stop                # stop the daemon
+```
+
+Then open <http://localhost:11000> (or find `muckdb` via mDNS:
+`avahi-browse _muckdb._tcp` on Linux, `dns-sd -B _muckdb._tcp` on macOS).
+
+## How it works
+
+- **Facade role** (the default): muckdb ensures the daemon is running, appends a
+  record of the invocation to a shared on-disk log, then runs `duckdb` with your
+  arguments, inheriting stdin/stdout/stderr.
+- **Daemon role**: a detached background process (`nohup`-style) running an
+  [axum](https://github.com/tokio-rs/axum) HTTP + WebSocket server, advertising
+  itself over mDNS, watching the log file, and pushing updates to the browser.
+- **Shared store**: an append-only JSONL file under your data directory
+  (`~/.local/share/muckdb/history.jsonl` on Linux,
+  `~/Library/Application Support/muckdb/` on macOS). The CLI and daemon are
+  decoupled — the CLI never talks to the daemon directly.
+- **Database views**: the daemon reads databases by shelling out to
+  `duckdb -readonly -json`, staying true to the "facade over the CLI" design.
+
+### API
+
+The daemon also exposes JSON endpoints (handy for other mDNS clients):
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/state` | history + known databases |
+| `GET /api/databases` | databases with existence flags |
+| `GET /api/tables?db=PATH` | tables/views in a database |
+| `GET /api/preview?db=PATH&table=NAME&limit=N` | first N rows |
+| `GET /ws` | WebSocket; pushes state on every change |
+
+## Development
+
+```sh
+cargo build
+cargo test
+cargo clippy --all-targets -- -D warnings
+cargo fmt --check
+```
+
+## License
+
+MIT © Nick Kaltner
