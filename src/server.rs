@@ -22,7 +22,7 @@ use tokio::sync::broadcast;
 use crate::facade::PORT;
 use crate::{introspect, paths, store};
 
-const PREVIEW_LIMIT: u32 = 100;
+const PREVIEW_LIMIT: u32 = 25;
 
 #[derive(Clone)]
 struct AppState {
