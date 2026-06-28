@@ -82,7 +82,12 @@ Anything else is passed straight through to duckdb:
     // Append duckdb's own help, rebranded, so passthrough options are documented.
     match std::process::Command::new("duckdb").arg("-help").output() {
         Ok(out) => {
-            let text = String::from_utf8_lossy(&out.stdout).replace("duckdb", "muckdb");
+            // Rebrand every casing duckdb uses in its help (e.g. "DuckDB database",
+            // "show DuckDB version", "Usage: duckdb …") so nothing reads as duckdb.
+            let text = String::from_utf8_lossy(&out.stdout)
+                .replace("DuckDB", "MuckDB")
+                .replace("DUCKDB", "MUCKDB")
+                .replace("duckdb", "muckdb");
             print!("{text}");
         }
         Err(_) => {
