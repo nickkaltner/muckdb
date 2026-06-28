@@ -241,7 +241,7 @@
   .pager button:hover:not(:disabled) { border-color: var(--orange-dim); }
   .pager button:disabled { opacity: 0.35; cursor: default; }
   .pager .range b { color: var(--fg); font-weight: 400; }
-  .pager .psize { margin-left: auto; font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 8px; cursor: pointer; }
+  .pager .psize { margin-left: auto; font: inherit; font-size: 12px; color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 24px 4px 9px; cursor: pointer; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-color: var(--surface); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 8px center; }
   .pager .psize:hover { border-color: var(--orange-dim); }
 
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
@@ -496,6 +496,7 @@
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,176,0,0.07), transparent 70%)",
       },
       grad2: ["#ffffff", "#ff8a00"],
+      barRadius: 6,
       chart: ["#f5f6f8", "#ffb000", "#9aa0a8", "#6e737b", "#d98e00", "#cfd3d8", "#84898f", "#4f535a"],
     },
     ember: {
@@ -518,6 +519,7 @@
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,90,110,0.08), transparent 70%)",
       },
       grad2: ["#ff9a7a", "#c0303f"],
+      barRadius: 6,
       chart: ["#ff5a6e", "#4bb8a8", "#ffb07a", "#c98fd0", "#8aa6e0", "#e0a85a", "#6fc4b8", "#d07a9a"],
     },
     arctic: {
@@ -540,6 +542,7 @@
         glow: "radial-gradient(1100px 520px at 80% -14%, rgba(168,85,255,0.22), transparent 68%)",
       },
       grad2: ["#f4c4ff", "#5e0fd6"],
+      barRadius: 6,
       chart: ["#c77dff", "#3fe0ec", "#ff8ad8", "#a6f25a", "#ffb86c", "#ff6b8a", "#8a9bff", "#e6c860"],
     },
     lime: {
@@ -575,6 +578,7 @@
       },
       grad2: ["#ffb066", "#e0601c"],
       bargrad: ["#fff4e8", "#ffb066", "#e0601c"],
+      barRadius: 6,
       chart: ["#ff7e2e", "#bca78f", "#ffb066", "#a08a6f", "#e0641c", "#d4c3ad", "#a9794c", "#806852"],
     },
   };
@@ -592,6 +596,7 @@
     PAL = t.chart.slice();
     GRAD2 = (t.grad2 || [t.chart[0], t.chart[1]]).slice();
     BARGRAD = (t.bargrad || t.grad2 || [t.chart[0], t.chart[1]]).slice();
+    BAR_RADIUS = t.barRadius || 0;
     // "flat" themes drop the ambient glow + panel gradients on the non-session
     // pages (databases, ledger); session dashboards keep their charty look.
     document.documentElement.classList.toggle("flat", !!t.flat);
@@ -1016,7 +1021,9 @@
       }).join("");
       const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], state.selTable, state.selDb)).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
-      const opts = ["auto", "10", "25", "50", "100"].map((o) => `<option value="${o}"${state.pageMode === o ? " selected" : ""}>${o === "auto" ? "auto" : o + "/page"}</option>`).join("");
+      // Uniform-width labels keep the native select compact so its chevron sits
+      // right next to the value (the aria-label + pagination context carry meaning).
+      const opts = ["auto", "10", "25", "50", "100"].map((o) => `<option value="${o}"${state.pageMode === o ? " selected" : ""}>${o}</option>`).join("");
       slot.dataset.loaded = "1";
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>
         <div class="pager"><button data-page="prev" ${state.page === 0 ? "disabled" : ""}>‹ prev</button>
@@ -1374,6 +1381,8 @@
   let PAL = THEMES.hearth.chart.slice();
   let GRAD2 = THEMES.hearth.grad2.slice();
   let BARGRAD = (THEMES.hearth.bargrad || THEMES.hearth.grad2).slice();
+  // Bar corner radius (top only) — themes opt in via `barRadius`; 0 = square.
+  let BAR_RADIUS = THEMES.hearth.barRadius || 0;
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1568,11 +1577,15 @@
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
       const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX))); if (anno) o.plugins.muckAnno = anno;
+      o.plugins.legend.display = false; // one series — the title already names it
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
     const stacked = kind === "stacked";
     const type = kind === "line" || kind === "area" ? "line" : "bar";
     const single = ys.length === 1 && !stacked;
+    // Round the top of bars when the active theme opts in (theme.barRadius).
+    const barRadius = BAR_RADIUS
+      ? { topLeft: BAR_RADIUS, topRight: BAR_RADIUS, bottomLeft: 0, bottomRight: 0 } : 0;
     const datasets = ys.map((c, i) => {
       const yi = cols.indexOf(c);
       const col = PAL[i % PAL.length];
@@ -1601,11 +1614,12 @@
         borderColor: border, borderWidth: type === "line" ? 2 : 0,
         backgroundColor: bg, fill: kind === "area", tension: 0.3,
         pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: col,
-        borderRadius: 0, borderSkipped: false, maxBarThickness: 120,
+        borderRadius: type !== "bar" ? 0 : (stacked ? (i === ys.length - 1 ? barRadius : 0) : barRadius), borderSkipped: false, maxBarThickness: 120,
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked))); if (anno) o.plugins.muckAnno = anno;
+    o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
   }
   // Resolve a tile's target/threshold/event markers into pixel-resolvable values.

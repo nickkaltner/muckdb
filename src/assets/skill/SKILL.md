@@ -73,6 +73,12 @@ Make this your default reflex for *any* result set:
 - **Keep the headline numbers in markdown.** Totals, deltas, and rates belong in
   a markdown panel (bold them, show the change) so the takeaway is unmissable;
   the chart shows the shape, the table shows the exact values.
+- **If the chart has no shape, don't chart it.** When a bar chart would show many
+  bars at (nearly) the same height — e.g. every category has the same count, or a
+  column's `avg` equals its `max` so there's no variation — the chart conveys
+  nothing. Replace that panel with a **markdown summary** that states the finding
+  in words ("all 5 event types occur ~48 times — uniform, no outliers"). A chart
+  earns its place by showing variation; a flat one just wastes the space.
 
 ```sh
 # Headline panel: prose + a markdown table of the exact figures.

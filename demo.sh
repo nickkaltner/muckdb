@@ -59,7 +59,7 @@ CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) 
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
 CREATE OR REPLACE VIEW top_products      AS SELECT product, count(*) AS orders, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 -- Categorical breakdown (like HTTP methods) — each bar its own solid colour.
-CREATE OR REPLACE VIEW events_by_kind    AS SELECT kind, count(*) AS n FROM events GROUP BY 1 ORDER BY n DESC;
+CREATE OR REPLACE VIEW events_by_kind    AS SELECT kind, count(*) AS "count" FROM events GROUP BY 1 ORDER BY "count" DESC;
 -- One row per region, revenue split into category columns — the shape a stacked
 -- bar wants: x = region, y = the category series that stack into a total.
 CREATE OR REPLACE VIEW revenue_by_region_category AS
@@ -119,7 +119,7 @@ Click **explore** on any data panel to open it in the faceted table browser
   --caption "Categorical — regions are distinct buckets, so each bar gets its own solid colour from the theme palette." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name by_kind --title "Events by type" \
-  --db "$DB" --view events_by_kind --chart bar --x kind --y n --bars solid \
+  --db "$DB" --view events_by_kind --chart bar --x kind --y count --bars solid \
   --xlabel "Event type" --ylabel Count \
   --caption "Categorical like HTTP methods (GET/POST/…): solid bars, one colour each." >/dev/null
 
