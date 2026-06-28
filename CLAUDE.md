@@ -49,7 +49,7 @@ muckdb session tile pond-analysis --name species --title "By species" \
 ## Command reference
 
 ```
-muckdb session create <name> [--title T]
+muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
@@ -57,6 +57,9 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
 muckdb session rm <name> [--tile TILE]
 ```
 
+- **Link the session to your conversation** with `--claude "$CLAUDE_CODE_SESSION_ID"`
+  on `create`. The UUID is shown at the top of the session view and returned by
+  `muckdb ls session <id>` (`claude_session`).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
 - `--md -` reads the markdown from stdin (good for long/heredoc content).

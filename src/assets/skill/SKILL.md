@@ -89,8 +89,10 @@ readable, convert it to CSV/JSON/Parquet first, then load that.
 # 1. Tag your work so commands are grouped under a session in the ledger.
 export MUCKDB_SESSION=pond-analysis
 
-# 2. Create the session (optional --title).
-muckdb session create pond-analysis --title "Pond analysis"
+# 2. Create the session, linked to THIS Claude session via its UUID so the
+#    dashboard is tied to the conversation that built it.
+muckdb session create pond-analysis --title "Pond analysis" \
+  --claude "$CLAUDE_CODE_SESSION_ID"
 
 # 3. Ingest + analyse. Create VIEWS for anything you want to chart or let the
 #    human explore. (muckdb == duckdb here.)
@@ -114,7 +116,7 @@ muckdb session tile pond-analysis --name species --title "By species" \
 ## Command reference
 
 ```
-muckdb session create <name> [--title T]
+muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
@@ -122,6 +124,10 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
 muckdb session rm <name> [--tile TILE]
 ```
 
+- **Link the session to your conversation.** Pass `--claude "$CLAUDE_CODE_SESSION_ID"`
+  on `create` to record the Claude Code session UUID on the dashboard. It's shown
+  at the top of the session view and returned by `muckdb ls session <id>`
+  (`claude_session`), so a human can tell which conversation produced a dashboard.
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
 - `--md -` reads the markdown from stdin (good for long/heredoc content).

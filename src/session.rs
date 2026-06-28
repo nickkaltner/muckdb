@@ -62,6 +62,9 @@ pub struct Session {
     pub id: String,
     #[serde(default)]
     pub title: Option<String>,
+    /// The Claude Code session UUID this dashboard was built for, if linked.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claude_session: Option<String>,
     pub created: u64,
     pub updated: u64,
     #[serde(default)]
@@ -148,6 +151,7 @@ fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
     Ok(Session {
         id: id.to_string(),
         title,
+        claude_session: None,
         created: now,
         updated: now,
         tiles: Vec::new(),
@@ -230,13 +234,21 @@ pub fn cli(args: &[String]) -> Result<i32> {
         "create" => {
             let name = session_arg.context("usage: muckdb session create <name>")?;
             let id = slug(&name);
-            let s = load_or_new(&id, p.get("title").map(str::to_string).or(Some(name)));
-            save(&s?)?;
+            let mut s = load_or_new(&id, p.get("title").map(str::to_string).or(Some(name)))?;
+            // Link this dashboard to a Claude Code session by UUID, when given.
+            // Agents pass their own id via $CLAUDE_CODE_SESSION_ID.
+            if let Some(uuid) = p.get("claude").filter(|u| !u.is_empty()) {
+                s.claude_session = Some(uuid.to_string());
+            }
+            save(&s)?;
             crate::facade::ensure_daemon()?;
             println!(
                 "session {id} ready at http://localhost:{}/session/{id}",
                 crate::facade::PORT
             );
+            if let Some(uuid) = &s.claude_session {
+                println!("linked to Claude session {uuid}");
+            }
             Ok(0)
         }
         "post" => {
@@ -322,7 +334,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         _ => {
             eprintln!(
                 "usage: muckdb session <create|list|post|tile|rm> ...\n\
-                 \n  create <name> [--title T]\n  list\n  \
+                 \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n  \
                  rm <name> [--tile TILE]"

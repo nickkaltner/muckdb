@@ -138,6 +138,8 @@
 
   .navrow { display: flex; align-items: center; gap: 8px; padding: 8px 14px; border-bottom: 1px solid var(--line); overflow-x: auto; white-space: nowrap; }
   .navrow .rowlabel { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); margin-right: 6px; flex: none; }
+  .navgroup { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .navgroup[hidden] { display: none; }
   .navchip { font: inherit; font-size: 12px; padding: 5px 11px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--fg); cursor: pointer; flex: none; }
   .navchip:hover { border-color: var(--orange-dim); }
   .navchip.active { border-color: var(--orange); color: var(--orange); }
@@ -291,6 +293,11 @@
 
   /* sessions */
   .session-body { flex: 1; overflow: auto; }
+  .session-head { flex: none; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--grad-panel), var(--surface); }
+  .sh-title { font-size: 15px; font-weight: 600; color: var(--fg); }
+  .sh-claude { display: inline-flex; align-items: center; gap: 8px; }
+  .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+  .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
   .panel { background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
   .panel.sel { box-shadow: inset 3px 0 0 0 var(--orange), var(--hi); }
@@ -368,8 +375,7 @@
 
   <main>
     <section class="view flex active" id="view-databases" aria-label="Databases">
-      <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span></div>
-      <div class="navrow" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></div>
+      <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span><span class="navgroup" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></span></div>
       <div class="db-body">
         <aside class="facet-panel" id="facet-panel"></aside>
         <div class="results" id="results">
@@ -380,6 +386,7 @@
 
     <section class="view flex" id="view-sessions" aria-label="Sessions">
       <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span></div>
+      <div class="session-head" id="session-head" hidden></div>
       <div class="session-body" id="session-body">
         <div class="empty" id="session-empty" style="margin:18px">
           No sessions yet. An agent creates one with <code>muckdb session create NAME</code>,
@@ -429,7 +436,7 @@
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
     panelSel: -1,
-    theme: "mono",
+    theme: "carbon",
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
@@ -501,14 +508,14 @@
     },
     ultraviolet: {
       label: "ultraviolet", vars: {
-        bg: "#0a0712", surface: "#120d20", raised: "#19132a", line: "#2f2548", "line-soft": "#150f24",
-        fg: "#ebe4fb", muted: "#a99fc8", faint: "#6a5f93", "on-accent": "#0a0712",
-        orange: "#b46bff", amber: "#cf94ff", ember: "#7d3fd0", "orange-dim": "#6a3aae", teal: "#4fd0d6",
-        ok: "#7fe0a8", fail: "#ff6b8a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(180,107,255,0.1), transparent 70%)",
+        bg: "#050208", surface: "#0c0717", raised: "#140c26", line: "#352658", "line-soft": "#130b26",
+        fg: "#f2ecff", muted: "#b1a4d6", faint: "#6e5fa2", "on-accent": "#050208",
+        orange: "#c77dff", amber: "#dca6ff", ember: "#8a2bef", "orange-dim": "#6f2fd8", teal: "#4fe0e6",
+        ok: "#86ecae", fail: "#ff6b8a",
+        glow: "radial-gradient(1100px 520px at 80% -14%, rgba(168,85,255,0.22), transparent 68%)",
       },
-      grad2: ["#e0a0ff", "#6f3fd0"],
-      chart: ["#b46bff", "#4fd6e0", "#ff8ad8", "#9ede5a", "#ffb86c", "#ff6b8a", "#7f9aff", "#e0c060"],
+      grad2: ["#f4c4ff", "#5e0fd6"],
+      chart: ["#c77dff", "#3fe0ec", "#ff8ad8", "#a6f25a", "#ffb86c", "#ff6b8a", "#8a9bff", "#e6c860"],
     },
     lime: {
       label: "lime", vars: {
@@ -540,8 +547,8 @@
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
     "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi"];
   function applyTheme(name) {
-    const t = THEMES[name] || THEMES.mono;
-    state.theme = THEMES[name] ? name : "mono";
+    const t = THEMES[name] || THEMES.carbon;
+    state.theme = THEMES[name] ? name : "carbon";
     const root = document.documentElement.style;
     THEME_VARS.forEach((k) => root.removeProperty("--" + k));
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
@@ -1117,9 +1124,29 @@
   function renderSessionNav() {
     const ss = state.sessions;
     $("session-empty").style.display = ss.length ? "none" : "block";
-    $("session-chips").innerHTML = ss.length
-      ? ss.map((s) => `<button class="navchip l1${s.id === state.selSession ? " active" : ""}" data-session="${attr(s.id)}">${esc(s.title || s.id)}<span class="sub">${s.tiles}</span></button>`).join(" ")
-      : '<span class="note">none</span>';
+    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-head").hidden = true; return; }
+    const cur = ss.find((s) => s.id === state.selSession);
+    const name = cur ? (cur.title || cur.id) : "select a session";
+    $("session-chips").innerHTML = `<button class="combo" id="session-combo"><span class="cv-name">${esc(name)}</span><span class="cv-sub">${ss.length} ${ss.length === 1 ? "session" : "sessions"}</span><span class="cv-caret">▾</span></button>`;
+  }
+  function openSessionCombo(anchor) {
+    if (!state.sessions.length) return;
+    openPicker({
+      anchor, placeholder: "filter sessions…",
+      items: state.sessions.map((s) => ({ label: s.title || s.id, sub: s.tiles + (s.tiles === 1 ? " tile" : " tiles"), id: s.id })),
+      onPick: (it) => loadSession(it.id, true),
+    });
+  }
+  // The header above the panels: session title + the linked Claude session UUID.
+  function renderSessionHead(s) {
+    const head = $("session-head");
+    if (!head) return;
+    const cs = s.claude_session;
+    head.innerHTML = `<span class="sh-title">${esc(s.title || s.id)}</span>`
+      + (cs
+        ? `<span class="sh-claude" title="The Claude Code session this dashboard is linked to"><span class="sh-label">claude session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button></span>`
+        : "");
+    head.hidden = false;
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }
   async function loadSession(id, push) {
@@ -1136,6 +1163,7 @@
   }
   function renderPanels(s) {
     destroyCharts();
+    renderSessionHead(s);
     const tiles = s.tiles || [];
     $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("") : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
     state.panelSel = -1;
@@ -1194,8 +1222,8 @@
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   // The active chart palette — set by applyTheme().
-  let PAL = THEMES.mono.chart.slice();
-  let GRAD2 = THEMES.mono.grad2.slice();
+  let PAL = THEMES.carbon.chart.slice();
+  let GRAD2 = THEMES.carbon.grad2.slice();
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1496,12 +1524,13 @@
   document.addEventListener("click", (ev) => {
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
     const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
+    const sessCombo = ev.target.closest("#session-combo"); if (sessCombo) { openSessionCombo(sessCombo); return; }
     if (ev.target.closest("#kbtn")) { openPalette(); return; }
     const themeBtn = ev.target.closest("#theme-btn"); if (themeBtn) { openThemePicker(themeBtn); return; }
-    const copyDb = ev.target.closest("[data-copydb]");
-    if (copyDb) {
-      const txt = state.selDb || "";
-      const done = () => { const o = copyDb.textContent; copyDb.textContent = "✓"; setTimeout(() => { copyDb.textContent = o; }, 1200); };
+    const copyBtn = ev.target.closest("[data-copydb], [data-copytext]");
+    if (copyBtn) {
+      const txt = copyBtn.hasAttribute("data-copytext") ? copyBtn.getAttribute("data-copytext") : (state.selDb || "");
+      const done = () => { const o = copyBtn.textContent; copyBtn.textContent = "✓"; setTimeout(() => { copyBtn.textContent = o; }, 1200); };
       if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(() => {});
       else { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) {} ta.remove(); }
       return;
@@ -1563,6 +1592,18 @@
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
     if (ev.key === "Escape") { closeZoom(); closePicker(); }
+    // Space toggles the selected session panel expanded/contracted. Runs even
+    // with a zoom overlay up (so it closes it), but not over a picker or inputs.
+    if ((ev.key === " " || ev.key === "Spacebar") && state.tab === "sessions" && state.selSession
+      && !ev.metaKey && !ev.ctrlKey && !ev.altKey
+      && !ev.target.matches("input, textarea, [contenteditable]")
+      && !document.querySelector(".pick-pop, .pick-overlay")) {
+      if (document.querySelector(".zoom-overlay")) { ev.preventDefault(); closeZoom(); return; }
+      if (state.panelSel >= 0) {
+        const panel = document.querySelectorAll("#panels .panel")[state.panelSel];
+        if (panel && panel.dataset.tile) { ev.preventDefault(); zoomTile(panel.dataset.tile); return; }
+      }
+    }
     // Panel navigation on the sessions view (skip while typing or with an overlay up).
     if (state.tab === "sessions" && state.selSession && !ev.metaKey && !ev.ctrlKey && !ev.altKey
       && !ev.target.matches("input, textarea, [contenteditable]")
@@ -1714,7 +1755,7 @@
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
   }
-  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "mono");
+  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "carbon");
 
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
