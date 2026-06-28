@@ -1216,7 +1216,7 @@
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
       const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], fontColor: fg, index: i })) } } } } };
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], fontColor: fg, index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
