@@ -87,11 +87,24 @@ pub fn stop() -> Result<i32> {
         return Ok(1);
     }
     let rc = unsafe { libc::kill(pid, libc::SIGTERM) };
-    if rc == 0 {
-        let _ = fs::remove_file(paths::pid_file()?);
-        println!("stopped muckdb daemon (pid {pid})");
-        Ok(0)
-    } else {
+    if rc != 0 {
         anyhow::bail!("failed to signal muckdb daemon (pid {pid})");
     }
+    // SIGTERM is asynchronous: the process keeps holding the port until it
+    // actually exits. Wait for it to die before returning, otherwise a
+    // following `--display`/facade call sees the dying daemon as still
+    // listening, no-ops, and ends up with no daemon at all.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    while std::time::Instant::now() < deadline {
+        if !pid_alive(pid) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(50));
+    }
+    if pid_alive(pid) {
+        let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
+    }
+    let _ = fs::remove_file(paths::pid_file()?);
+    println!("stopped muckdb daemon (pid {pid})");
+    Ok(0)
 }

@@ -15,7 +15,7 @@ use crate::{paths, store};
 /// How a data tile should be charted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
-    /// bar | line | area | scatter | pie | table
+    /// bar | stacked | line | area | scatter | pie | table
     pub kind: String,
     #[serde(default)]
     pub x: Option<String>,
@@ -324,7 +324,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "usage: muckdb session <create|list|post|tile|rm> ...\n\
                  \n  create <name> [--title T]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n  \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n  \
                  rm <name> [--tile TILE]"
             );
             Ok(2)

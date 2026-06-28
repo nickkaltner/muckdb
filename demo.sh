@@ -57,6 +57,14 @@ WHERE random() < 0.012
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
+-- One row per region, revenue split into category columns — the shape a stacked
+-- bar wants: x = region, y = the category series that stack into a total.
+CREATE OR REPLACE VIEW revenue_by_region_category AS
+  SELECT region,
+         round(sum(amount) FILTER (category = 'Hardware'), 2) AS hardware,
+         round(sum(amount) FILTER (category = 'Software'), 2) AS software,
+         round(sum(amount) FILTER (category = 'Services'), 2) AS services
+  FROM sales GROUP BY 1 ORDER BY region;
 CREATE OR REPLACE VIEW events_per_hour   AS SELECT date_trunc('hour', ts) AS hour, count(*) AS events FROM events GROUP BY 1 ORDER BY 1;
 CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
 " >/dev/null
@@ -68,7 +76,7 @@ CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
 
 A quick tour of what muckdb can do, all driven from the command line.
 
-- 📊 **Bars / pies** from aggregated duckdb views (\`sales\`)
+- 📊 **Bars / stacked bars / pies** from aggregated duckdb views (\`sales\`)
 - 🌡️ A **regular** hourly time series (\`sensors\`)
 - ⚡ An **irregular** event stream (\`events\`) — notice how the points per time
   period vary a lot
@@ -89,6 +97,10 @@ Click **explore** on any data panel to open it in the faceted table browser
 
 "$MUCKDB" session tile "$SESSION" --name categories --title "Orders by category" \
   --db "$DB" --view sales_by_category --chart pie --x category --y orders >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name region_mix --title "Revenue mix by region" \
+  --db "$DB" --view revenue_by_region_category --chart stacked --x region --y hardware,software,services \
+  --caption "Stacked bars — each region's total split into Hardware / Software / Services." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name climate --title "Sensors (regular hourly series)" \
   --db "$DB" --view sensors --chart line --x ts --y temp_c,humidity \

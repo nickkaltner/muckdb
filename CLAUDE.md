@@ -53,7 +53,7 @@ muckdb session create <name> [--title T]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -64,9 +64,12 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | line | area | scatter | pie | table`. For `bar`/`line`/etc,
-  put aggregation in the view/SQL (one row per x). If the `--x` column is a
-  date/timestamp, the chart uses a real time axis automatically.
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table`. For
+  `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
+  column is a date/timestamp, the chart uses a real time axis automatically.
+- `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
+  one row per `--x`; the series stack into each bar's total. Shape the view so
+  each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
 
 ## Inspecting state (read it back as JSON)
 
