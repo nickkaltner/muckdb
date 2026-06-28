@@ -253,6 +253,13 @@ pub struct ColumnStat {
     pub min: Option<f64>,
     pub max: Option<f64>,
     pub avg: Option<f64>,
+    /// Quartiles for numeric columns (box-plot): 25th, 50th (median), 75th.
+    #[serde(default)]
+    pub q1: Option<f64>,
+    #[serde(default)]
+    pub median: Option<f64>,
+    #[serde(default)]
+    pub q3: Option<f64>,
     pub histogram: Vec<HistBin>,
     pub top: Vec<TopValue>,
     /// Date-bucketed counts (time order) for temporal columns.
@@ -700,7 +707,8 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
         ));
         if is_numeric(ty) {
             sel.push_str(&format!(
-                ", min({q}) AS mn{i}, max({q}) AS mx{i}, avg({q}) AS av{i}"
+                ", min({q}) AS mn{i}, max({q}) AS mx{i}, avg({q}) AS av{i}, \
+                 quantile_cont({q}, 0.25) AS q1{i}, median({q}) AS md{i}, quantile_cont({q}, 0.75) AS q3{i}"
             ));
         }
     }
@@ -717,14 +725,17 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
         let numeric = is_numeric(ty);
         let nulls = row_count - geti(&format!("nn{i}"));
         let distinct = geti(&format!("nd{i}"));
-        let (min, max, avg) = if numeric {
+        let (min, max, avg, q1, median, q3) = if numeric {
             (
                 getf(&format!("mn{i}")),
                 getf(&format!("mx{i}")),
                 getf(&format!("av{i}")),
+                getf(&format!("q1{i}")),
+                getf(&format!("md{i}")),
+                getf(&format!("q3{i}")),
             )
         } else {
-            (None, None, None)
+            (None, None, None, None, None, None)
         };
 
         let temporal = is_temporal(ty);
@@ -769,6 +780,9 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
             min,
             max,
             avg,
+            q1,
+            median,
+            q3,
             histogram,
             top,
             timeline,

@@ -142,6 +142,7 @@
   .navchip .sub { color: var(--faint); margin-left: 7px; font-size: 11px; }
   .navchip.l1 { background: var(--raised); }
   .navchip.query { color: var(--orange); border-style: dashed; }
+  .view-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--orange-dim); color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); flex: none; }
   .navchip.query.active { background: var(--grad-accent); color: var(--on-accent); border-style: solid; font-weight: 700; }
 
   .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
@@ -233,6 +234,11 @@
   .hist .brush-sel { position: absolute; top: 0; bottom: 0; background: rgba(255, 122, 26, 0.22); border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; }
   .hist-hint { font-size: 10px; color: var(--faint); margin-top: 4px; }
   .hist-axis { display: flex; justify-content: space-between; font-size: 10px; color: var(--faint); margin-top: 5px; }
+  .box { position: relative; height: 16px; margin-top: 9px; }
+  .box-whisk { position: absolute; top: 50%; height: 1px; background: var(--faint); transform: translateY(-50%); }
+  .box-cap { position: absolute; top: 50%; width: 1px; height: 9px; background: var(--muted); transform: translateY(-50%); }
+  .box-iqr { position: absolute; top: 50%; height: 12px; background: color-mix(in srgb, var(--orange) 30%, transparent); border: 1px solid var(--orange-dim); border-radius: 2px; transform: translateY(-50%); }
+  .box-med { position: absolute; top: 50%; width: 2px; height: 12px; background: var(--orange); transform: translateY(-50%); }
   .stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
   .stat-nums b { color: var(--fg); font-weight: 400; }
   .toplist { display: flex; flex-direction: column; gap: 4px; }
@@ -323,9 +329,12 @@
   .statusline.live .seg-state { color: var(--fg); }
   .seg-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-right: 8px; }
   .statusline.live .seg-state::before { background: var(--ok); }
-  .seg-db { flex: 1; min-width: 0; color: var(--orange-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .seg-db::before { content: "⛁ "; color: var(--faint); }
+  .seg-db { flex: 1; min-width: 0; color: var(--orange-dim); display: flex; align-items: center; gap: 6px; }
+  .seg-db::before { content: "⛁"; color: var(--faint); flex: none; }
   .seg-db:empty::before { content: ""; }
+  .sl-db-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sl-copy { flex: none; background: none; border: none; color: var(--faint); cursor: pointer; font: inherit; font-size: 12px; line-height: 1; padding: 2px; border-radius: 4px; }
+  .sl-copy:hover { color: var(--orange); background: var(--raised); }
   .seg-clock { color: var(--fg); }
   .seg-port { color: var(--orange-dim); border-right: 0; }
 
@@ -439,7 +448,7 @@
         ok: "#9bbf8a", fail: "#cf8f88",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
       },
-      grad2: ["#cfd3d8", "#5e636b"],
+      grad2: ["#f3e4c6", "#bf7a16"],
       chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
     },
     carbon: {
@@ -450,12 +459,12 @@
         ok: "#a6d07a", fail: "#ff7a6b",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,176,0,0.07), transparent 70%)",
       },
-      grad2: ["#ffffff", "#5e626b"],
+      grad2: ["#ffffff", "#ff8a00"],
       chart: ["#f5f6f8", "#ffb000", "#9aa0a8", "#6e737b", "#d98e00", "#cfd3d8", "#84898f", "#4f535a"],
     },
     ember: {
       label: "ember", vars: {
-        bg: "#0f0b07", surface: "#181109", raised: "#20160d", line: "#3a2a1b", "line-soft": "#1c150d",
+        bg: "#08070a", surface: "#13100c", raised: "#1b1711", line: "#362a1d", "line-soft": "#16110b",
         fg: "#f3e7d6", muted: "#b39a82", faint: "#786350", "on-accent": "#0f0b07",
         orange: "#ff8c2e", amber: "#ffb454", ember: "#e0531c", "orange-dim": "#b1521f", teal: "#4bc4a8",
         ok: "#b8c46a", fail: "#ff6a4d",
@@ -690,7 +699,12 @@
   }
 
   // ---- nav --------------------------------------------------------------
-  function updateDbStatus() { const el = $("sl-db"); if (el) el.textContent = state.selDb || ""; }
+  function updateDbStatus() {
+    const el = $("sl-db"); if (!el) return;
+    el.innerHTML = state.selDb
+      ? `<span class="sl-db-path">${esc(state.selDb)}</span><button class="sl-copy" data-copydb title="Copy database path">⧉</button>`
+      : "";
+  }
   function renderDbNav() {
     updateDbStatus();
     const dbs = state.databases;
@@ -712,7 +726,7 @@
     const t = state.tables.find((x) => x.name === state.selTable);
     const cur = state.mode === "query" ? "query editor" : (state.selTable || "select a table");
     const sub = state.mode === "query" ? "" : `<span class="cv-sub">${state.tables.length} ${state.tables.length === 1 ? "table" : "tables"}</span>`;
-    const combo = `<button class="combo" id="table-combo"><span class="cv-name">${esc(cur)}${t && t.is_view ? " ·view" : ""}</span>${sub}<span class="cv-caret">▾</span></button>`;
+    const combo = `<button class="combo" id="table-combo"><span class="cv-name">${esc(cur)}</span>${sub}<span class="cv-caret">▾</span></button>`;
     const qchip = `<button class="navchip query${state.mode === "query" ? " active" : ""}" data-querymode>＋ query</button>`;
     $("table-chips").innerHTML = combo + " " + qchip;
   }
@@ -835,6 +849,7 @@
     $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
+        ${t && t.is_view ? '<span class="view-pill" title="This is a SQL view, not a base table">view</span>' : ""}
         <span class="tp-rows">${colCount}</span>
         <span class="tp-actions">${exp}
           <span class="seg">
@@ -915,12 +930,27 @@
       body = `<div class="hist" data-col="${attr(c.name)}" data-min="${c.min}" data-max="${c.max}">${bars}</div>
         <div class="hist-axis"><span>${fmtNum(c.min)}</span><span>${fmtNum(c.max)}</span></div>
         <div class="hist-hint">drag across to filter this range</div>
+        ${boxPlot(c)}
         <div class="stat-nums"><span><b>min</b> ${fmtNum(c.min)}</span><span><b>avg</b> ${fmtNum(c.avg)}</span><span><b>max</b> ${fmtNum(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
       body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
     } else { body = '<div class="note">no distribution available.</div>'; }
     return `<div class="stat-card"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
+  }
+  // Horizontal box-and-whisker over [min..max]: whiskers to min/max, box from
+  // q1 to q3, line at the median. Degenerate (zero-width) ranges are skipped.
+  function boxPlot(c) {
+    const lo = c.min, hi = c.max, q1 = c.q1, q3 = c.q3, med = c.median;
+    if ([lo, hi, q1, q3, med].some((v) => v == null) || !(hi > lo)) return "";
+    const pct = (v) => ((v - lo) / (hi - lo)) * 100;
+    const boxL = pct(q1), boxW = Math.max(0.5, pct(q3) - pct(q1)), medL = pct(med);
+    return `<div class="box" title="min ${fmtNum(lo)} · q1 ${fmtNum(q1)} · median ${fmtNum(med)} · q3 ${fmtNum(q3)} · max ${fmtNum(hi)}">
+      <span class="box-whisk" style="left:0;right:0"></span>
+      <span class="box-cap" style="left:0"></span><span class="box-cap" style="right:0"></span>
+      <span class="box-iqr" style="left:${boxL}%;width:${boxW}%"></span>
+      <span class="box-med" style="left:${medL}%"></span>
+    </div>`;
   }
 
   async function loadSchema() {
@@ -1445,6 +1475,14 @@
     const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
     if (ev.target.closest("#kbtn")) { openPalette(); return; }
     const themeBtn = ev.target.closest("#theme-btn"); if (themeBtn) { openThemePicker(themeBtn); return; }
+    const copyDb = ev.target.closest("[data-copydb]");
+    if (copyDb) {
+      const txt = state.selDb || "";
+      const done = () => { const o = copyDb.textContent; copyDb.textContent = "✓"; setTimeout(() => { copyDb.textContent = o; }, 1200); };
+      if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done).catch(() => {});
+      else { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) {} ta.remove(); }
+      return;
+    }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
     const openDb = ev.target.closest("[data-open-db]");
     if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
