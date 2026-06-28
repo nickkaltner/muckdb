@@ -50,6 +50,53 @@ summarising data in text, land it in duckdb and present it so the human can
 - When you state a conclusion, link to the dashboard/tile that proves it rather
   than restating the numbers.
 
+## Summarise tabular data with markdown panels — always
+
+**Never dump a table of numbers into chat.** When you have tabular results to
+report, post a **markdown panel** (`muckdb session post`) that summarises them,
+and put the rows themselves in a chart or an explorable view tile beside it. A
+markdown panel is the headline; the chart/view is the evidence.
+
+Make this your default reflex for *any* result set:
+
+- **Lead every dashboard with a markdown summary panel.** Open with the headline
+  finding in prose, then a compact **markdown table** of the key figures. The
+  human should understand the result from the top panel alone, before scrolling.
+- **Render small result sets as a markdown table, not raw rows.** If a query
+  returns a handful of rows (totals, top-N, a breakdown), format them as a
+  GitHub pipe table in a markdown panel — right-align numbers, add a units/`%`
+  column — instead of pasting CLI output. Use a `table` chart or a view tile when
+  the human needs to sort/filter/export the full set.
+- **Pair every chart with words.** Each chart tile should sit under (or beside) a
+  markdown panel that says what it shows and why it matters — the trend, the
+  outlier, the so-what. A chart with no narrative is half a result.
+- **Keep the headline numbers in markdown.** Totals, deltas, and rates belong in
+  a markdown panel (bold them, show the change) so the takeaway is unmissable;
+  the chart shows the shape, the table shows the exact values.
+
+```sh
+# Headline panel: prose + a markdown table of the exact figures.
+muckdb session post sales --name summary --title "Q2 summary" --md - <<'MD'
+# Q2 sales
+
+Revenue **$1.2M (+18% QoQ)** across **4 regions**; Northland leads.
+
+| Region    | Revenue   | Orders | Share |
+|:----------|----------:|-------:|------:|
+| Northland | $412,000  |  1,204 |  34%  |
+| Eastvale  | $356,000  |  1,011 |  29%  |
+| Southport | $241,000  |    832 |  20%  |
+| Westend   | $203,000  |    789 |  17%  |
+
+See **By region** below to sort/filter/export the full breakdown.
+MD
+
+# Evidence: the chart (and a view tile the human can drill into).
+muckdb session tile sales --name by_region --title "By region" \
+  --db sales.duckdb --view revenue_by_region --chart bar --x region --y revenue \
+  --xlabel Region --ylabel Revenue
+```
+
 ## Get any data into duckdb
 
 duckdb reads most formats directly — so the move for *any* incoming data is to
@@ -121,6 +168,7 @@ muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--xlabel L] [--ylabel L]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session rm <name> [--tile TILE]
 ```
@@ -138,7 +186,10 @@ muckdb session rm <name> [--tile TILE]
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
 - Chart kinds: `bar | stacked | line | area | scatter | pie | table`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
-  column is a date/timestamp, the chart uses a real time axis automatically.
+  column is a date/timestamp, the chart uses a real time axis automatically, drawn
+  on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
+  of skewing by the viewer's timezone.
+- **Label your axes** with `--xlabel`/`--ylabel` so a chart is readable on its own.
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
@@ -199,8 +250,10 @@ been running.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
-- **Markdown for narrative, charts for data.** Lead with a markdown summary tile,
-  then supporting chart tiles. Let the charts carry the numbers.
+- **Markdown for narrative, charts for data.** Lead with a markdown summary tile
+  (prose + a markdown table of the key figures), then supporting chart tiles.
+  Never dump raw rows into chat — summarise in markdown, evidence in a chart/view
+  (see "Summarise tabular data with markdown panels" above).
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links

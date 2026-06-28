@@ -383,13 +383,13 @@
   </header>
 
   <nav class="tabs" id="tabs">
-    <button class="tab active" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
-    <button class="tab" data-tab="sessions">sessions</button>
+    <button class="tab" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
+    <button class="tab active" data-tab="sessions">sessions</button>
     <button class="tab" data-tab="ledger">ledger<span class="badge-n" id="tab-n-ledger">0</span></button>
   </nav>
 
   <main>
-    <section class="view flex active" id="view-databases" aria-label="Databases">
+    <section class="view flex" id="view-databases" aria-label="Databases">
       <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span><span class="navgroup" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></span></div>
       <div class="db-body">
         <aside class="facet-panel" id="facet-panel"></aside>
@@ -399,7 +399,7 @@
       </div>
     </section>
 
-    <section class="view flex" id="view-sessions" aria-label="Sessions">
+    <section class="view flex active" id="view-sessions" aria-label="Sessions">
       <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span></div>
       <div class="session-body" id="session-body">
         <div class="empty" id="session-empty" style="margin:18px">
@@ -438,7 +438,7 @@
   const DEFAULT_SQL = "SELECT 1";
 
   const state = {
-    tab: "databases",
+    tab: "sessions",
     history: [], databases: [],
     selDb: null, tables: [], selTable: null,
     mode: "table",      // "table" | "query"
@@ -451,7 +451,7 @@
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
-    theme: "carbon",
+    theme: "hearth",
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
@@ -558,13 +558,13 @@
     },
     hearth: {
       label: "hearth", flat: true, vars: {
-        bg: "#0e0d0b", surface: "#161512", raised: "#1d1b17", line: "#2c2a25", "line-soft": "#1a1814",
-        fg: "#ece8e0", muted: "#9b958a", faint: "#625d54", "on-accent": "#0e0d0b",
-        orange: "#ff8a2e", amber: "#ffab5c", ember: "#d96f23", "orange-dim": "#8a5a2c", teal: "#b8b2a6",
-        ok: "#a6c97a", fail: "#e8836b",
+        bg: "#1d1510", surface: "#241a13", raised: "#30231a", line: "#3f2e21", "line-soft": "#281d15",
+        fg: "#f1e7db", muted: "#b49d87", faint: "#806852", "on-accent": "#1d1510",
+        orange: "#ff7e2e", amber: "#ffa758", ember: "#e0641c", "orange-dim": "#9c5e2e", teal: "#bca78f",
+        ok: "#b6c97a", fail: "#ec7d5e",
       },
-      grad2: ["#ffc480", "#e06a1f"],
-      chart: ["#ff8a2e", "#b8b2a6", "#ffc480", "#8a8275", "#d96f23", "#cfc7b8", "#9b7a52", "#625d54"],
+      grad2: ["#ffb066", "#e0601c"],
+      chart: ["#ff7e2e", "#bca78f", "#ffb066", "#a08a6f", "#e0641c", "#d4c3ad", "#a9794c", "#806852"],
     },
   };
   // Vars a theme may set; cleared between themes so optional ones (e.g. a light
@@ -573,8 +573,8 @@
     "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi",
     "anno-target", "anno-threshold", "anno-event"];
   function applyTheme(name) {
-    const t = THEMES[name] || THEMES.carbon;
-    state.theme = THEMES[name] ? name : "carbon";
+    const t = THEMES[name] || THEMES.hearth;
+    state.theme = THEMES[name] ? name : "hearth";
     const root = document.documentElement.style;
     THEME_VARS.forEach((k) => root.removeProperty("--" + k));
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
@@ -691,11 +691,12 @@
   }
   function parseUrl() {
     const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    let tab = "databases", dbId = null, table = null, mode = "table", sessionId = null;
+    let tab = "sessions", dbId = null, table = null, mode = "table", sessionId = null;
     if (segs[0] === "ledger") tab = "ledger";
     else if (segs[0] === "sessions") tab = "sessions";
     else if (segs[0] === "session") { tab = "sessions"; sessionId = segs[1] || null; }
     else if (segs[0] === "db") {
+      tab = "databases";
       dbId = segs[1] || null;
       if (segs[2] === "query") mode = "query"; else table = segs[2] || null;
     }
@@ -720,6 +721,7 @@
     setTab(nav.tab);
     if (nav.tab === "sessions") {
       if (nav.sessionId) await loadSession(nav.sessionId, false);
+      else maybeAutoSession();
     } else {
       const dbPath = resolveDb(nav);
       if (dbPath) await selectDb(dbPath, nav); else pendingNav = nav;
@@ -1345,8 +1347,8 @@
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   // The active chart palette — set by applyTheme().
-  let PAL = THEMES.carbon.chart.slice();
-  let GRAD2 = THEMES.carbon.grad2.slice();
+  let PAL = THEMES.hearth.chart.slice();
+  let GRAD2 = THEMES.hearth.grad2.slice();
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1397,7 +1399,21 @@
       /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(String(v)) &&
       !isNaN(Date.parse(String(v).replace(" ", "T"))));
   }
-  const toMs = (v) => Date.parse(String(v).replace(" ", "T"));
+  // Parse a date-ish value for a time axis and pin it to a UTC wall-clock.
+  // DB timestamps are tz-naive (or stored UTC); a date-only value parses as UTC
+  // midnight while a naive datetime parses as *local* — and Chart.js then renders
+  // in local time, so a daily bucket at UTC-midnight slides to e.g. 10am and bars
+  // stop lining up with their day. We normalise every value to a UTC instant,
+  // then shift by the viewer's offset so the local-time renderer shows the UTC
+  // components — keeping daily/hourly buckets on their real boundaries.
+  function toMs(v) {
+    const s = String(v).trim().replace(" ", "T");
+    const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s);
+    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
+    const t = Date.parse(hasZone ? s : dateOnly ? s + "T00:00:00Z" : s + "Z");
+    if (isNaN(t)) return NaN;
+    return t + new Date(t).getTimezoneOffset() * 60000;
+  }
   function chartOpts(scatter, time, stacked) {
     const x = time
       ? { type: "time", grid: { color: "rgba(255,255,255,0.05)" }, ticks: { autoSkip: true, maxRotation: 0 } }
@@ -1476,6 +1492,17 @@
       } } });
       return o;
     };
+    // Optional axis titles from --xlabel/--ylabel.
+    const applyAxisTitles = (o) => {
+      const col = cssVar("--muted") || "#9b958a";
+      const set = (ax, text) => {
+        if (text && o.scales && o.scales[ax]) {
+          o.scales[ax].title = { display: true, text, color: col, font: { size: 11 } };
+        }
+      };
+      set("x", spec.xlabel); set("y", spec.ylabel);
+      return o;
+    };
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
@@ -1484,7 +1511,7 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      const o = applyYFmt(chartOpts(true, timeX)); if (anno) o.plugins.muckAnno = anno;
+      const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX))); if (anno) o.plugins.muckAnno = anno;
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
     const stacked = kind === "stacked";
@@ -1515,7 +1542,7 @@
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    const o = applyYFmt(chartOpts(false, timeX, stacked)); if (anno) o.plugins.muckAnno = anno;
+    const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked))); if (anno) o.plugins.muckAnno = anno;
     return { type, data, options: o };
   }
   // Resolve a tile's target/threshold/event markers into pixel-resolvable values.
@@ -1959,12 +1986,15 @@
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
   }
-  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "carbon");
+  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
 
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
-  if (initial.tab === "sessions" && initial.sessionId) loadSession(initial.sessionId, false);
-  else pendingNav = initial;
+  if (initial.tab === "sessions") {
+    // With a specific session in the URL, open it; otherwise maybeAutoSession()
+    // opens the first session once the list arrives (see apply()).
+    if (initial.sessionId) loadSession(initial.sessionId, false);
+  } else pendingNav = initial;
   window.addEventListener("popstate", () => restoreFromNav(parseUrl()));
   connect();
 })();

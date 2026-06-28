@@ -54,6 +54,7 @@ muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--xlabel L] [--ylabel L]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session rm <name> [--tile TILE]
 ```
@@ -70,7 +71,10 @@ muckdb session rm <name> [--tile TILE]
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
 - Chart kinds: `bar | stacked | line | area | scatter | pie | table`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
-  column is a date/timestamp, the chart uses a real time axis automatically.
+  column is a date/timestamp, the chart uses a real time axis automatically, drawn
+  on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
+  `DATE` day won't skew by the viewer's timezone).
+- **Axis labels**: `--xlabel`/`--ylabel` set the x/y axis titles on any chart.
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
@@ -116,8 +120,10 @@ been running.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
-- **Markdown for narrative, charts for data.** Lead with a markdown summary tile,
-  then supporting chart tiles.
+- **Markdown for narrative, charts for data.** Lead with a markdown summary tile
+  (prose + a markdown table of the key figures), then supporting chart tiles.
+  Never dump raw rows into chat — summarise in a markdown panel and put the data
+  in a chart or explorable view tile beside it.
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links

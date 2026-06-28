@@ -66,6 +66,9 @@ CREATE OR REPLACE VIEW revenue_by_region_category AS
          round(sum(amount) FILTER (category = 'Services'), 2) AS services
   FROM sales GROUP BY 1 ORDER BY region;
 CREATE OR REPLACE VIEW events_per_hour   AS SELECT date_trunc('hour', ts) AS hour, count(*) AS events FROM events GROUP BY 1 ORDER BY 1;
+-- Daily volume keyed by a DATE column — one bar per calendar day. (Good test of
+-- the time axis: a DATE must sit on its own day, not skew by the viewer's tz.)
+CREATE OR REPLACE VIEW sales_per_day     AS SELECT sold_on AS day, count(*) AS orders, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY 1;
 CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
 
 -- A column comment carries a display format that travels with the database.
@@ -125,8 +128,14 @@ Click **explore** on any data panel to open it in the faceted table browser
 
 "$MUCKDB" session tile "$SESSION" --name throughput --title "Events per hour (uneven density)" \
   --db "$DB" --view events_per_hour --chart bar --x hour --y events \
+  --xlabel "Hour (UTC)" --ylabel "Events" \
   --event '2026-05-15T00:00|marketing email' \
   --caption "Bucketed counts — bar heights swing with the per-hour/-day intensity. The vertical line marks a campaign send." >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name daily --title "Orders per day" \
+  --db "$DB" --view sales_per_day --chart bar --x day --y orders \
+  --xlabel "Day" --ylabel "Orders" \
+  --caption "Daily volume — one bar per calendar day; bars line up on day boundaries regardless of your timezone." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name scatter --title "Each event over time" \
   --db "$DB" --view events_points --chart scatter --x ts --y value \

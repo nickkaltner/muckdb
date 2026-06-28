@@ -53,9 +53,14 @@ class Muckdb < Formula
   def caveats
     <<~EOS
       muckdb ships a Claude Code skill that teaches coding agents how to drive it.
-      To install it into your skills directory, run:
+
+      First time? Install it into your skills directory:
         muckdb skill install
-      It is written to ~/.claude/skills/muckdb/SKILL.md (--force to update).
+
+      Upgrading muckdb? The bundled skill is updated too — refresh your copy so
+      agents get the latest guidance (this overwrites ~/.claude/skills/muckdb/SKILL.md):
+        muckdb skill install --force
+
       Remove it again with:
         muckdb skill uninstall
     EOS
