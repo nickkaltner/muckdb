@@ -354,8 +354,13 @@
   .md pre code { background: none; color: var(--fg); padding: 0; }
   .md a { color: var(--ripple, var(--orange)); }
   .md strong { color: var(--fg); }
-  .md table { border-collapse: collapse; margin: 4px 0 10px; }
-  .md th, .md td { border: 1px solid var(--line); padding: 4px 9px; font-size: 12px; }
+  /* markdown tables mirror the data-panel tables: orange header on a raised bar,
+     row hover, bottom-border rows, in a rounded bordered container */
+  .md table { border-collapse: separate; border-spacing: 0; margin: 6px 0 12px; font-size: 12px; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
+  .md th, .md td { text-align: left; padding: 6px 12px; border-bottom: 1px solid var(--line-soft); }
+  .md thead th { background: var(--raised); color: var(--orange); border-bottom: 1px solid var(--orange-dim); letter-spacing: 0.03em; }
+  .md tbody tr:last-child td { border-bottom: 0; }
+  .md tbody tr:hover { background: var(--raised); }
 
   .statusline { position: fixed; left: 0; right: 0; bottom: 0; height: var(--statusline-h); display: flex; align-items: stretch; font-size: 11px; letter-spacing: 0.04em; background: linear-gradient(180deg, var(--surface), var(--bg)); border-top: 1px solid var(--line); box-shadow: var(--hi); }
   .statusline .seg-item { display: inline-flex; align-items: center; padding: 0 12px; color: var(--muted); border-right: 1px solid var(--line); }

@@ -113,6 +113,25 @@ A quick tour of what muckdb can do, all driven from the command line.
 Click **explore** on any data panel to open it in the faceted table browser
 (search, facets, range/date sliders, sorting, stats, CSV/JSON export)." >/dev/null
 
+# A panel showing how markdown renders inline `code` and fenced code blocks.
+# (quoted heredoc so the backticks stay literal rather than running as commands.)
+"$MUCKDB" session post "$SESSION" --name recipe --title "How a panel is built" --md - <<'MD'
+Every panel here came from one command. Inline code like `muckdb session tile`
+renders as code, and a fenced block shows a whole command:
+
+```
+muckdb session tile demo --name revenue --title "Revenue by region" \
+  --db demo.duckdb --view sales_by_region \
+  --chart bar --x region --y revenue --bars solid
+```
+
+Re-run with the same `--name` to update a panel in place.
+
+**Links** render too: the [muckdb repo](https://github.com/nickkaltner/muckdb),
+the [docs](https://github.com/nickkaltner/muckdb#readme), or a deep link straight
+to this [session dashboard](http://localhost:11000/session/demo/).
+MD
+
 "$MUCKDB" session tile "$SESSION" --name revenue --title "Revenue by region" \
   --db "$DB" --view sales_by_region --chart bar --x region --y revenue --bars solid \
   --xlabel Region --ylabel Revenue \
