@@ -1158,12 +1158,13 @@
       return g;
     };
   }
-  // One left→right gradient spanning the whole plot area, used as the fill for
-  // every bar — so the gradient is fixed across the chart, not repeated per bar.
-  function hgrad(c0, c1) {
+  // One top→bottom gradient between two colours spanning the whole plot area,
+  // used as the fill for every bar — so the same gradient applies across the
+  // chart rather than repeating per bar.
+  function bargrad(c0, c1) {
     return (c) => {
       const a = c.chart.chartArea; if (!a) return c0;
-      const g = c.chart.ctx.createLinearGradient(a.left, 0, a.right, 0);
+      const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
       g.addColorStop(0, c0); g.addColorStop(1, c1);
       return g;
     };
@@ -1214,7 +1215,8 @@
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], index: i })) } } } } };
+      const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], fontColor: fg, index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
@@ -1230,7 +1232,7 @@
       // first colour as a vertical fade. Lines: solid.
       let bg, border = col;
       if (type === "bar") {
-        bg = single ? hgrad(GRAD2[0], GRAD2[1]) : col;
+        bg = single ? bargrad(GRAD2[0], GRAD2[1]) : col;
         border = "transparent";
       } else if (kind === "area") {
         bg = single ? vgrad(GRAD2[0], 0.42, 0.02) : vgrad(col, 0.34, 0.02);
