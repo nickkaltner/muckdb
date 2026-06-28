@@ -73,7 +73,20 @@ muckdb commands:
   --stop                 stop the background daemon
   session <subcommand>   build dashboards: create | list | post | tile | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
-  skill <install|uninstall>   install or remove the muckdb Claude skill in ~/.claude/skills
+  format <db> <col>      attach a display format to a column ($, %, units, decimals)
+  skill <install|uninstall|path>   manage the muckdb Claude Code skill
+
+Claude Code skill:
+  muckdb ships a skill that teaches coding agents to use muckdb by default for
+  any data work — charting, SQL analysis, and presenting verifiable dashboards.
+  Install it into your user skills directory so agents pick it up automatically:
+
+    muckdb skill install            write it to ~/.claude/skills/muckdb/SKILL.md
+    muckdb skill install --force    overwrite an existing copy
+    muckdb skill path               print where it would be installed
+    muckdb skill uninstall          remove it
+
+  Then restart Claude Code (or start a new session) to load it.
 
 Anything else is passed straight through to duckdb:
 
