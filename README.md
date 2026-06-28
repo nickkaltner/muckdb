@@ -25,6 +25,15 @@ brew install nickkaltner/muckdb/muckdb
 This taps `nickkaltner/homebrew-muckdb` and installs a prebuilt binary. The
 `duckdb` CLI is pulled in as a dependency (muckdb shells out to it).
 
+### Claude skill
+
+muckdb bundles a Claude Code skill that teaches coding agents how to drive it
+(sessions, tiles, JSON introspection). Install it into your skills directory:
+
+```sh
+muckdb skill install   # → ~/.claude/skills/muckdb/SKILL.md (--force to update)
+```
+
 ### From source
 
 ```sh
