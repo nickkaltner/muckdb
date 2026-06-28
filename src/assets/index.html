@@ -79,8 +79,9 @@
   .zoom-box { width: 100%; height: 100%; max-width: 1280px; display: flex; flex-direction: column; background: var(--grad-panel), var(--surface); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 18px 60px rgba(0,0,0,0.6), var(--hi); overflow: hidden; }
   .zoom-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
   .zoom-bar .zoom-title { font-size: 15px; color: var(--fg); }
-  .zoom-close { margin-left: auto; font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
-  .zoom-close:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .zoom-actions { margin-left: auto; display: flex; gap: 8px; }
+  .zoom-close, .zoom-explore { font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
+  .zoom-close:hover, .zoom-explore:hover { border-color: var(--orange-dim); color: var(--orange); }
   .zoom-chart { flex: 1; min-height: 0; padding: 16px 18px; position: relative; }
 
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); box-shadow: var(--hi); }
@@ -463,7 +464,7 @@
     page: 0, total: 0,
     pageMode: "auto", pageSize: 25,
     sql: "",
-    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {},
+    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, zoomPanel: null,
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
     theme: "hearth",
@@ -490,6 +491,7 @@
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
       },
       grad2: ["#f3e4c6", "#bf7a16"],
+      bargrad: ["#fff8ec", "#d6a45e", "#3a3d42"],
       chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
     },
     carbon: {
@@ -682,7 +684,12 @@
 
   function buildPath() {
     if (state.tab === "ledger") return "/ledger";
-    if (state.tab === "sessions") return state.selSession ? "/session/" + encodeURIComponent(state.selSession) + "/" : "/sessions";
+    if (state.tab === "sessions") {
+      if (!state.selSession) return "/sessions";
+      let p = "/session/" + encodeURIComponent(state.selSession) + "/";
+      if (state.zoomPanel) p += "expand/" + encodeURIComponent(state.zoomPanel);
+      return p;
+    }
     const id = state.selDb && dbIdOf(state.selDb);
     if (!id) return "/";
     let p = "/db/" + id;
@@ -713,10 +720,10 @@
   }
   function parseUrl() {
     const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    let tab = "sessions", dbId = null, table = null, mode = "table", sessionId = null;
+    let tab = "sessions", dbId = null, table = null, mode = "table", sessionId = null, expand = null;
     if (segs[0] === "ledger") tab = "ledger";
     else if (segs[0] === "sessions") tab = "sessions";
-    else if (segs[0] === "session") { tab = "sessions"; sessionId = segs[1] || null; }
+    else if (segs[0] === "session") { tab = "sessions"; sessionId = segs[1] || null; if (segs[2] === "expand") expand = segs[3] || null; }
     else if (segs[0] === "db") {
       tab = "databases";
       dbId = segs[1] || null;
@@ -726,7 +733,7 @@
     let filters = [];
     try { const f = p.get("f"); if (f) filters = JSON.parse(f); } catch (_) {}
     return {
-      tab, dbId, table, mode, sessionId,
+      tab, dbId, table, mode, sessionId, expand,
       sub: ["stats", "schema"].includes(p.get("view")) ? p.get("view") : "rows",
       q: p.get("q") || "", sort: p.get("sort") || null, dir: p.get("dir") === "desc" ? "desc" : "asc",
       page: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
@@ -744,6 +751,9 @@
     if (nav.tab === "sessions") {
       if (nav.sessionId) await loadSession(nav.sessionId, false);
       else maybeAutoSession();
+      // open/close the expand overlay to match the URL
+      if (nav.expand) { if (state.zoomPanel !== nav.expand) { closeZoom(); await zoomTile(nav.expand); } }
+      else if (state.zoomPanel) closeZoom();
     } else {
       const dbPath = resolveDb(nav);
       if (dbPath) await selectDb(dbPath, nav); else pendingNav = nav;
@@ -754,6 +764,7 @@
 
   // ---- tabs -------------------------------------------------------------
   function setTab(tab) {
+    if (tab !== "sessions" && state.zoomPanel) closeZoom();
     state.tab = tab;
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
@@ -1239,14 +1250,23 @@
   }
   // Expand a chart tile into a large overlay for legibility.
   let zoomChart = null;
-  function closeZoom() { if (zoomChart) { try { zoomChart.destroy(); } catch (_) {} zoomChart = null; } const z = document.querySelector(".zoom-overlay"); if (z) z.remove(); }
+  function closeZoom() {
+    if (zoomChart) { try { zoomChart.destroy(); } catch (_) {} zoomChart = null; }
+    const z = document.querySelector(".zoom-overlay"); if (z) z.remove();
+    if (state.zoomPanel) { state.zoomPanel = null; syncUrl(true); }
+  }
   async function zoomTile(name) {
     const t = sessionTile(name); if (!t || t.type !== "view") return;
+    state.zoomPanel = name; syncUrl(true);
+    const exploreBtn = t.view ? `<button class="zoom-explore" data-zexplore>explore</button>` : "";
     const layer = document.createElement("div");
     layer.className = "zoom-overlay";
-    layer.innerHTML = `<div class="zoom-box"><div class="zoom-bar"><span class="zoom-title">${esc(t.title || t.name)}</span><button class="zoom-close">✕ close</button></div><div class="zoom-chart"><canvas></canvas></div></div>`;
+    layer.innerHTML = `<div class="zoom-box"><div class="zoom-bar"><span class="zoom-title">${esc(t.title || t.name)}</span><span class="zoom-actions">${exploreBtn}<button class="zoom-close">✕ close</button></span></div><div class="zoom-chart"><canvas></canvas></div></div>`;
     document.body.appendChild(layer);
-    layer.addEventListener("mousedown", (e) => { if (e.target === layer || e.target.closest(".zoom-close")) closeZoom(); });
+    layer.addEventListener("mousedown", (e) => {
+      if (e.target.closest(".zoom-explore")) { e.stopPropagation(); closeZoom(); exploreTile(name); return; }
+      if (e.target === layer || e.target.closest(".zoom-close")) closeZoom();
+    });
     const slot = layer.querySelector(".zoom-chart");
     const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
     try {
@@ -1298,6 +1318,9 @@
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }
   async function loadSession(id, push) {
+    // Switching to a different session closes a stale expand overlay (but a live
+    // refresh of the same session leaves it open).
+    if (state.zoomPanel && state.selSession !== id) closeZoom();
     state.selSession = id;
     renderSessionNav();
     $("panels").innerHTML = '<div class="note" style="padding:18px">loading…</div>';
@@ -2087,7 +2110,7 @@
   if (initial.tab === "sessions") {
     // With a specific session in the URL, open it; otherwise maybeAutoSession()
     // opens the first session once the list arrives (see apply()).
-    if (initial.sessionId) loadSession(initial.sessionId, false);
+    if (initial.sessionId) loadSession(initial.sessionId, false).then(() => { if (initial.expand) zoomTile(initial.expand); });
   } else pendingNav = initial;
   window.addEventListener("popstate", () => restoreFromNav(parseUrl()));
   connect();
