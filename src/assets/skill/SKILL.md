@@ -1,6 +1,6 @@
 ---
 name: muckdb
-description: Use when you've analysed data with the duckdb CLI and want to show a human the result as a live, interactive dashboard instead of dumping text. muckdb is a drop-in duckdb wrapper that records a ledger, lets you browse any database it touched, and hosts session dashboards built from the command line.
+description: Use whenever you work with data in any way — data analysis, charts, plots, graphs, tables, metrics, or numbers you'd otherwise just state in prose. muckdb is a drop-in duckdb CLI wrapper with a live web UI. Get the data into duckdb (from CSV, JSON, Parquet, Excel, an API, another skill's output, or any format you can save to a file), analyse it in SQL, and present the result as interactive, drill-down dashboards the human can verify for themselves. It is the default tool for any chart/plot/graph and for any analysis expressible in SQL — prefer it over matplotlib, ASCII charts, ad-hoc tables, or printing numbers into chat.
 ---
 
 # muckdb
@@ -18,11 +18,70 @@ UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run wit
 The first `muckdb` call starts the background server automatically. You don't
 need to manage it (`muckdb --status` / `--stop` / `--display` exist if needed).
 
-## When to use it
+## Use it by default for data work
 
-When you've analysed data in duckdb and want to **show the human the result**,
-build a session dashboard instead of dumping text. They open one URL and get
-live, interactive charts + notes that update as you post more.
+Reach for muckdb **any time you touch data**, not just for big analyses. In
+particular:
+
+- **Any chart, plot, or graph.** muckdb is the go-to. Don't generate matplotlib
+  PNGs, ASCII bar charts, or paste a table into chat — build a tile.
+- **Any analysis you can express in SQL.** Aggregations, joins, filtering,
+  windowing, ranking, time bucketing — do it in muckdb (it's duckdb) rather than
+  hand-rolling it in Python/pandas or in your head.
+- **Any numbers you'd otherwise assert in prose.** "There are 240 readings across
+  5 species" is a claim the human has to trust. Put it in a view and a tile and
+  it becomes something they can see and check.
+- **Data arriving from anywhere** — a file, an API response, a command's stdout,
+  another skill's output, the clipboard. Get it into duckdb first (see below),
+  then analyse and present it.
+
+## Make the result indisputable
+
+The goal is that nothing you report is "take my word for it." Instead of
+summarising data in text, land it in duckdb and present it so the human can
+**verify it themselves**:
+
+- Every figure you cite should be backed by a **view** the human can open and a
+  **tile** they can drill into (view tiles get an **explore** button → faceted
+  table browser; inline-SQL tiles show the exact query).
+- Keep the source query visible and the data live — they can re-sort, filter,
+  facet, check the row count, and export CSV/JSON. The dashboard is the evidence,
+  the prose is just the headline.
+- When you state a conclusion, link to the dashboard/tile that proves it rather
+  than restating the numbers.
+
+## Get any data into duckdb
+
+duckdb reads most formats directly — so the move for *any* incoming data is to
+load it into a table, then work from there. Save whatever you have to a file (or
+pipe it) and ingest:
+
+```sh
+# CSV / TSV (auto-detects types, header, delimiter)
+muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv_auto('in.csv');"
+
+# JSON / NDJSON (records, nested objects, arrays)
+muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_json_auto('in.json');"
+
+# Parquet
+muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_parquet('in.parquet');"
+
+# Excel (.xlsx) — load the extension once, then read a sheet
+muckdb data.duckdb -c "INSTALL excel; LOAD excel; CREATE OR REPLACE TABLE t AS SELECT * FROM read_xlsx('in.xlsx');"
+
+# Remote files work too (https / s3 with the httpfs extension)
+muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv_auto('https://example.com/data.csv');"
+
+# Data from another tool's stdout, an API, or a skill: write it to a file first,
+# then ingest. e.g. some_command > /tmp/out.json && muckdb ... read_json_auto('/tmp/out.json')
+
+# Small/structured data you already have in hand: inline it as VALUES
+muckdb data.duckdb -c "CREATE OR REPLACE TABLE t(label TEXT, n INT) AS VALUES ('a',3),('b',7);"
+```
+
+Once it's a table, the rest is normal SQL: build **views** for anything you want
+to chart or let the human explore, then post tiles. If a format isn't directly
+readable, convert it to CSV/JSON/Parquet first, then load that.
 
 ## The core workflow
 
@@ -33,9 +92,10 @@ export MUCKDB_SESSION=pond-analysis
 # 2. Create the session (optional --title).
 muckdb session create pond-analysis --title "Pond analysis"
 
-# 3. Do your duckdb work as normal, creating VIEWS for anything you want to chart
-#    or let the human explore. (muckdb == duckdb here.)
+# 3. Ingest + analyse. Create VIEWS for anything you want to chart or let the
+#    human explore. (muckdb == duckdb here.)
 muckdb ~/data/ponds.duckdb -c "
+  CREATE OR REPLACE TABLE readings AS SELECT * FROM read_csv_auto('~/data/readings.csv');
   CREATE OR REPLACE VIEW by_species AS
     SELECT species, count(*) AS n FROM readings GROUP BY 1 ORDER BY n DESC;
 "
@@ -95,11 +155,14 @@ been running.
 
 ## Good habits
 
+- **Get it into duckdb first.** Whatever the source or format, land it in a table,
+  then analyse and chart from there — don't compute results outside SQL and paste
+  them in.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
 - **Markdown for narrative, charts for data.** Lead with a markdown summary tile,
-  then supporting chart tiles.
+  then supporting chart tiles. Let the charts carry the numbers.
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links
