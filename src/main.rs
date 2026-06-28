@@ -70,7 +70,7 @@ muckdb commands:
   --stop                 stop the background daemon
   session <subcommand>   build dashboards: create | list | post | tile | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
-  skill install          install the muckdb Claude skill into ~/.claude/skills
+  skill <install|uninstall>   install or remove the muckdb Claude skill in ~/.claude/skills
 
 Anything else is passed straight through to duckdb:
 

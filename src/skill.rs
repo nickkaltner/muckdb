@@ -22,18 +22,20 @@ fn skill_path() -> Result<PathBuf> {
     Ok(home.join(".claude/skills/muckdb/SKILL.md"))
 }
 
-/// Dispatch `muckdb skill <install|path>`.
+/// Dispatch `muckdb skill <install|uninstall|path>`.
 pub fn cli(args: &[String]) -> Result<i32> {
     match args.first().map(String::as_str) {
         Some("install") => install(args.contains(&"--force".to_string())),
+        Some("uninstall" | "remove" | "rm") => uninstall(),
         Some("path") => {
             println!("{}", skill_path()?.display());
             Ok(0)
         }
         _ => {
             eprintln!(
-                "usage: muckdb skill <install|path>\n\n  \
+                "usage: muckdb skill <install|uninstall|path>\n\n  \
                  install [--force]   write the muckdb skill to ~/.claude/skills/muckdb/SKILL.md\n  \
+                 uninstall           remove the installed muckdb skill\n  \
                  path                print where the skill would be installed"
             );
             Ok(2)
@@ -57,5 +59,26 @@ fn install(force: bool) -> Result<i32> {
     fs::write(&dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
     println!("installed muckdb skill → {}", dest.display());
     println!("Restart Claude Code (or start a new session) to pick it up.");
+    Ok(0)
+}
+
+/// Remove the installed skill (and its now-empty `muckdb` skill directory).
+fn uninstall() -> Result<i32> {
+    let dest = skill_path()?;
+    if !dest.exists() {
+        println!(
+            "muckdb skill is not installed (nothing at {})",
+            dest.display()
+        );
+        return Ok(0);
+    }
+    fs::remove_file(&dest).with_context(|| format!("removing {}", dest.display()))?;
+    // Clean up the per-skill directory if we left it empty.
+    if let Some(dir) = dest.parent()
+        && dir.read_dir().is_ok_and(|mut e| e.next().is_none())
+    {
+        let _ = fs::remove_dir(dir);
+    }
+    println!("removed muckdb skill ({})", dest.display());
     Ok(0)
 }

@@ -55,7 +55,9 @@ class Muckdb < Formula
       muckdb ships a Claude Code skill that teaches coding agents how to drive it.
       To install it into your skills directory, run:
         muckdb skill install
-      It is written to ~/.claude/skills/muckdb/SKILL.md (re-run with --force to update).
+      It is written to ~/.claude/skills/muckdb/SKILL.md (--force to update).
+      Remove it again with:
+        muckdb skill uninstall
     EOS
   end
 
