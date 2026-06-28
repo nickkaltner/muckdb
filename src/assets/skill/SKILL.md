@@ -168,7 +168,7 @@ muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
-        [--xlabel L] [--ylabel L]
+        [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session rm <name> [--tile TILE]
 ```
@@ -190,15 +190,36 @@ muckdb session rm <name> [--tile TILE]
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
   of skewing by the viewer's timezone.
 - **Label your axes** with `--xlabel`/`--ylabel` so a chart is readable on its own.
+- **Describe almost every chart** with `--caption` — one line on what it shows and
+  the so-what (the trend, the outlier, the takeaway). A chart with no caption makes
+  the human guess; treat the caption as part of building the tile, not optional.
+- **Bar fill — `--bars gradient|solid`** — match the fill to the data:
+  - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
+    codes, regions, product names, error types). Each bar gets its own solid
+    colour from the theme palette, so distinct categories read as distinct.
+  - **`--bars gradient`** (the default for a single series) for **continuous**
+    data — counts/amounts **over time**, a numeric progression. One smooth
+    gradient signals "these belong to one continuous measure."
+- **Daily/weekly reporting from timestamps → bucket to a DATE in the view.** If
+  your data has fine-grained `TIMESTAMP`s but you want per-day (or per-week) bars,
+  don't plot raw timestamps — aggregate to a date column in the view so there's
+  one row per day: `SELECT ts::DATE AS day, count(*) AS n FROM events GROUP BY 1`
+  (or `date_trunc('week', ts)::DATE`). Then `--x day`. The chart's time axis is a
+  UTC wall-clock, so each `DATE` bar sits squarely on its day.
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
-- **Reference lines** (repeatable; great for context on a chart): `--target` and
-  `--threshold` draw horizontal lines at a y-value (target = accent/dotted,
-  threshold = warning/dashed); `--event` draws a vertical line at an x-position
-  (a timestamp on a time axis, or a category label) to mark when something
-  happened. Each takes `VALUE` or `VALUE|label`, e.g.
+- **Reference lines & events — use them liberally.** `--target` and `--threshold`
+  draw horizontal lines at a y-value (target = accent/dotted, threshold =
+  warning/dashed). **`--event`** draws a vertical line at an x-position (a
+  timestamp on a time axis, or a category label) — **strongly recommended on any
+  time series** to mark when something happened (a deploy, an incident, a campaign,
+  a config change); it turns "the line jumped" into "the line jumped *when we
+  shipped X*." Each takes `VALUE` or `VALUE|label`, e.g.
   `--target '20|SLA' --threshold '30|max' --event '2026-05-15T00:00|deploy'`.
+  Markers are part of the tile, so **add or update them anytime** by re-posting the
+  tile with the same `--name` (and the new `--event`/`--target` flags) — it
+  replaces the panel in place and the dashboard updates live.
 
 ## Column display formats (units, currency, decimals)
 

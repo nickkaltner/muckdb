@@ -36,6 +36,10 @@ pub struct Chart {
     pub xlabel: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ylabel: Option<String>,
+    /// Bar fill style: "gradient" (continuous) or "solid" (per-bar palette colours
+    /// for categorical data). Unset → gradient for a single series.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bars: Option<String>,
     /// Horizontal reference lines at a y-value (drawn in the accent colour).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<Marker>,
@@ -358,6 +362,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     x: p.get("x").map(str::to_string),
                     xlabel: p.get("xlabel").map(str::to_string),
                     ylabel: p.get("ylabel").map(str::to_string),
+                    bars: p.get("bars").map(str::to_string),
                     y,
                     targets: parse_markers(&p.get_all("target")),
                     thresholds: parse_markers(&p.get_all("threshold")),
@@ -396,6 +401,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
+                 [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n  \
                  rm <name> [--tile TILE]"
             );

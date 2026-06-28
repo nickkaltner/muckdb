@@ -54,7 +54,7 @@ muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
-        [--xlabel L] [--ylabel L]
+        [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session rm <name> [--tile TILE]
 ```
@@ -75,6 +75,15 @@ muckdb session rm <name> [--tile TILE]
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
   `DATE` day won't skew by the viewer's timezone).
 - **Axis labels**: `--xlabel`/`--ylabel` set the x/y axis titles on any chart.
+- **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
+  categorical x (methods, status codes, regions). `--bars gradient` (default for a
+  single series) suits continuous/over-time data. Colours come from the theme.
+- **Captions**: give almost every chart a `--caption` describing what it shows.
+- **Daily reporting from timestamps**: bucket to a `DATE` in the view (e.g.
+  `ts::DATE AS day` or `date_trunc('week', ts)::DATE`) so there's one row per day
+  and bars land on day boundaries — don't plot raw timestamps for per-day charts.
+- **Event markers update live**: re-post a tile with the same `--name` plus new
+  `--event`/`--target` flags to add or change its markers in place.
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).

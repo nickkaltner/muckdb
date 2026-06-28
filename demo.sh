@@ -57,6 +57,9 @@ WHERE random() < 0.012
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
+CREATE OR REPLACE VIEW top_products      AS SELECT product, count(*) AS orders, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
+-- Categorical breakdown (like HTTP methods) — each bar its own solid colour.
+CREATE OR REPLACE VIEW events_by_kind    AS SELECT kind, count(*) AS n FROM events GROUP BY 1 ORDER BY n DESC;
 -- One row per region, revenue split into category columns — the shape a stacked
 -- bar wants: x = region, y = the category series that stack into a total.
 CREATE OR REPLACE VIEW revenue_by_region_category AS
@@ -111,7 +114,18 @@ Click **explore** on any data panel to open it in the faceted table browser
 (search, facets, range/date sliders, sorting, stats, CSV/JSON export)." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name revenue --title "Revenue by region" \
-  --db "$DB" --view sales_by_region --chart bar --x region --y revenue >/dev/null
+  --db "$DB" --view sales_by_region --chart bar --x region --y revenue --bars solid \
+  --xlabel Region --ylabel Revenue \
+  --caption "Categorical — regions are distinct buckets, so each bar gets its own solid colour from the theme palette." >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name by_kind --title "Events by type" \
+  --db "$DB" --view events_by_kind --chart bar --x kind --y n --bars solid \
+  --xlabel "Event type" --ylabel Count \
+  --caption "Categorical like HTTP methods (GET/POST/…): solid bars, one colour each." >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name products --title "Top products" \
+  --db "$DB" --view top_products --chart table \
+  --caption "A table tile fills to its rows — no inner scrollbar; use the contract icon to shrink it." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name categories --title "Orders by category" \
   --db "$DB" --view sales_by_category --chart pie --x category --y orders >/dev/null
@@ -133,13 +147,29 @@ Click **explore** on any data panel to open it in the faceted table browser
   --caption "Bucketed counts — bar heights swing with the per-hour/-day intensity. The vertical line marks a campaign send." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name daily --title "Orders per day" \
-  --db "$DB" --view sales_per_day --chart bar --x day --y orders \
+  --db "$DB" --view sales_per_day --chart bar --x day --y orders --bars gradient \
   --xlabel "Day" --ylabel "Orders" \
-  --caption "Daily volume — one bar per calendar day; bars line up on day boundaries regardless of your timezone." >/dev/null
+  --caption "Continuous over time — gradient bars. One bar per calendar day; they line up on day boundaries regardless of your timezone." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name scatter --title "Each event over time" \
   --db "$DB" --view events_points --chart scatter --x ts --y value \
   --caption "Every event as a point — clusters show where activity bunched up." >/dev/null
+
+# A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
+"$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
+
+This dashboard tours every muckdb panel type from one shell script:
+
+| What                | Panel                          | Why it's shaped this way                 |
+|:--------------------|:-------------------------------|:-----------------------------------------|
+| **Revenue / types** | solid bars                     | categorical buckets → one colour each    |
+| **Orders per day**  | gradient bars on a UTC axis    | continuous over time → gradient          |
+| **Sensors**         | line + event & target markers  | a clean series with annotations          |
+| **Top products**    | table (fills, no scroll)       | small result set read in full            |
+| **Each event**      | scatter                        | raw points show where activity bunched   |
+
+Every figure here is backed by a **view** you can open (hit **explore**),
+re-sort, filter, and export — nothing is take-my-word-for-it." >/dev/null
 
 PORT="${MUCKDB_PORT:-11000}"
 echo
