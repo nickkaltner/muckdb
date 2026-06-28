@@ -262,6 +262,8 @@
   .toprow .tc { color: var(--faint); z-index: 1; }
   .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; }
 
+  /* display-only affixes (prefix/suffix) render muted so the value stands out */
+  .fmt-affix { color: var(--muted); }
   /* schema */
   table.schema { border-collapse: collapse; width: 100%; max-width: 860px; font-size: 12px; }
   table.schema td.fmt-col .fmt-eg { color: var(--fg); }
@@ -631,6 +633,20 @@
     const f = colFmt(db, col, table);
     return f ? applyFmt(f, v) : fmtNum(typeof v === "number" ? v : Number(v));
   }
+  // HTML variants: the prefix/suffix (display-only affixes) render in a muted
+  // tone so it's clear which part is the actual value and which is decoration.
+  function affixHtml(s) { return s ? `<span class="fmt-affix">${esc(s)}</span>` : ""; }
+  function applyFmtHtml(fmt, v) {
+    if (!fmt || v === null || v === undefined || v === "") return esc(v);
+    const n = Number(v); if (!isFinite(n)) return esc(v);
+    let s = fmt.decimals != null ? n.toFixed(fmt.decimals) : String(n);
+    if (fmt.group) { const neg = s.startsWith("-"); if (neg) s = s.slice(1); const [i, d] = s.split("."); s = (neg ? "-" : "") + groupInt(i) + (d ? "." + d : ""); }
+    return affixHtml(fmt.prefix) + esc(s) + affixHtml(fmt.suffix);
+  }
+  function fmtColNumHtml(db, col, table, v) {
+    const f = colFmt(db, col, table);
+    return f ? applyFmtHtml(f, v) : esc(fmtNum(typeof v === "number" ? v : Number(v)));
+  }
   function fmtDMY(iso) { if (!iso) return "…"; const m = String(iso).slice(0, 10).split("-"); return m.length === 3 ? `${m[2]}/${m[1]}/${m[0]}` : iso; }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
@@ -874,7 +890,7 @@
   function renderRangeFacet(f) {
     const head = `<div class="facet-col">${esc(f.name)}</div>`;
     if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range.</div></div>`;
-    const ff = (v) => fmtColNum(state.selDb, f.name, state.selTable, v);
+    const ff = (v) => fmtColNumHtml(state.selDb, f.name, state.selTable, v);
     if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${ff(f.min)}</div></div>`;
     const rf = rangeFilter(f.name);
     const lo = rf && rf.min != null ? rf.min : f.min, hi = rf && rf.max != null ? rf.max : f.max;
@@ -1000,7 +1016,7 @@
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
-    if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${esc(applyFmt(f, Number(v)))}</td>`;
+    if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${applyFmtHtml(f, Number(v))}</td>`;
     return `<td>${esc(String(v))}</td>`;
   }
 
@@ -1016,6 +1032,7 @@
   }
   function statCard(c, rowCount) {
     const F = (v) => fmtColNum(state.selDb, c.name, state.selTable, v);
+    const FH = (v) => fmtColNumHtml(state.selDb, c.name, state.selTable, v);
     const meta = `<span class="stat-meta"><b>nulls</b> ${c.nulls} · <b>distinct</b> ${c.distinct} · <b>rows</b> ${rowCount}</span>`;
     let body = "";
     if (c.temporal && c.timeline && c.timeline.length) {
@@ -1027,10 +1044,10 @@
       const max = Math.max(1, ...c.histogram.map((b) => b.count));
       const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${F(b.lo)}, ${F(b.hi)}) · ${b.count}"></div>`).join("");
       body = `<div class="hist" data-col="${attr(c.name)}" data-min="${c.min}" data-max="${c.max}">${bars}</div>
-        <div class="hist-axis"><span>${F(c.min)}</span><span>${F(c.max)}</span></div>
+        <div class="hist-axis"><span>${FH(c.min)}</span><span>${FH(c.max)}</span></div>
         <div class="hist-hint">drag across to filter this range</div>
         ${boxPlot(c, F)}
-        <div class="stat-nums"><span><b>min</b> ${F(c.min)}</span><span><b>avg</b> ${F(c.avg)}</span><span><b>max</b> ${F(c.max)}</span></div>`;
+        <div class="stat-nums"><span><b>min</b> ${FH(c.min)}</span><span><b>avg</b> ${FH(c.avg)}</span><span><b>max</b> ${FH(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
       body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
@@ -1070,7 +1087,7 @@
         if (f.suffix) bits.push(`suffix ${esc(f.suffix.trim() || f.suffix)}`);
         if (f.decimals != null) bits.push(`${f.decimals} dp`);
         if (f.group) bits.push("grouped");
-        return `<span class="fmt-eg">${esc(applyFmt(f, 1234.5))}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
+        return `<span class="fmt-eg">${applyFmtHtml(f, 1234.5)}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
       };
       const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td><td class="fmt-col">${fmtCell(c.name)}</td></tr>`).join("");
       let defn;
@@ -1641,8 +1658,8 @@
     const sel = box.querySelector(".rsel");
     sel.style.left = ((a - fmin) / span * 100) + "%"; sel.style.width = ((b - a) / span * 100) + "%";
     const col = box.dataset.rcol;
-    box.parentElement.querySelector("[data-rmin]").textContent = fmtColNum(state.selDb, col, state.selTable, a);
-    box.parentElement.querySelector("[data-rmax]").textContent = fmtColNum(state.selDb, col, state.selTable, b);
+    box.parentElement.querySelector("[data-rmin]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, a);
+    box.parentElement.querySelector("[data-rmax]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, b);
   }
   function downloadExport(format) {
     const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });

@@ -119,11 +119,14 @@ Click **explore** on any data panel to open it in the faceted table browser
 
 "$MUCKDB" session tile "$SESSION" --name climate --title "Sensors (regular hourly series)" \
   --db "$DB" --view sensors --chart line --x ts --y temp_c,humidity \
-  --caption "A clean, evenly-spaced time series — daily + weekly cycles." >/dev/null
+  --event '2026-05-08T00:00|firmware v2' --event '2026-05-21T12:00|heatwave' \
+  --target '25|comfort max' \
+  --caption "A clean, evenly-spaced time series — daily + weekly cycles. Vertical lines mark events; the dotted line is a target." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name throughput --title "Events per hour (uneven density)" \
   --db "$DB" --view events_per_hour --chart bar --x hour --y events \
-  --caption "Bucketed counts — bar heights swing with the per-hour/-day intensity." >/dev/null
+  --event '2026-05-15T00:00|marketing email' \
+  --caption "Bucketed counts — bar heights swing with the per-hour/-day intensity. The vertical line marks a campaign send." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name scatter --title "Each event over time" \
   --db "$DB" --view events_points --chart scatter --x ts --y value \
