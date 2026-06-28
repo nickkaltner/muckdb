@@ -507,11 +507,68 @@
       },
       chart: ["#8fd0a8", "#7fb7c9", "#c9d18f", "#cda9cf", "#a9c98f", "#9fb7d8", "#d6c79c", "#c0a8d0"],
     },
+    paper: {
+      label: "paper", vars: {
+        bg: "#f1ece1", surface: "#faf7f0", raised: "#fffdf8", line: "#d8d0c0", "line-soft": "#e7e0d2",
+        fg: "#2b2a26", muted: "#6c6658", faint: "#9a937f", "on-accent": "#faf7f0",
+        orange: "#2d6e8e", amber: "#3f86a8", ember: "#1f5470", "orange-dim": "#356b86", teal: "#3f8f86",
+        ok: "#5a8c3a", fail: "#b23b34",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(45,110,142,0.05), transparent 70%)",
+        "grad-panel": "linear-gradient(180deg, rgba(43,42,38,0.028), rgba(43,42,38,0) 58%)",
+        hi: "inset 0 1px 0 rgba(255,255,255,0.6)",
+      },
+      chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
+    },
+    mono: {
+      label: "mono", vars: {
+        bg: "#161719", surface: "#1d1f22", raised: "#25282c", line: "#383b40", "line-soft": "#232529",
+        fg: "#e6e8ea", muted: "#969aa1", faint: "#5e636b", "on-accent": "#161719",
+        orange: "#d6a45e", amber: "#e6bd86", ember: "#b07f3f", "orange-dim": "#7e6238", teal: "#9aa0a8",
+        ok: "#9bbf8a", fail: "#cf8f88",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
+      },
+      chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
+    },
+    rose: {
+      label: "rosé", vars: {
+        bg: "#1c1417", surface: "#251a1e", raised: "#2f2227", line: "#443138", "line-soft": "#271c20",
+        fg: "#f0e4e7", muted: "#b39aa1", faint: "#7a626a", "on-accent": "#1c1417",
+        orange: "#d98aa0", amber: "#e8a8b8", ember: "#b25f78", "orange-dim": "#8f4f64", teal: "#7fb2a6",
+        ok: "#9cc090", fail: "#e0728a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(217,138,160,0.06), transparent 70%)",
+      },
+      chart: ["#d98aa0", "#7fb2a6", "#c9a6d8", "#e3c089", "#9aa6d8", "#cf8f8a", "#8fb8a8", "#b894c0"],
+    },
+    copper: {
+      label: "copper", vars: {
+        bg: "#1b1614", surface: "#241d1a", raised: "#2e2521", line: "#443730", "line-soft": "#271f1c",
+        fg: "#f0e6dc", muted: "#b3a193", faint: "#7c6a5e", "on-accent": "#1b1614",
+        orange: "#d77a52", amber: "#e8a06e", ember: "#b1542f", "orange-dim": "#8f4a2c", teal: "#5fab9e",
+        ok: "#a8b56a", fail: "#e0664f",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(215,122,82,0.06), transparent 70%)",
+      },
+      chart: ["#d77a52", "#5fab9e", "#e0b06a", "#a98fb0", "#a8b56a", "#cf7a6a", "#6fa9b8", "#c79a6a"],
+    },
+    indigo: {
+      label: "indigo", vars: {
+        bg: "#14161f", surface: "#1b1e2a", raised: "#232838", line: "#353c52", "line-soft": "#1f2433",
+        fg: "#e4e7f2", muted: "#969cb5", faint: "#61678a", "on-accent": "#14161f",
+        orange: "#8aa0f0", amber: "#a8b8ff", ember: "#5f6fc4", "orange-dim": "#545fa8", teal: "#6fc4d0",
+        ok: "#9bc88a", fail: "#e0728a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(138,160,240,0.07), transparent 70%)",
+      },
+      chart: ["#8aa0f0", "#6fc4d0", "#b48ce0", "#e0b06a", "#79c89a", "#cf8fb0", "#7f9ae0", "#c79ad0"],
+    },
   };
+  // Vars a theme may set; cleared between themes so optional ones (e.g. a light
+  // theme's grad-panel/hi) fall back to the :root defaults when not provided.
+  const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
+    "on-accent", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi"];
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.slate;
     state.theme = THEMES[name] ? name : "slate";
     const root = document.documentElement.style;
+    THEME_VARS.forEach((k) => root.removeProperty("--" + k));
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
     PAL = t.chart.slice();
     try { localStorage.setItem("muckdb.theme", state.theme); } catch (_) {}
