@@ -318,6 +318,8 @@
   .panel-actions { margin-left: auto; display: flex; gap: 8px; }
   .panel-act { font: inherit; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; cursor: pointer; }
   .panel-act:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .panel-act.icon { display: inline-flex; align-items: center; padding: 4px 7px; }
+  .panel-act.icon svg { display: block; }
   .panel-act.active { background: var(--orange); color: var(--on-accent); border-color: var(--orange); font-weight: 700; }
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 300px; }
@@ -445,6 +447,7 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
+    formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
     theme: "carbon",
   };
@@ -598,6 +601,36 @@
   function dirname(p) { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
   function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
   function fmtNum(n) { if (n === null || n === undefined) return "—"; return Number.isInteger(n) ? String(n) : (Math.round(n * 1000) / 1000).toString(); }
+  // ---- column display formats (currency/units/decimals) ------------------
+  async function ensureFormats(db) {
+    if (!db) return null;
+    if (state.formats[db]) return state.formats[db];
+    try {
+      const m = await (await fetch("/api/formats?db=" + encodeURIComponent(db))).json();
+      state.formats[db] = { columns: m.columns || {}, tables: m.tables || {} };
+    } catch (_) { state.formats[db] = { columns: {}, tables: {} }; }
+    return state.formats[db];
+  }
+  // Resolve a column's format for a db (table-qualified wins over name-only).
+  function colFmt(db, col, table) {
+    const m = state.formats[db]; if (!m || col == null) return null;
+    return (table && m.tables[table + "." + col]) || m.columns[col] || null;
+  }
+  function groupInt(s) { return s.replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  // Apply a format spec to a numeric value; returns a string (or the raw value
+  // unchanged when it isn't a finite number).
+  function applyFmt(fmt, v) {
+    if (!fmt || v === null || v === undefined || v === "") return v;
+    const n = Number(v); if (!isFinite(n)) return v;
+    let s = fmt.decimals != null ? n.toFixed(fmt.decimals) : String(n);
+    if (fmt.group) { const neg = s.startsWith("-"); if (neg) s = s.slice(1); const [i, d] = s.split("."); s = (neg ? "-" : "") + groupInt(i) + (d ? "." + d : ""); }
+    return (fmt.prefix || "") + s + (fmt.suffix || "");
+  }
+  // Convenience: format a number for a (db, column[, table]); falls back to fmtNum.
+  function fmtColNum(db, col, table, v) {
+    const f = colFmt(db, col, table);
+    return f ? applyFmt(f, v) : fmtNum(typeof v === "number" ? v : Number(v));
+  }
   function fmtDMY(iso) { if (!iso) return "…"; const m = String(iso).slice(0, 10).split("-"); return m.length === 3 ? `${m[2]}/${m[1]}/${m[0]}` : iso; }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
@@ -777,6 +810,7 @@
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(path))).json();
       if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; syncUrl(true); return; }
       state.tables = data.tables || [];
+      await ensureFormats(path);
       renderTableNav();
       if (restore && restore.mode === "query") enterQueryMode(restore);
       else if (restore && restore.table && state.tables.some((t) => t.name === restore.table)) selectTable(restore.table, restore);
@@ -840,12 +874,13 @@
   function renderRangeFacet(f) {
     const head = `<div class="facet-col">${esc(f.name)}</div>`;
     if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range.</div></div>`;
-    if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${fmtNum(f.min)}</div></div>`;
+    const ff = (v) => fmtColNum(state.selDb, f.name, state.selTable, v);
+    if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${ff(f.min)}</div></div>`;
     const rf = rangeFilter(f.name);
     const lo = rf && rf.min != null ? rf.min : f.min, hi = rf && rf.max != null ? rf.max : f.max;
     const step = (f.max - f.min) / 200 || 1, span = f.max - f.min;
     return `<div class="facet-group">${head}
-      <div class="range-readout"><span data-rmin>${fmtNum(lo)}</span> <span class="rsep">–</span> <span data-rmax>${fmtNum(hi)}</span></div>
+      <div class="range-readout"><span data-rmin>${ff(lo)}</span> <span class="rsep">–</span> <span data-rmax>${ff(hi)}</span></div>
       <div class="range-slider" data-rcol="${attr(f.name)}" data-fmin="${f.min}" data-fmax="${f.max}">
         <div class="rtrack"></div><div class="rsel" style="left:${((lo - f.min) / span) * 100}%;width:${((hi - lo) / span) * 100}%"></div>
         <input type="range" class="rng rng-lo" min="${f.min}" max="${f.max}" step="${step}" value="${lo}" />
@@ -949,7 +984,7 @@
         const ind = state.sort === c ? `<span class="ind">${state.dir === "asc" ? "▲" : "▼"}</span>` : "";
         return `<th class="sortable" data-sortcol="${attr(c)}">${esc(c)}${ind}</th>`;
       }).join("");
-      const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
+      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], state.selTable, state.selDb)).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       const opts = ["auto", "10", "25", "50", "100"].map((o) => `<option value="${o}"${state.pageMode === o ? " selected" : ""}>${o === "auto" ? "auto" : o + "/page"}</option>`).join("");
       slot.dataset.loaded = "1";
@@ -961,9 +996,11 @@
       maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function cell(v) {
+  function cell(v, col, table, db) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
+    const f = (col != null && db) ? colFmt(db, col, table) : null;
+    if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${esc(applyFmt(f, Number(v)))}</td>`;
     return `<td>${esc(String(v))}</td>`;
   }
 
@@ -978,6 +1015,7 @@
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function statCard(c, rowCount) {
+    const F = (v) => fmtColNum(state.selDb, c.name, state.selTable, v);
     const meta = `<span class="stat-meta"><b>nulls</b> ${c.nulls} · <b>distinct</b> ${c.distinct} · <b>rows</b> ${rowCount}</span>`;
     let body = "";
     if (c.temporal && c.timeline && c.timeline.length) {
@@ -987,12 +1025,12 @@
       body = `<div class="hist">${bars}</div><div class="hist-axis"><span>${esc(fmtDMY(first))}</span><span>${esc(fmtDMY(last))}</span></div>`;
     } else if (c.numeric && c.histogram && c.histogram.length) {
       const max = Math.max(1, ...c.histogram.map((b) => b.count));
-      const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${fmtNum(b.lo)}, ${fmtNum(b.hi)}) · ${b.count}"></div>`).join("");
+      const bars = c.histogram.map((b) => `<div class="bar" style="height:${Math.round((b.count / max) * 100)}%" title="[${F(b.lo)}, ${F(b.hi)}) · ${b.count}"></div>`).join("");
       body = `<div class="hist" data-col="${attr(c.name)}" data-min="${c.min}" data-max="${c.max}">${bars}</div>
-        <div class="hist-axis"><span>${fmtNum(c.min)}</span><span>${fmtNum(c.max)}</span></div>
+        <div class="hist-axis"><span>${F(c.min)}</span><span>${F(c.max)}</span></div>
         <div class="hist-hint">drag across to filter this range</div>
-        ${boxPlot(c)}
-        <div class="stat-nums"><span><b>min</b> ${fmtNum(c.min)}</span><span><b>avg</b> ${fmtNum(c.avg)}</span><span><b>max</b> ${fmtNum(c.max)}</span></div>`;
+        ${boxPlot(c, F)}
+        <div class="stat-nums"><span><b>min</b> ${F(c.min)}</span><span><b>avg</b> ${F(c.avg)}</span><span><b>max</b> ${F(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
       body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
@@ -1001,12 +1039,13 @@
   }
   // Horizontal box-and-whisker over [min..max]: whiskers to min/max, box from
   // q1 to q3, line at the median. Degenerate (zero-width) ranges are skipped.
-  function boxPlot(c) {
+  function boxPlot(c, F) {
+    F = F || fmtNum;
     const lo = c.min, hi = c.max, q1 = c.q1, q3 = c.q3, med = c.median;
     if ([lo, hi, q1, q3, med].some((v) => v == null) || !(hi > lo)) return "";
     const pct = (v) => ((v - lo) / (hi - lo)) * 100;
     const boxL = pct(q1), boxW = Math.max(0.5, pct(q3) - pct(q1)), medL = pct(med);
-    return `<div class="box" title="min ${fmtNum(lo)} · q1 ${fmtNum(q1)} · median ${fmtNum(med)} · q3 ${fmtNum(q3)} · max ${fmtNum(hi)}">
+    return `<div class="box" title="min ${F(lo)} · q1 ${F(q1)} · median ${F(med)} · q3 ${F(q3)} · max ${F(hi)}">
       <span class="box-whisk" style="left:0;right:0"></span>
       <span class="box-cap" style="left:0"></span><span class="box-cap" style="right:0"></span>
       <span class="box-iqr" style="left:${boxL}%;width:${boxW}%"></span>
@@ -1064,7 +1103,7 @@
       const cols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">Query returned no rows.</div>'; return; }
       const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
-      const body = rows.map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
+      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb)).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -1088,7 +1127,7 @@
     }
     const input = box.querySelector(".pick-input");
     const list = box.querySelector(".pick-list");
-    let shown = opts.items.slice(), sel = 0;
+    let shown = opts.items.slice(), sel = Math.max(0, Math.min(opts.selectedIndex || 0, shown.length - 1));
     const draw = () => {
       list.innerHTML = shown.length ? shown.map((it, i) =>
         `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw"${it.swbg ? ` style="background:${esc(it.swbg)}"` : ""}>${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
@@ -1118,6 +1157,7 @@
     openPicker({
       anchor, placeholder: "filter databases…",
       items: state.databases.map((d) => ({ label: basename(d.path), sub: dirname(d.path), path: d.path })),
+      selectedIndex: state.databases.findIndex((d) => d.path === state.selDb),
       onPick: (it) => selectDb(it.path),
     });
   }
@@ -1126,17 +1166,20 @@
     openPicker({
       anchor, placeholder: "filter tables…",
       items: state.tables.map((t) => ({ label: t.name, sub: t.is_view ? "view" : t.column_count + "c", name: t.name })),
+      selectedIndex: state.tables.findIndex((t) => t.name === state.selTable),
       onPick: (it) => selectTable(it.name),
     });
   }
   function openThemePicker(anchor) {
+    const names = Object.keys(THEMES);
     openPicker({
       anchor, placeholder: "theme…",
-      items: Object.keys(THEMES).map((n) => ({
+      items: names.map((n) => ({
         label: THEMES[n].label, sub: n === state.theme ? "current" : (THEMES[n].light ? "light" : ""), theme: n,
         swatch: [THEMES[n].vars.orange, THEMES[n].chart[0], THEMES[n].chart[2], THEMES[n].chart[4]],
         swbg: THEMES[n].vars.bg,
       })),
+      selectedIndex: names.indexOf(state.theme),
       onPick: (it) => applyTheme(it.theme),
     });
   }
@@ -1157,8 +1200,9 @@
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       const cols = data.columns || [], rows = data.rows || [];
       const kind = (t.chart && t.chart.kind) || "table";
-      if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows); return; }
-      zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows));
+      await ensureFormats(t.db);
+      if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null); return; }
+      zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function openPalette() {
@@ -1184,6 +1228,7 @@
     openPicker({
       anchor, placeholder: "filter sessions…",
       items: state.sessions.map((s) => ({ label: s.title || s.id, sub: s.tiles + (s.tiles === 1 ? " tile" : " tiles"), id: s.id })),
+      selectedIndex: state.sessions.findIndex((s) => s.id === state.selSession),
       onPick: (it) => loadSession(it.id, true),
     });
   }
@@ -1241,7 +1286,7 @@
       return `<div class="panel wide"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
-    const zoomBtn = `<button class="panel-act" data-zoom="${attr(t.name)}">expand</button>`;
+    const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     return `<div class="panel" data-tile="${attr(t.name)}">
@@ -1259,16 +1304,17 @@
     if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
     const cols = data.columns || [], rows = data.rows || [];
     const kind = (t.chart && t.chart.kind) || "table";
+    await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
-    if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows); return; }
+    if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows, t.db, t.view || null); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
-    try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows))); }
+    try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null))); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function miniTable(cols, rows) {
+  function miniTable(cols, rows, db, table) {
     const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
-    const body = rows.slice(0, 50).map((r) => "<tr>" + r.map(cell).join("") + "</tr>").join("");
+    const body = rows.slice(0, 50).map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db)).join("") + "</tr>").join("");
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   // The active chart palette — set by applyTheme().
@@ -1383,13 +1429,26 @@
       ctx.restore();
     },
   };
-  function chartConfig(kind, spec, cols, rows) {
+  function chartConfig(kind, spec, cols, rows, db, table) {
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
     if (!ys.length) ys = [cols[1] || cols[0]];
     const timeX = isDateish(rows.map((r) => r[xi]));
     const xv = (r) => (timeX ? toMs(r[xi]) : +r[xi]);
     const anno = annoSpec(spec, timeX);
+    // Apply column display formats to the y-axis ticks and tooltips.
+    const applyYFmt = (o) => {
+      const yf0 = colFmt(db, ys[0], table);
+      if (yf0 && o.scales && o.scales.y) o.scales.y.ticks = Object.assign({}, o.scales.y.ticks, { callback: (v) => applyFmt(yf0, v) });
+      o.plugins = o.plugins || {};
+      o.plugins.tooltip = Object.assign({}, o.plugins.tooltip, { callbacks: { label: (cx) => {
+        const f = colFmt(db, ys[cx.datasetIndex] || ys[0], table);
+        const val = cx.parsed && cx.parsed.y != null ? cx.parsed.y : cx.parsed;
+        const lbl = cx.dataset && cx.dataset.label ? cx.dataset.label + ": " : "";
+        return lbl + (f ? applyFmt(f, val) : val);
+      } } });
+      return o;
+    };
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
@@ -1398,7 +1457,7 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      const o = chartOpts(true, timeX); if (anno) o.plugins.muckAnno = anno;
+      const o = applyYFmt(chartOpts(true, timeX)); if (anno) o.plugins.muckAnno = anno;
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
     const stacked = kind === "stacked";
@@ -1429,7 +1488,7 @@
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    const o = chartOpts(false, timeX, stacked); if (anno) o.plugins.muckAnno = anno;
+    const o = applyYFmt(chartOpts(false, timeX, stacked)); if (anno) o.plugins.muckAnno = anno;
     return { type, data, options: o };
   }
   // Resolve a tile's target/threshold/event markers into pixel-resolvable values.
@@ -1571,8 +1630,9 @@
     const fmin = parseFloat(box.dataset.fmin), fmax = parseFloat(box.dataset.fmax), span = (fmax - fmin) || 1;
     const sel = box.querySelector(".rsel");
     sel.style.left = ((a - fmin) / span * 100) + "%"; sel.style.width = ((b - a) / span * 100) + "%";
-    box.parentElement.querySelector("[data-rmin]").textContent = fmtNum(a);
-    box.parentElement.querySelector("[data-rmax]").textContent = fmtNum(b);
+    const col = box.dataset.rcol;
+    box.parentElement.querySelector("[data-rmin]").textContent = fmtColNum(state.selDb, col, state.selTable, a);
+    box.parentElement.querySelector("[data-rmax]").textContent = fmtColNum(state.selDb, col, state.selTable, b);
   }
   function downloadExport(format) {
     const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });

@@ -78,6 +78,22 @@ muckdb session rm <name> [--tile TILE]
   at a y-value; `--event` draws a vertical line at an x-position (timestamp or
   category). Each is `VALUE` or `VALUE|label`, e.g. `--threshold '30|max'`.
 
+## Column display formats
+
+Attach a unit/currency/decimal format to a column so facets, charts, stats and
+tables render it nicely (e.g. `$4,343.33 USD`):
+
+```
+muckdb format <db> <column> [--table T] [--currency USD | --prefix $ --suffix ' USD' --decimals N --thousands --percent] [--clear]
+muckdb format list [<db>]
+```
+
+A registry entry keyed by column name applies wherever that column appears
+(including derived view columns charts plot); `--table` scopes it to one
+relation. Formats also read from a DuckDB column comment (`COMMENT ON COLUMN
+t.c IS 'muckdb:{"prefix":"$","decimals":2,"group":true}'`), which travels with
+the database; the registry overrides the comment.
+
 ## Inspecting state (read it back as JSON)
 
 To understand what muckdb is currently showing — without starting the server —

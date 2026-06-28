@@ -149,6 +149,31 @@ muckdb session rm <name> [--tile TILE]
   happened. Each takes `VALUE` or `VALUE|label`, e.g.
   `--target '20|SLA' --threshold '30|max' --event '2026-05-15T00:00|deploy'`.
 
+## Column display formats (units, currency, decimals)
+
+Attach a display format to a column so facets, charts, stats and tables show
+`$4,343.33 USD` instead of `4343.33`:
+
+```sh
+# muckdb registry (applies by column name across tables/views, incl. derived
+# columns like a `revenue` produced by sum(amount) — and works on read-only DBs)
+muckdb format <db> revenue --currency USD          # → $1,234.56 USD
+muckdb format <db> latency_ms --suffix ' ms' --decimals 0
+muckdb format <db> rate --percent                  # → 12.5%
+muckdb format <db> amount --table sales --prefix '$' --thousands   # scope to one table
+muckdb format <db> revenue --clear                 # remove
+muckdb format list [<db>]
+
+# or store it WITH the data via a DuckDB column comment (travels in the .duckdb):
+muckdb <db> -c "COMMENT ON COLUMN sales.amount IS 'muckdb:{\"prefix\":\"\$\",\"suffix\":\" USD\",\"decimals\":2,\"group\":true}'"
+```
+
+The registry overrides the comment. Flags: `--currency CODE`, `--prefix`,
+`--suffix`, `--decimals N`, `--thousands`, `--percent`, `--clear`. A registry
+entry keyed by column name (no `--table`) is the easy win — it formats that
+column everywhere it appears, including the derived columns your chart views
+produce.
+
 ## Inspecting state (read it back as JSON)
 
 To understand what muckdb is currently showing — without starting the server —

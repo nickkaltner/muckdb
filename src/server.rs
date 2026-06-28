@@ -54,6 +54,7 @@ pub async fn run() -> Result<()> {
         .route("/api/facets", get(api_facets))
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
+        .route("/api/formats", get(api_formats))
         .route("/api/query", get(api_query))
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
@@ -260,6 +261,16 @@ struct FacetsParams {
     table: String,
     q: Option<String>,
     filter: Option<String>,
+}
+
+#[derive(Deserialize)]
+struct DbParam {
+    db: String,
+}
+
+/// Merged column display formats (comments + registry) for a database.
+async fn api_formats(Query(p): Query<DbParam>) -> Response {
+    Json(crate::formats::merged_for(&p.db)).into_response()
 }
 
 async fn api_facets(Query(p): Query<FacetsParams>) -> Response {

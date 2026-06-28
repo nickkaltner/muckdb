@@ -67,7 +67,22 @@ CREATE OR REPLACE VIEW revenue_by_region_category AS
   FROM sales GROUP BY 1 ORDER BY region;
 CREATE OR REPLACE VIEW events_per_hour   AS SELECT date_trunc('hour', ts) AS hour, count(*) AS events FROM events GROUP BY 1 ORDER BY 1;
 CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
+
+-- A column comment carries a display format that travels with the database.
+COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 " >/dev/null
+
+# ---- column display formats ---------------------------------------------------
+# Registry formats apply by column name everywhere the column appears (base
+# tables AND the derived view columns the charts plot). 'qty' is formatted via
+# the column comment above instead. So facets/charts/tables show '$1,234.56 USD'.
+"$MUCKDB" format "$DB" amount   --currency USD >/dev/null
+"$MUCKDB" format "$DB" revenue  --currency USD >/dev/null
+"$MUCKDB" format "$DB" hardware --currency USD >/dev/null
+"$MUCKDB" format "$DB" software --currency USD >/dev/null
+"$MUCKDB" format "$DB" services --currency USD >/dev/null
+"$MUCKDB" format "$DB" temp_c   --suffix '°C' --decimals 1 >/dev/null
+"$MUCKDB" format "$DB" humidity --suffix '%'  --decimals 0 >/dev/null
 
 # ---- session dashboard --------------------------------------------------------
 "$MUCKDB" session create "$SESSION" --title "muckdb demo" >/dev/null

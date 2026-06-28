@@ -3,6 +3,7 @@
 
 mod daemon;
 mod facade;
+mod formats;
 mod introspect;
 mod paths;
 mod server;
@@ -39,6 +40,8 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         Some("session") => session::cli(&args[1..]),
         // Install the bundled Claude skill: `muckdb skill install`.
         Some("skill") => skill::cli(&args[1..]),
+        // Column display formats: `muckdb format <db> <col> --currency USD`.
+        Some("format") => formats::cli(&args[1..]),
         // Agent-facing introspection as JSON: `muckdb ls <what>`.
         Some("ls") => ls(&args[1..]),
         Some("--display") => {

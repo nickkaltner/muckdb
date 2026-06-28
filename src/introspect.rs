@@ -31,7 +31,7 @@ pub struct Preview {
 }
 
 /// Run a read-only query against `db` and parse `duckdb -json` output into rows.
-fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
+pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
     let output = Command::new("duckdb")
         .arg("-readonly")
         .arg("-json")
