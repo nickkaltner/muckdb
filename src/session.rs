@@ -409,3 +409,75 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn s(v: &str) -> String {
+        v.to_string()
+    }
+
+    #[test]
+    fn slug_lowercases_and_dashes_runs_of_non_alnum() {
+        assert_eq!(slug("Pond Analysis"), "pond-analysis");
+        assert_eq!(slug("  Q2 / 2026 report!! "), "q2-2026-report");
+        assert_eq!(slug("already-good"), "already-good");
+    }
+
+    #[test]
+    fn parse_markers_splits_value_and_label_on_first_pipe() {
+        let m = parse_markers(&["30|max"]);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].value, "30");
+        assert_eq!(m[0].label.as_deref(), Some("max"));
+    }
+
+    #[test]
+    fn parse_markers_keeps_colons_in_timestamps() {
+        // split_once('|') must not break on the timestamp's colons.
+        let m = parse_markers(&["2026-05-15T00:00|deploy"]);
+        assert_eq!(m[0].value, "2026-05-15T00:00");
+        assert_eq!(m[0].label.as_deref(), Some("deploy"));
+    }
+
+    #[test]
+    fn parse_markers_handles_no_label_and_drops_empty() {
+        let m = parse_markers(&["20", "  ", "|orphan-label"]);
+        assert_eq!(m.len(), 1);
+        assert_eq!(m[0].value, "20");
+        assert_eq!(m[0].label, None);
+    }
+
+    #[test]
+    fn args_parse_separates_flags_and_positionals() {
+        let raw = [s("create"), s("demo"), s("--title"), s("My demo")];
+        let a = Args::parse(&raw);
+        assert_eq!(a.positionals, vec!["create", "demo"]);
+        assert_eq!(a.get("title"), Some("My demo"));
+        assert_eq!(a.get("missing"), None);
+    }
+
+    #[test]
+    fn args_get_all_collects_repeated_flags_in_order() {
+        let raw = [
+            s("--event"),
+            s("a|one"),
+            s("--event"),
+            s("b|two"),
+            s("--x"),
+            s("col"),
+        ];
+        let a = Args::parse(&raw);
+        assert_eq!(a.get_all("event"), vec!["a|one", "b|two"]);
+        assert_eq!(a.get_all("x"), vec!["col"]);
+        assert!(a.get_all("nope").is_empty());
+    }
+
+    #[test]
+    fn args_trailing_flag_without_value_is_empty_string() {
+        let raw = [s("--flag")];
+        let a = Args::parse(&raw);
+        assert_eq!(a.get("flag"), Some(""));
+    }
+}

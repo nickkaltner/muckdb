@@ -59,9 +59,7 @@ fn registry_path() -> Result<std::path::PathBuf> {
 fn load_registry() -> Result<Vec<Entry>> {
     let path = registry_path()?;
     match fs::read_to_string(&path) {
-        Ok(s) if !s.trim().is_empty() => {
-            serde_json::from_str(&s).context("parsing formats.json")
-        }
+        Ok(s) if !s.trim().is_empty() => serde_json::from_str(&s).context("parsing formats.json"),
         _ => Ok(Vec::new()),
     }
 }
@@ -79,9 +77,7 @@ fn save_registry(entries: &[Entry]) -> Result<()> {
 /// Upsert (or, if `format` is empty, remove) a registry entry for db/table/column.
 fn set_entry(db_id: &str, table: Option<&str>, column: &str, format: Format) -> Result<()> {
     let mut entries = load_registry()?;
-    entries.retain(|e| {
-        !(e.db == db_id && e.table.as_deref() == table && e.column == column)
-    });
+    entries.retain(|e| !(e.db == db_id && e.table.as_deref() == table && e.column == column));
     if !format.is_empty() {
         entries.push(Entry {
             db: db_id.to_string(),
@@ -102,7 +98,9 @@ fn parse_comment(comment: &str) -> Option<Format> {
         let t = comment.trim();
         if t.starts_with('{') { t } else { return None }
     };
-    serde_json::from_str::<Format>(json).ok().filter(|f| !f.is_empty())
+    serde_json::from_str::<Format>(json)
+        .ok()
+        .filter(|f| !f.is_empty())
 }
 
 /// The merged set of formats for a database, ready for the UI to apply by column.
@@ -231,8 +229,15 @@ fn currency_symbol(code: &str) -> String {
 fn list(db: Option<&str>) -> Result<i32> {
     let filter = db.map(store::db_id);
     let entries = load_registry()?;
-    for e in entries.iter().filter(|e| filter.as_deref().is_none_or(|d| e.db == d)) {
-        let scope = e.table.as_deref().map(|t| format!("{t}.")).unwrap_or_default();
+    for e in entries
+        .iter()
+        .filter(|e| filter.as_deref().is_none_or(|d| e.db == d))
+    {
+        let scope = e
+            .table
+            .as_deref()
+            .map(|t| format!("{t}."))
+            .unwrap_or_default();
         println!(
             "{}  {}{}  {}",
             e.db,
@@ -257,4 +262,62 @@ fn usage() -> Result<i32> {
          --clear             remove the format for this column"
     );
     Ok(2)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_comment_reads_muckdb_marker() {
+        let f = parse_comment("order size muckdb:{\"suffix\":\" units\"}").unwrap();
+        assert_eq!(f.suffix.as_deref(), Some(" units"));
+        assert_eq!(f.prefix, None);
+    }
+
+    #[test]
+    fn parse_comment_reads_bare_json_object() {
+        let f = parse_comment("{\"prefix\":\"$\",\"decimals\":2,\"group\":true}").unwrap();
+        assert_eq!(f.prefix.as_deref(), Some("$"));
+        assert_eq!(f.decimals, Some(2));
+        assert!(f.group);
+    }
+
+    #[test]
+    fn parse_comment_ignores_plain_and_empty_and_invalid() {
+        assert!(parse_comment("just a normal comment").is_none());
+        assert!(parse_comment("muckdb:{}").is_none()); // empty format is a no-op
+        assert!(parse_comment("muckdb:not json").is_none());
+    }
+
+    #[test]
+    fn currency_symbol_maps_known_codes_and_falls_back() {
+        assert_eq!(currency_symbol("USD"), "$");
+        assert_eq!(currency_symbol("EUR"), "€");
+        assert_eq!(currency_symbol("GBP"), "£");
+        assert_eq!(currency_symbol("JPY"), "¥");
+        assert_eq!(currency_symbol("XYZ"), "XYZ "); // unknown → code + space prefix
+    }
+
+    #[test]
+    fn empty_format_serializes_to_empty_object() {
+        let f = Format::default();
+        assert!(f.is_empty());
+        assert_eq!(serde_json::to_string(&f).unwrap(), "{}");
+    }
+
+    #[test]
+    fn format_skips_default_fields_when_serializing() {
+        let f = Format {
+            prefix: Some("$".into()),
+            suffix: None,
+            decimals: Some(0),
+            group: false,
+        };
+        // suffix/group are defaults and must be omitted (so comments stay terse).
+        assert_eq!(
+            serde_json::to_string(&f).unwrap(),
+            "{\"prefix\":\"$\",\"decimals\":0}"
+        );
+    }
 }

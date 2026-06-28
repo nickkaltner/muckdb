@@ -682,32 +682,50 @@
   function dbIdOf(path) { const d = state.databases.find((x) => x.path === path); return d ? d.id : null; }
   function autoPageSize() { return clamp(Math.floor((window.innerHeight - 330) / 29), 5, 200); }
 
-  function buildPath() {
-    if (state.tab === "ledger") return "/ledger";
-    if (state.tab === "sessions") {
-      if (!state.selSession) return "/sessions";
-      let p = "/session/" + encodeURIComponent(state.selSession) + "/";
-      if (state.zoomPanel) p += "expand/" + encodeURIComponent(state.zoomPanel);
-      return p;
-    }
-    const id = state.selDb && dbIdOf(state.selDb);
+  // ---- URL <-> state (declarative routing) ------------------------------
+  // One source of truth for the URL shape. Each route co-locates how to BUILD
+  // its path from state and how to PARSE a path (the `g` path segments) back into
+  // nav fields; the first route whose build/parse returns truthy wins. This
+  // replaces the old index-juggling (segs[0], segs[2] === "query", …) with named,
+  // self-describing routes.
+  const encSeg = encodeURIComponent;
+  function dbPath(s) {
+    const id = s.selDb && dbIdOf(s.selDb);
     if (!id) return "/";
-    let p = "/db/" + id;
-    if (state.mode === "query") p += "/query";
-    else if (state.selTable) p += "/" + encodeURIComponent(state.selTable);
-    return p + "/";
+    return "/db/" + id + (s.mode === "query" ? "/query" : s.selTable ? "/" + encSeg(s.selTable) : "") + "/";
+  }
+  const ROUTES = [
+    { build: (s) => s.tab === "ledger" && "/ledger",
+      parse: (g) => g[0] === "ledger" && { tab: "ledger" } },
+    { build: (s) => s.tab === "sessions" && s.selSession && s.zoomPanel && `/session/${encSeg(s.selSession)}/expand/${encSeg(s.zoomPanel)}`,
+      parse: (g) => g[0] === "session" && g[2] === "expand" && { tab: "sessions", sessionId: g[1] || null, expand: g[3] || null } },
+    { build: (s) => s.tab === "sessions" && s.selSession && `/session/${encSeg(s.selSession)}/`,
+      parse: (g) => g[0] === "session" && { tab: "sessions", sessionId: g[1] || null } },
+    { build: (s) => s.tab === "sessions" && "/sessions",
+      parse: (g) => g[0] === "sessions" && { tab: "sessions" } },
+    { build: (s) => s.tab === "databases" && dbPath(s),
+      parse: (g) => g[0] === "db" && { tab: "databases", dbId: g[1] || null, mode: g[2] === "query" ? "query" : "table", table: g[2] === "query" ? null : (g[2] || null) } },
+  ];
+  // Query-string keys, named once so they don't appear as magic strings below.
+  const QP = { view: "view", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", sql: "sql" };
+  // The subviews a `?view=` may select (anything else falls back to rows).
+  const SUBVIEWS = ["stats", "schema"];
+
+  function buildPath() {
+    for (const r of ROUTES) { const p = r.build(state); if (p) return p; }
+    return "/";
   }
   function buildQuery() {
     const p = new URLSearchParams();
     if (state.mode === "table") {
-      if (state.subview !== "rows") p.set("view", state.subview);
-      if (state.q && state.q.trim()) p.set("q", state.q.trim());
-      if (state.sort) { p.set("sort", state.sort); if (state.dir === "desc") p.set("dir", "desc"); }
-      if (state.page > 0) p.set("p", String(state.page + 1));
-      if (state.pageMode !== "auto") p.set("ps", state.pageMode);
-      if (state.filters.length) p.set("f", JSON.stringify(state.filters));
+      if (state.subview !== "rows") p.set(QP.view, state.subview);
+      if (state.q && state.q.trim()) p.set(QP.q, state.q.trim());
+      if (state.sort) { p.set(QP.sort, state.sort); if (state.dir === "desc") p.set(QP.dir, "desc"); }
+      if (state.page > 0) p.set(QP.page, String(state.page + 1));
+      if (state.pageMode !== "auto") p.set(QP.psize, state.pageMode);
+      if (state.filters.length) p.set(QP.filters, JSON.stringify(state.filters));
     } else if (state.mode === "query" && state.sql && state.sql !== DEFAULT_SQL) {
-      p.set("sql", state.sql);
+      p.set(QP.sql, state.sql);
     }
     return p.toString();
   }
@@ -720,26 +738,21 @@
   }
   function parseUrl() {
     const segs = location.pathname.split("/").filter(Boolean).map(decodeURIComponent);
-    let tab = "sessions", dbId = null, table = null, mode = "table", sessionId = null, expand = null;
-    if (segs[0] === "ledger") tab = "ledger";
-    else if (segs[0] === "sessions") tab = "sessions";
-    else if (segs[0] === "session") { tab = "sessions"; sessionId = segs[1] || null; if (segs[2] === "expand") expand = segs[3] || null; }
-    else if (segs[0] === "db") {
-      tab = "databases";
-      dbId = segs[1] || null;
-      if (segs[2] === "query") mode = "query"; else table = segs[2] || null;
-    }
+    let matched = null;
+    for (const r of ROUTES) { const m = r.parse(segs); if (m) { matched = m; break; } }
+    const nav = Object.assign({ tab: "sessions", dbId: null, table: null, mode: "table", sessionId: null, expand: null }, matched);
     const p = new URLSearchParams(location.search);
     let filters = [];
-    try { const f = p.get("f"); if (f) filters = JSON.parse(f); } catch (_) {}
-    return {
-      tab, dbId, table, mode, sessionId, expand,
-      sub: ["stats", "schema"].includes(p.get("view")) ? p.get("view") : "rows",
-      q: p.get("q") || "", sort: p.get("sort") || null, dir: p.get("dir") === "desc" ? "desc" : "asc",
-      page: Math.max(0, (parseInt(p.get("p"), 10) || 1) - 1),
-      ps: p.get("ps") || "auto",
-      filters: Array.isArray(filters) ? filters : [], sql: p.get("sql") || "",
-    };
+    try { const f = p.get(QP.filters); if (f) filters = JSON.parse(f); } catch (_) {}
+    nav.sub = SUBVIEWS.includes(p.get(QP.view)) ? p.get(QP.view) : "rows";
+    nav.q = p.get(QP.q) || "";
+    nav.sort = p.get(QP.sort) || null;
+    nav.dir = p.get(QP.dir) === "desc" ? "desc" : "asc";
+    nav.page = Math.max(0, (parseInt(p.get(QP.page), 10) || 1) - 1);
+    nav.ps = p.get(QP.psize) || "auto";
+    nav.filters = Array.isArray(filters) ? filters : [];
+    nav.sql = p.get(QP.sql) || "";
+    return nav;
   }
   function resolveDb(nav) {
     if (nav.dbId) { const m = state.databases.find((d) => d.id === nav.dbId); if (m) return m.path; }
