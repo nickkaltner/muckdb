@@ -12,6 +12,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::{paths, store};
 
+/// A reference marker drawn on a chart: a horizontal target/threshold line, or a
+/// vertical event line. `value` is a y-number (target/threshold) or an x-position
+/// (event: a timestamp or category); `label` is the optional caption.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Marker {
+    pub value: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+}
+
 /// How a data tile should be charted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
@@ -21,6 +31,15 @@ pub struct Chart {
     pub x: Option<String>,
     #[serde(default)]
     pub y: Vec<String>,
+    /// Horizontal reference lines at a y-value (drawn in the accent colour).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub targets: Vec<Marker>,
+    /// Horizontal limit lines at a y-value (drawn dashed, in the warning colour).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thresholds: Vec<Marker>,
+    /// Vertical event lines at an x-position (timestamp or category).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub events: Vec<Marker>,
 }
 
 /// One panel in a session.
@@ -42,7 +61,7 @@ pub enum Tile {
         view: Option<String>,
         #[serde(default)]
         sql: Option<String>,
-        chart: Chart,
+        chart: Box<Chart>,
         #[serde(default)]
         caption: Option<String>,
     },
@@ -200,6 +219,35 @@ impl Args {
             .find(|(k, _)| k == key)
             .map(|(_, v)| v.as_str())
     }
+    /// All values given for a repeatable flag, in order.
+    fn get_all(&self, key: &str) -> Vec<&str> {
+        self.flags
+            .iter()
+            .filter(|(k, _)| k == key)
+            .map(|(_, v)| v.as_str())
+            .collect()
+    }
+}
+
+/// Parse a marker flag `VALUE` or `VALUE|LABEL` (split on the first `|`, so
+/// timestamps with colons stay intact). Empty values are dropped.
+fn parse_markers(raw: &[&str]) -> Vec<Marker> {
+    raw.iter()
+        .filter_map(|s| {
+            let (value, label) = match s.split_once('|') {
+                Some((v, l)) => (v.trim(), Some(l.trim().to_string())),
+                None => (s.trim(), None),
+            };
+            if value.is_empty() {
+                None
+            } else {
+                Some(Marker {
+                    value: value.to_string(),
+                    label: label.filter(|l| !l.is_empty()),
+                })
+            }
+        })
+        .collect()
 }
 
 fn read_md(value: &str) -> Result<String> {
@@ -300,11 +348,14 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 db,
                 view,
                 sql,
-                chart: Chart {
+                chart: Box::new(Chart {
                     kind: p.get("chart").unwrap_or("table").to_string(),
                     x: p.get("x").map(str::to_string),
                     y,
-                },
+                    targets: parse_markers(&p.get_all("target")),
+                    thresholds: parse_markers(&p.get_all("threshold")),
+                    events: parse_markers(&p.get_all("event")),
+                }),
                 caption: p.get("caption").map(str::to_string),
             };
             let mut s = load_or_new(&id, None)?;
@@ -336,7 +387,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "usage: muckdb session <create|list|post|tile|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n  \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n  \
                  rm <name> [--tile TILE]"
             );
             Ok(2)

@@ -121,6 +121,7 @@ muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -141,6 +142,12 @@ muckdb session rm <name> [--tile TILE]
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
+- **Reference lines** (repeatable; great for context on a chart): `--target` and
+  `--threshold` draw horizontal lines at a y-value (target = accent/dotted,
+  threshold = warning/dashed); `--event` draws a vertical line at an x-position
+  (a timestamp on a time axis, or a category label) to mark when something
+  happened. Each takes `VALUE` or `VALUE|label`, e.g.
+  `--target '20|SLA' --threshold '30|max' --event '2026-05-15T00:00|deploy'`.
 
 ## Inspecting state (read it back as JSON)
 

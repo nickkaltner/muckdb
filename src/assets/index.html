@@ -24,6 +24,10 @@
   * { box-sizing: border-box; }
   html, body { height: 100%; }
   body { margin: 0; background: var(--glow), var(--bg); background-attachment: fixed; color: var(--fg); font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+  /* "flat" themes: no ambient glow, and flat surfaces on the non-session pages
+     (stats cards + ledger entries). Session panels keep their panel gradient. */
+  html.flat { --glow: none; --grad-accent: var(--orange); }
+  html.flat .stat-card, html.flat .entry { background: var(--surface); }
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
   ::selection { background: rgba(255, 122, 26, 0.28); }
@@ -153,7 +157,8 @@
   .db-body.full { grid-template-columns: 1fr; }
   .db-body.full .facet-panel { display: none; }
   .facet-panel { border-right: 1px solid var(--line); overflow: auto; padding: 12px 12px 24px; }
-  .results { overflow: auto; padding: 14px 18px 10px; }
+  .results { overflow-y: auto; overflow-x: hidden; padding: 14px 18px 10px; }
+  #result-body { overflow-x: auto; }
 
   .facet-search { width: 100%; font: inherit; font-size: 13px; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 7px 11px; margin-bottom: 6px; }
   .facet-search:focus { outline: none; border-color: var(--orange-dim); }
@@ -189,17 +194,22 @@
   .tdate:focus { outline: none; border-color: var(--orange-dim); }
 
   .tp-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
-  .tp-name { font-size: 16px; color: var(--fg); }
-  .tp-rows { font-size: 12px; color: var(--faint); }
-  .tp-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; }
+  .tp-name { font-size: 16px; color: var(--fg); min-width: 0; }
+  .tp-name.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .tp-rows { font-size: 12px; color: var(--faint); flex: none; }
+  .tp-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
   .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 5px; overflow: hidden; }
   .seg button { font: inherit; font-size: 12px; background: var(--surface); color: var(--muted); border: 0; padding: 5px 14px; cursor: pointer; }
   .seg button + button { border-left: 1px solid var(--line); }
   .seg button.active { background: var(--grad-accent); color: var(--on-accent); font-weight: 700; }
   .export { display: inline-flex; align-items: center; gap: 6px; }
+  .export[hidden], .export-mini[hidden] { display: none; }
   .exlabel { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .exlink { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; }
   .exlink:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .export-mini { font: inherit; font-size: 12px; display: inline-flex; align-items: center; gap: 6px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 5px 10px; cursor: pointer; flex: none; }
+  .export-mini:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .export-mini .cv-caret { color: var(--faint); font-size: 10px; }
 
   .active-filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
   .fchip { display: inline-flex; align-items: center; gap: 7px; font: inherit; font-size: 12px; background: var(--raised); border: 1px solid var(--orange-dim); color: var(--fg); padding: 4px 9px 4px 10px; border-radius: 5px; cursor: pointer; }
@@ -541,11 +551,22 @@
       grad2: ["#3f86a8", "#1f5470"],
       chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
     },
+    hearth: {
+      label: "hearth", flat: true, vars: {
+        bg: "#0e0d0b", surface: "#161512", raised: "#1d1b17", line: "#2c2a25", "line-soft": "#1a1814",
+        fg: "#ece8e0", muted: "#9b958a", faint: "#625d54", "on-accent": "#0e0d0b",
+        orange: "#ff8a2e", amber: "#ffab5c", ember: "#d96f23", "orange-dim": "#8a5a2c", teal: "#b8b2a6",
+        ok: "#a6c97a", fail: "#e8836b",
+      },
+      grad2: ["#ffc480", "#e06a1f"],
+      chart: ["#ff8a2e", "#b8b2a6", "#ffc480", "#8a8275", "#d96f23", "#cfc7b8", "#9b7a52", "#625d54"],
+    },
   };
   // Vars a theme may set; cleared between themes so optional ones (e.g. a light
   // theme's grad-panel/hi) fall back to the :root defaults when not provided.
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
-    "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi"];
+    "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi",
+    "anno-target", "anno-threshold", "anno-event"];
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.carbon;
     state.theme = THEMES[name] ? name : "carbon";
@@ -554,6 +575,9 @@
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
     PAL = t.chart.slice();
     GRAD2 = (t.grad2 || [t.chart[0], t.chart[1]]).slice();
+    // "flat" themes drop the ambient glow + panel gradients on the non-session
+    // pages (databases, ledger); session dashboards keep their charty look.
+    document.documentElement.classList.toggle("flat", !!t.flat);
     try { localStorage.setItem("muckdb.theme", state.theme); } catch (_) {}
     setChartDefaults();
     // Redraw any Chart.js charts so they pick up the new palette.
@@ -856,7 +880,9 @@
       else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
       return `<button class="fchip" data-rmfilter="${i}" aria-label="remove filter — ${esc(f.column)}">${label}<span class="x">✕</span></button>`;
     }).join("");
-    const exp = state.subview === "rows" ? `<span class="export"><span class="exlabel">export</span><button class="exlink" data-export="csv">csv</button><button class="exlink" data-export="json">json</button></span>` : "";
+    const exp = state.subview === "rows"
+      ? `<span class="export"><span class="exlabel">export</span><button class="exlink" data-export="csv">csv</button><button class="exlink" data-export="json">json</button></span><button class="export-mini" id="export-combo" hidden>⬇ export<span class="cv-caret">▾</span></button>`
+      : "";
     $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
@@ -872,7 +898,31 @@
       </div>
       ${chips ? `<div class="active-filters">${chips}</div>` : ""}
       <div id="result-body"></div>`;
+    fitResultsHead();
     reloadBody();
+  }
+  // Keep the table header on one line: prefer the full title + inline export, but
+  // when space is tight first collapse export to a dropdown, then truncate the
+  // title — rather than overflowing into a horizontal scrollbar.
+  function fitResultsHead() {
+    const head = document.querySelector(".tp-head"); if (!head) return;
+    const name = head.querySelector(".tp-name");
+    const exp = head.querySelector(".export"), mini = head.querySelector("#export-combo");
+    if (!name) return;
+    if (exp && mini) { exp.hidden = false; mini.hidden = true; }
+    name.classList.remove("truncate");
+    // The title is squeezed when its text can't fit the box flex gave it.
+    const squeezed = () => name.scrollWidth > name.clientWidth + 1;
+    if (!squeezed()) return;
+    if (exp && mini) { exp.hidden = true; mini.hidden = false; }   // reclaim room
+    if (squeezed()) name.classList.add("truncate");               // still tight → ellipsis
+  }
+  function openExportCombo(anchor) {
+    openPicker({
+      anchor, placeholder: "export…",
+      items: [{ label: "csv", sub: "comma-separated", fmt: "csv" }, { label: "json", sub: "json array", fmt: "json" }],
+      onPick: (it) => downloadExport(it.fmt),
+    });
   }
   function reloadBody() {
     if (state.subview === "rows") loadRows();
@@ -1286,12 +1336,60 @@
       scales: { x, y },
       plugins: { legend: { display: true, position: "bottom" } } };
   }
+  // Chart.js plugin: draws a tile's reference lines on top of the data. Reads
+  // its spec from options.plugins.muckAnno (set by chartConfig via annoSpec).
+  function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+  function annoLabel(ctx, text, x, y, col, align, baseline) {
+    ctx.setLineDash([]);
+    ctx.font = "11px ui-monospace, Menlo, monospace";
+    const w = ctx.measureText(text).width, padX = 4, boxH = 15;
+    const left = align === "right" ? x - w - padX : x - padX;
+    const top = baseline === "bottom" ? y - boxH : y;
+    ctx.globalAlpha = 0.82; ctx.fillStyle = cssVar("--bg") || "#000";
+    ctx.fillRect(left, top, w + padX * 2, boxH);
+    ctx.globalAlpha = 1; ctx.fillStyle = col;
+    ctx.textAlign = align === "right" ? "right" : "left"; ctx.textBaseline = "middle";
+    ctx.fillText(text, x, top + boxH / 2);
+  }
+  const muckAnnoPlugin = {
+    id: "muckAnno",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || (!opts.hlines && !opts.vlines)) return;
+      const ctx = chart.ctx, a = chart.chartArea, xS = chart.scales.x, yS = chart.scales.y;
+      if (!a) return;
+      ctx.save();
+      (opts.hlines || []).forEach((h) => {
+        if (!yS) return;
+        const py = yS.getPixelForValue(h.value);
+        if (py == null || py < a.top - 0.5 || py > a.bottom + 0.5) return;
+        const thr = h.kind === "threshold";
+        const col = (thr ? (cssVar("--anno-threshold") || cssVar("--fail")) : (cssVar("--anno-target") || cssVar("--orange"))) || "#ff8a2e";
+        ctx.strokeStyle = col; ctx.lineWidth = 1.5;
+        // threshold: solid + semi-transparent; target: dotted + opaque.
+        if (thr) { ctx.setLineDash([]); ctx.globalAlpha = 0.5; } else { ctx.setLineDash([2, 4]); ctx.globalAlpha = 1; }
+        ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
+        ctx.globalAlpha = 1;
+        if (h.label) annoLabel(ctx, h.label, a.right - 5, py - 3, col, "right", "bottom");
+      });
+      (opts.vlines || []).forEach((v) => {
+        if (!xS) return;
+        const px = xS.getPixelForValue(v.value);
+        if (px == null || px < a.left - 0.5 || px > a.right + 0.5) return;
+        const col = cssVar("--anno-event") || cssVar("--teal") || cssVar("--amber") || "#b8b2a6";
+        ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
+        ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
+        if (v.label) annoLabel(ctx, v.label, px + 5, a.top + 3, col, "left", "top");
+      });
+      ctx.restore();
+    },
+  };
   function chartConfig(kind, spec, cols, rows) {
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
     if (!ys.length) ys = [cols[1] || cols[0]];
     const timeX = isDateish(rows.map((r) => r[xi]));
     const xv = (r) => (timeX ? toMs(r[xi]) : +r[xi]);
+    const anno = annoSpec(spec, timeX);
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
@@ -1300,7 +1398,8 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: chartOpts(true, timeX) };
+      const o = chartOpts(true, timeX); if (anno) o.plugins.muckAnno = anno;
+      return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
     const stacked = kind === "stacked";
     const type = kind === "line" || kind === "area" ? "line" : "bar";
@@ -1330,7 +1429,21 @@
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    return { type, data, options: chartOpts(false, timeX, stacked) };
+    const o = chartOpts(false, timeX, stacked); if (anno) o.plugins.muckAnno = anno;
+    return { type, data, options: o };
+  }
+  // Resolve a tile's target/threshold/event markers into pixel-resolvable values.
+  // targets & thresholds are horizontal (numeric y); events are vertical (x).
+  function annoSpec(spec, timeX) {
+    if (!spec) return null;
+    const mk = (arr, kind) => (arr || [])
+      .map((m) => ({ value: parseFloat(m.value), label: m.label, kind }))
+      .filter((m) => isFinite(m.value));
+    const hlines = [...mk(spec.targets, "target"), ...mk(spec.thresholds, "threshold")];
+    const vlines = (spec.events || [])
+      .map((e) => ({ label: e.label, value: timeX ? toMs(e.value) : e.value }))
+      .filter((v) => v.value != null && !(typeof v.value === "number" && isNaN(v.value)));
+    return (hlines.length || vlines.length) ? { hlines, vlines } : null;
   }
 
   // ---- SQL formatting + highlighting (shared by tiles and the query editor) --
@@ -1525,6 +1638,7 @@
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
     const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
     const sessCombo = ev.target.closest("#session-combo"); if (sessCombo) { openSessionCombo(sessCombo); return; }
+    const exCombo = ev.target.closest("#export-combo"); if (exCombo) { openExportCombo(exCombo); return; }
     if (ev.target.closest("#kbtn")) { openPalette(); return; }
     const themeBtn = ev.target.closest("#theme-btn"); if (themeBtn) { openThemePicker(themeBtn); return; }
     const copyBtn = ev.target.closest("[data-copydb], [data-copytext]");
@@ -1744,6 +1858,7 @@
   state.pageSize = autoPageSize();
   let resizeTimer = null;
   window.addEventListener("resize", () => {
+    fitResultsHead();
     if (state.pageMode !== "auto") return;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
@@ -1754,6 +1869,8 @@
 
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
+    // Draw target/threshold (horizontal) and event (vertical) reference lines.
+    try { Chart.register(muckAnnoPlugin); } catch (_) {}
   }
   applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "carbon");
 
