@@ -263,7 +263,9 @@
   .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; }
 
   /* schema */
-  table.schema { border-collapse: collapse; width: 100%; max-width: 760px; font-size: 12px; }
+  table.schema { border-collapse: collapse; width: 100%; max-width: 860px; font-size: 12px; }
+  table.schema td.fmt-col .fmt-eg { color: var(--fg); }
+  table.schema td.fmt-col .fmt-spec { color: var(--faint); margin-left: 8px; font-size: 11px; }
   table.schema th, table.schema td { text-align: left; padding: 7px 12px; border-bottom: 1px solid var(--line-soft); }
   table.schema thead th { color: var(--muted); font-weight: 400; letter-spacing: 0.04em; text-transform: uppercase; font-size: 10px; }
   table.schema td .ty { color: var(--orange-dim); }
@@ -303,9 +305,8 @@
 
   /* sessions */
   .session-body { flex: 1; overflow: auto; }
-  .session-head { flex: none; display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px 16px; padding: 12px 18px; border-bottom: 1px solid var(--line); background: var(--grad-panel), var(--surface); }
-  .sh-title { font-size: 15px; font-weight: 600; color: var(--fg); }
-  .sh-claude { display: inline-flex; align-items: center; gap: 8px; }
+  .session-claude { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .session-claude:empty { display: none; }
   .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
@@ -397,8 +398,7 @@
     </section>
 
     <section class="view flex" id="view-sessions" aria-label="Sessions">
-      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span></div>
-      <div class="session-head" id="session-head" hidden></div>
+      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span></div>
       <div class="session-body" id="session-body">
         <div class="empty" id="session-empty" style="margin:18px">
           No sessions yet. An agent creates one with <code>muckdb session create NAME</code>,
@@ -1061,7 +1061,18 @@
       const data = await (await fetch("/api/schema?" + new URLSearchParams({ db: state.selDb, table: state.selTable }))).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       const cols = data.columns || [];
-      const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td></tr>`).join("");
+      await ensureFormats(state.selDb);
+      const fmtCell = (name) => {
+        const f = colFmt(state.selDb, name, state.selTable);
+        if (!f) return "";
+        const bits = [];
+        if (f.prefix) bits.push(`prefix ${esc(f.prefix)}`);
+        if (f.suffix) bits.push(`suffix ${esc(f.suffix.trim() || f.suffix)}`);
+        if (f.decimals != null) bits.push(`${f.decimals} dp`);
+        if (f.group) bits.push("grouped");
+        return `<span class="fmt-eg">${esc(applyFmt(f, 1234.5))}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
+      };
+      const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td><td class="fmt-col">${fmtCell(c.name)}</td></tr>`).join("");
       let defn;
       if (data.sql) {
         defn = `<div class="ddl-label">view definition</div><pre class="sql">${sqlHi(sqlFormat(data.sql))}</pre>`;
@@ -1069,7 +1080,7 @@
         const ddlCols = cols.map((c) => `  ${quoteId(c.name)} ${c.col_type}${c.nullable ? "" : " NOT NULL"}${c.default ? " DEFAULT " + c.default : ""}`).join(",\n");
         defn = `<div class="ddl-label">definition</div><pre class="sql">${sqlHi(`CREATE TABLE ${quoteId(state.selTable)} (\n${ddlCols}\n);`)}</pre>`;
       }
-      slot.innerHTML = `<table class="schema"><thead><tr><th>column</th><th>type</th><th>null</th><th>key</th><th>default</th></tr></thead><tbody>${rows}</tbody></table>${defn}`;
+      slot.innerHTML = `<table class="schema"><thead><tr><th>column</th><th>type</th><th>null</th><th>key</th><th>default</th><th>format</th></tr></thead><tbody>${rows}</tbody></table>${defn}`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   function quoteId(n) { return '"' + String(n).replace(/"/g, '""') + '"'; }
@@ -1218,7 +1229,7 @@
   function renderSessionNav() {
     const ss = state.sessions;
     $("session-empty").style.display = ss.length ? "none" : "block";
-    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-head").hidden = true; return; }
+    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-claude").innerHTML = ""; return; }
     const cur = ss.find((s) => s.id === state.selSession);
     const name = cur ? (cur.title || cur.id) : "select a session";
     $("session-chips").innerHTML = `<button class="combo" id="session-combo"><span class="cv-name">${esc(name)}</span><span class="cv-sub">${ss.length} ${ss.length === 1 ? "session" : "sessions"}</span><span class="cv-caret">▾</span></button>`;
@@ -1232,16 +1243,15 @@
       onPick: (it) => loadSession(it.id, true),
     });
   }
-  // The header above the panels: session title + the linked Claude session UUID.
+  // The linked Claude session UUID, shown inline on the session nav row (the
+  // picker already carries the session name, so no separate title is needed).
   function renderSessionHead(s) {
-    const head = $("session-head");
-    if (!head) return;
+    const el = $("session-claude");
+    if (!el) return;
     const cs = s.claude_session;
-    head.innerHTML = `<span class="sh-title">${esc(s.title || s.id)}</span>`
-      + (cs
-        ? `<span class="sh-claude" title="The Claude Code session this dashboard is linked to"><span class="sh-label">claude session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button></span>`
-        : "");
-    head.hidden = false;
+    el.innerHTML = cs
+      ? `<span class="sh-label">claude session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button>`
+      : "";
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }
   async function loadSession(id, push) {
