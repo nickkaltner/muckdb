@@ -67,7 +67,7 @@
   .pick-sub { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
   .pick-empty { padding: 12px; color: var(--muted); font-size: 12px; }
   .pick-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
-  .pick-sw { display: inline-flex; gap: 3px; flex: none; }
+  .pick-sw { display: inline-flex; gap: 3px; flex: none; padding: 3px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(128,128,128,0.25); }
   .pick-sw i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 
   /* expanded chart overlay */
@@ -416,7 +416,7 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {},
-    theme: "slate",
+    theme: "mono",
   };
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
@@ -426,89 +426,90 @@
   // ---- themes -----------------------------------------------------------
   // Each theme sets the base CSS variables (gradients/derived vars recompute
   // from these) plus a categorical chart palette. Add one here to offer it.
+  // Each theme carries `grad2` — the two colours of the single left→right gradient
+  // that fills every bar (and seeds area fills), so the gradient is fixed across
+  // the whole chart rather than repeating per bar. `light: true` marks light themes
+  // so the picker can show them on a light swatch.
   const THEMES = {
-    slate: {
-      label: "slate", vars: {
-        bg: "#0f141b", surface: "#18202b", raised: "#212b38", line: "#35424f", "line-soft": "#212a35",
-        fg: "#e8eef6", muted: "#93a2b6", faint: "#5c6a7c", "on-accent": "#0c1118",
-        orange: "#6fb7d8", amber: "#93cfe8", ember: "#4d8fb2", "orange-dim": "#4a7e98", teal: "#65cabd",
-        ok: "#8fce8a", fail: "#e08a80",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(108,183,216,0.06), transparent 70%)",
+    mono: {
+      label: "mono", vars: {
+        bg: "#101113", surface: "#181a1d", raised: "#202327", line: "#34373d", "line-soft": "#1e2024",
+        fg: "#e8eaec", muted: "#969aa1", faint: "#5e636b", "on-accent": "#101113",
+        orange: "#d6a45e", amber: "#e6bd86", ember: "#b07f3f", "orange-dim": "#7e6238", teal: "#9aa0a8",
+        ok: "#9bbf8a", fail: "#cf8f88",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
       },
-      chart: ["#6fb7d8", "#74c4a2", "#b69ad8", "#e0bd76", "#8aa6e0", "#d3948a", "#5fbcb2", "#c79ad0"],
+      grad2: ["#cfd3d8", "#5e636b"],
+      chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
     },
-    nord: {
-      label: "nord", vars: {
-        bg: "#20262f", surface: "#2a313d", raised: "#333b49", line: "#434c5e", "line-soft": "#2c333f",
-        fg: "#e5ecf4", muted: "#9aa7bb", faint: "#65728a", "on-accent": "#20262f",
-        orange: "#88c0d0", amber: "#8fbcbb", ember: "#5e81ac", "orange-dim": "#5e81ac", teal: "#8fbcbb",
-        ok: "#a3be8c", fail: "#bf616a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(136,192,208,0.06), transparent 70%)",
+    carbon: {
+      label: "carbon", vars: {
+        bg: "#07080a", surface: "#101216", raised: "#181b20", line: "#313640", "line-soft": "#16181d",
+        fg: "#f5f6f8", muted: "#9aa0a8", faint: "#5e636c", "on-accent": "#07080a",
+        orange: "#ffb000", amber: "#ffc845", ember: "#d98e00", "orange-dim": "#9e6a00", teal: "#c8ccd2",
+        ok: "#a6d07a", fail: "#ff7a6b",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,176,0,0.07), transparent 70%)",
       },
-      chart: ["#88c0d0", "#a3be8c", "#b48ead", "#ebcb8b", "#81a1c1", "#d08770", "#8fbcbb", "#bf616a"],
-    },
-    gruvbox: {
-      label: "gruvbox", vars: {
-        bg: "#282828", surface: "#323030", raised: "#3c3836", line: "#504945", "line-soft": "#3a3735",
-        fg: "#ebdbb2", muted: "#a89984", faint: "#7c6f64", "on-accent": "#282828",
-        orange: "#fabd2f", amber: "#fbc55a", ember: "#d79921", "orange-dim": "#b57614", teal: "#8ec07c",
-        ok: "#b8bb26", fail: "#fb4934",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(250,189,47,0.06), transparent 70%)",
-      },
-      chart: ["#fabd2f", "#8ec07c", "#83a598", "#d3869b", "#b8bb26", "#fe8019", "#458588", "#d79921"],
-    },
-    solarized: {
-      label: "solarized", vars: {
-        bg: "#002b36", surface: "#073642", raised: "#0a4250", line: "#15505e", "line-soft": "#08323d",
-        fg: "#c6d2d2", muted: "#8a9a9a", faint: "#5b6e6e", "on-accent": "#002b36",
-        orange: "#2aa198", amber: "#b58900", ember: "#268bd2", "orange-dim": "#1f7a70", teal: "#2aa198",
-        ok: "#859900", fail: "#dc322f",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(42,161,152,0.06), transparent 70%)",
-      },
-      chart: ["#268bd2", "#2aa198", "#859900", "#b58900", "#cb4b16", "#d33682", "#6c71c4", "#dc322f"],
-    },
-    neon: {
-      label: "neon", vars: {
-        bg: "#15121f", surface: "#1d1830", raised: "#271f3f", line: "#3a2f59", "line-soft": "#221b38",
-        fg: "#e9e4ff", muted: "#a99fce", faint: "#6f6597", "on-accent": "#15121f",
-        orange: "#f25fce", amber: "#ff8ad8", ember: "#b14fd0", "orange-dim": "#8a3fae", teal: "#4fd6e0",
-        ok: "#6fe0b0", fail: "#ff6b7a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(242,95,206,0.08), transparent 70%)",
-      },
-      chart: ["#ff79c6", "#8be9fd", "#bd93f9", "#50fa7b", "#ffb86c", "#ff5555", "#f1fa8c", "#6fa8ff"],
+      grad2: ["#ffffff", "#5e626b"],
+      chart: ["#f5f6f8", "#ffb000", "#9aa0a8", "#6e737b", "#d98e00", "#cfd3d8", "#84898f", "#4f535a"],
     },
     ember: {
       label: "ember", vars: {
-        bg: "#1a1712", surface: "#221e18", raised: "#2b261f", line: "#3b342b", "line-soft": "#2d2820",
-        fg: "#ece4d8", muted: "#a99b88", faint: "#71675c", "on-accent": "#1a1712",
-        orange: "#ff7d22", amber: "#ffb851", ember: "#df531c", "orange-dim": "#b85a1a", teal: "#4bc4b6",
-        ok: "#9bb56e", fail: "#e0614a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,138,46,0.07), transparent 70%)",
+        bg: "#0f0b07", surface: "#181109", raised: "#20160d", line: "#3a2a1b", "line-soft": "#1c150d",
+        fg: "#f3e7d6", muted: "#b39a82", faint: "#786350", "on-accent": "#0f0b07",
+        orange: "#ff8c2e", amber: "#ffb454", ember: "#e0531c", "orange-dim": "#b1521f", teal: "#4bc4a8",
+        ok: "#b8c46a", fail: "#ff6a4d",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,140,46,0.09), transparent 70%)",
       },
-      chart: ["#ef9a5b", "#5bb6ab", "#e6c279", "#cf8aa3", "#8aa6d6", "#a6c585", "#bf9bd0", "#df8f93"],
+      grad2: ["#ffb454", "#df531c"],
+      chart: ["#ff8c2e", "#4bc4a8", "#ffc861", "#e0728a", "#8aa6e0", "#a6c585", "#bf8fd0", "#df7a5b"],
     },
-    pastel: {
-      label: "pastel", vars: {
-        bg: "#191d23", surface: "#20252d", raised: "#29313a", line: "#38414d", "line-soft": "#232a32",
-        fg: "#dde4ec", muted: "#8d99a8", faint: "#5b6675", "on-accent": "#191d23",
-        orange: "#88b8cf", amber: "#a9d2e2", ember: "#5e93ab", "orange-dim": "#557e92", teal: "#9cc6a9",
-        ok: "#93bd92", fail: "#d39a93",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,175,205,0.06), transparent 70%)",
+    crimson: {
+      label: "crimson", vars: {
+        bg: "#0f0709", surface: "#190b0e", raised: "#210f13", line: "#3e2127", "line-soft": "#1c0d10",
+        fg: "#f4e2e4", muted: "#b8929a", faint: "#7e5a62", "on-accent": "#0f0709",
+        orange: "#ff5a6e", amber: "#ff8a98", ember: "#c0303f", "orange-dim": "#9a2f3a", teal: "#4bb8a8",
+        ok: "#b8c46a", fail: "#ff5a4d",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,90,110,0.08), transparent 70%)",
       },
-      chart: ["#84b6cc", "#a7c9a3", "#c9a9c9", "#e3c79b", "#97b1d8", "#cda7a2", "#9fc8bf", "#b7b2d8"],
+      grad2: ["#ff9a7a", "#c0303f"],
+      chart: ["#ff5a6e", "#4bb8a8", "#ffb07a", "#c98fd0", "#8aa6e0", "#e0a85a", "#6fc4b8", "#d07a9a"],
     },
-    phosphor: {
-      label: "phosphor", vars: {
-        bg: "#0f130f", surface: "#161c16", raised: "#1d251d", line: "#2a342a", "line-soft": "#1a211a",
-        fg: "#d7e6d2", muted: "#8aa088", faint: "#5c6e5a", "on-accent": "#0f130f",
-        orange: "#7fcaa0", amber: "#a7e0bd", ember: "#5fa07a", "orange-dim": "#4f8366", teal: "#86c7c0",
-        ok: "#9bcf8a", fail: "#d39a86",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(120,200,150,0.06), transparent 70%)",
+    arctic: {
+      label: "arctic", vars: {
+        bg: "#06090e", surface: "#0e151d", raised: "#151e29", line: "#283440", "line-soft": "#121a23",
+        fg: "#e3edf6", muted: "#8ea0b3", faint: "#566879", "on-accent": "#06090e",
+        orange: "#5fd0e0", amber: "#8fe6f0", ember: "#3f93b0", "orange-dim": "#3a7d96", teal: "#5fd0e0",
+        ok: "#8fce8a", fail: "#e0728a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(95,208,224,0.07), transparent 70%)",
       },
-      chart: ["#8fd0a8", "#7fb7c9", "#c9d18f", "#cda9cf", "#a9c98f", "#9fb7d8", "#d6c79c", "#c0a8d0"],
+      grad2: ["#9fe8f0", "#2f7fa0"],
+      chart: ["#5fd0e0", "#74c4a2", "#8aa6f0", "#e0c060", "#b48ce0", "#cf8a9a", "#6fc4b8", "#9ab0e0"],
+    },
+    ultraviolet: {
+      label: "ultraviolet", vars: {
+        bg: "#0a0712", surface: "#120d20", raised: "#19132a", line: "#2f2548", "line-soft": "#150f24",
+        fg: "#ebe4fb", muted: "#a99fc8", faint: "#6a5f93", "on-accent": "#0a0712",
+        orange: "#b46bff", amber: "#cf94ff", ember: "#7d3fd0", "orange-dim": "#6a3aae", teal: "#4fd0d6",
+        ok: "#7fe0a8", fail: "#ff6b8a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(180,107,255,0.1), transparent 70%)",
+      },
+      grad2: ["#e0a0ff", "#6f3fd0"],
+      chart: ["#b46bff", "#4fd6e0", "#ff8ad8", "#9ede5a", "#ffb86c", "#ff6b8a", "#7f9aff", "#e0c060"],
+    },
+    lime: {
+      label: "lime", vars: {
+        bg: "#080b06", surface: "#0f150c", raised: "#161f11", line: "#283820", "line-soft": "#121a0e",
+        fg: "#e6f3dc", muted: "#94a888", faint: "#5a6e50", "on-accent": "#080b06",
+        orange: "#a6e24e", amber: "#c6f26a", ember: "#6fae2f", "orange-dim": "#5a8f2a", teal: "#4bc4a0",
+        ok: "#b8e26a", fail: "#e0728a",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(166,226,78,0.07), transparent 70%)",
+      },
+      grad2: ["#d6f26a", "#4a8f3a"],
+      chart: ["#a6e24e", "#4fc4b0", "#e0c060", "#cf8fd0", "#8aa6e0", "#d3946a", "#6fd08a", "#b894d8"],
     },
     paper: {
-      label: "paper", vars: {
+      label: "paper", light: true, vars: {
         bg: "#f1ece1", surface: "#faf7f0", raised: "#fffdf8", line: "#d8d0c0", "line-soft": "#e7e0d2",
         fg: "#2b2a26", muted: "#6c6658", faint: "#9a937f", "on-accent": "#faf7f0",
         orange: "#2d6e8e", amber: "#3f86a8", ember: "#1f5470", "orange-dim": "#356b86", teal: "#3f8f86",
@@ -517,47 +518,8 @@
         "grad-panel": "linear-gradient(180deg, rgba(43,42,38,0.028), rgba(43,42,38,0) 58%)",
         hi: "inset 0 1px 0 rgba(255,255,255,0.6)",
       },
+      grad2: ["#3f86a8", "#1f5470"],
       chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
-    },
-    mono: {
-      label: "mono", vars: {
-        bg: "#161719", surface: "#1d1f22", raised: "#25282c", line: "#383b40", "line-soft": "#232529",
-        fg: "#e6e8ea", muted: "#969aa1", faint: "#5e636b", "on-accent": "#161719",
-        orange: "#d6a45e", amber: "#e6bd86", ember: "#b07f3f", "orange-dim": "#7e6238", teal: "#9aa0a8",
-        ok: "#9bbf8a", fail: "#cf8f88",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
-      },
-      chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
-    },
-    rose: {
-      label: "rosé", vars: {
-        bg: "#1c1417", surface: "#251a1e", raised: "#2f2227", line: "#443138", "line-soft": "#271c20",
-        fg: "#f0e4e7", muted: "#b39aa1", faint: "#7a626a", "on-accent": "#1c1417",
-        orange: "#d98aa0", amber: "#e8a8b8", ember: "#b25f78", "orange-dim": "#8f4f64", teal: "#7fb2a6",
-        ok: "#9cc090", fail: "#e0728a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(217,138,160,0.06), transparent 70%)",
-      },
-      chart: ["#d98aa0", "#7fb2a6", "#c9a6d8", "#e3c089", "#9aa6d8", "#cf8f8a", "#8fb8a8", "#b894c0"],
-    },
-    copper: {
-      label: "copper", vars: {
-        bg: "#1b1614", surface: "#241d1a", raised: "#2e2521", line: "#443730", "line-soft": "#271f1c",
-        fg: "#f0e6dc", muted: "#b3a193", faint: "#7c6a5e", "on-accent": "#1b1614",
-        orange: "#d77a52", amber: "#e8a06e", ember: "#b1542f", "orange-dim": "#8f4a2c", teal: "#5fab9e",
-        ok: "#a8b56a", fail: "#e0664f",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(215,122,82,0.06), transparent 70%)",
-      },
-      chart: ["#d77a52", "#5fab9e", "#e0b06a", "#a98fb0", "#a8b56a", "#cf7a6a", "#6fa9b8", "#c79a6a"],
-    },
-    indigo: {
-      label: "indigo", vars: {
-        bg: "#14161f", surface: "#1b1e2a", raised: "#232838", line: "#353c52", "line-soft": "#1f2433",
-        fg: "#e4e7f2", muted: "#969cb5", faint: "#61678a", "on-accent": "#14161f",
-        orange: "#8aa0f0", amber: "#a8b8ff", ember: "#5f6fc4", "orange-dim": "#545fa8", teal: "#6fc4d0",
-        ok: "#9bc88a", fail: "#e0728a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(138,160,240,0.07), transparent 70%)",
-      },
-      chart: ["#8aa0f0", "#6fc4d0", "#b48ce0", "#e0b06a", "#79c89a", "#cf8fb0", "#7f9ae0", "#c79ad0"],
     },
   };
   // Vars a theme may set; cleared between themes so optional ones (e.g. a light
@@ -565,12 +527,13 @@
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
     "on-accent", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi"];
   function applyTheme(name) {
-    const t = THEMES[name] || THEMES.slate;
-    state.theme = THEMES[name] ? name : "slate";
+    const t = THEMES[name] || THEMES.mono;
+    state.theme = THEMES[name] ? name : "mono";
     const root = document.documentElement.style;
     THEME_VARS.forEach((k) => root.removeProperty("--" + k));
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
     PAL = t.chart.slice();
+    GRAD2 = (t.grad2 || [t.chart[0], t.chart[1]]).slice();
     try { localStorage.setItem("muckdb.theme", state.theme); } catch (_) {}
     setChartDefaults();
     // Redraw any Chart.js charts so they pick up the new palette.
@@ -1037,7 +1000,7 @@
     let shown = opts.items.slice(), sel = 0;
     const draw = () => {
       list.innerHTML = shown.length ? shown.map((it, i) =>
-        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw">${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
+        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw"${it.swbg ? ` style="background:${esc(it.swbg)}"` : ""}>${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
         : '<li class="pick-empty">no matches</li>';
       const s = list.querySelector(".pick-row.sel"); if (s) s.scrollIntoView({ block: "nearest" });
     };
@@ -1079,8 +1042,9 @@
     openPicker({
       anchor, placeholder: "theme…",
       items: Object.keys(THEMES).map((n) => ({
-        label: THEMES[n].label, sub: n === state.theme ? "current" : "", theme: n,
+        label: THEMES[n].label, sub: n === state.theme ? "current" : (THEMES[n].light ? "light" : ""), theme: n,
         swatch: [THEMES[n].vars.orange, THEMES[n].chart[0], THEMES[n].chart[2], THEMES[n].chart[4]],
+        swbg: THEMES[n].vars.bg,
       })),
       onPick: (it) => applyTheme(it.theme),
     });
@@ -1181,7 +1145,8 @@
     return `<div class="preview-wrap" style="max-height:240px"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>`;
   }
   // The active chart palette — set by applyTheme().
-  let PAL = THEMES.slate.chart.slice();
+  let PAL = THEMES.mono.chart.slice();
+  let GRAD2 = THEMES.mono.grad2.slice();
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
@@ -1190,6 +1155,35 @@
       const area = c.chart.chartArea; if (!area) return hexA(hex, top);
       const g = c.chart.ctx.createLinearGradient(0, area.top, 0, area.bottom);
       g.addColorStop(0, hexA(hex, top)); g.addColorStop(1, hexA(hex, bot));
+      return g;
+    };
+  }
+  // One left→right gradient spanning the whole plot area, used as the fill for
+  // every bar — so the gradient is fixed across the chart, not repeated per bar.
+  function hgrad(c0, c1) {
+    return (c) => {
+      const a = c.chart.chartArea; if (!a) return c0;
+      const g = c.chart.ctx.createLinearGradient(a.left, 0, a.right, 0);
+      g.addColorStop(0, c0); g.addColorStop(1, c1);
+      return g;
+    };
+  }
+  // Mix a #rrggbb toward white by `amt` (0..1); returns rgb().
+  function lighten(hex, amt) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+    const f = (v) => Math.round(v + (255 - v) * amt);
+    return `rgb(${f(r)},${f(g)},${f(b)})`;
+  }
+  // Per-segment radial gradient for pie slices: lighter at the centre, base at
+  // the rim, giving each slice depth while staying distinct.
+  function radialSeg(hex) {
+    return (c) => {
+      const a = c.chart.chartArea; if (!a) return hex;
+      const cx = (a.left + a.right) / 2, cy = (a.top + a.bottom) / 2;
+      const r = Math.min(a.right - a.left, a.bottom - a.top) / 2;
+      const g = c.chart.ctx.createRadialGradient(cx, cy, r * 0.12, cx, cy, r);
+      g.addColorStop(0, lighten(hex, 0.3)); g.addColorStop(1, hex);
       return g;
     };
   }
@@ -1220,24 +1214,37 @@
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
-      const sepColor = getComputedStyle(document.documentElement).getPropertyValue("--surface").trim() || "#1a1712";
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: labels.map((_, i) => PAL[i % PAL.length]), borderColor: sepColor, borderWidth: 2, hoverOffset: 6 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right" } } } };
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { position: "right", labels: { generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: chartOpts(true, timeX) };
     }
     const type = kind === "line" || kind === "area" ? "line" : "bar";
+    const single = ys.length === 1;
     const datasets = ys.map((c, i) => {
       const yi = cols.indexOf(c);
       const col = PAL[i % PAL.length];
-      const bg = kind === "area" ? vgrad(col, 0.38, 0.02) : (type === "bar" ? vgrad(col, 0.95, 0.32) : col);
+      // Bars: one fixed left→right gradient across the whole chart when there's a
+      // single series; grouped series stay solid-per-series. Area: the gradient's
+      // first colour as a vertical fade. Lines: solid.
+      let bg, border = col;
+      if (type === "bar") {
+        bg = single ? hgrad(GRAD2[0], GRAD2[1]) : col;
+        border = "transparent";
+      } else if (kind === "area") {
+        bg = single ? vgrad(GRAD2[0], 0.42, 0.02) : vgrad(col, 0.34, 0.02);
+        border = single ? GRAD2[0] : col;
+      } else {
+        bg = col;
+      }
       return { label: c,
         data: timeX ? rows.map((r) => ({ x: xv(r), y: +r[yi] })) : rows.map((r) => +r[yi]),
-        borderColor: col, borderWidth: type === "line" ? 2 : 0,
+        borderColor: border, borderWidth: type === "line" ? 2 : 0,
         backgroundColor: bg, fill: kind === "area", tension: 0.3,
-        pointRadius: type === "line" ? 0 : 0, pointHoverRadius: 4, pointBackgroundColor: col,
-        borderRadius: type === "bar" ? 3 : 0, maxBarThickness: 48 };
+        pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: col,
+        borderRadius: 0, borderSkipped: false, maxBarThickness: 120,
+        barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     return { type, data, options: chartOpts(false, timeX) };
@@ -1634,7 +1641,7 @@
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
   }
-  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "slate");
+  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "mono");
 
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
