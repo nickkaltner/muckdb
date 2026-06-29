@@ -335,7 +335,25 @@
   .empty code { font-family: var(--mono); color: var(--orange); background: var(--raised); padding: 1px 6px; border-radius: 3px; }
 
   /* sessions */
-  .session-body { flex: 1; overflow: auto; }
+  .session-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .panels-scroll { flex: 1; overflow: auto; }
+  /* Table of contents — only offered on wide screens (the panels are centred at
+     max 1100px, leaving room on the right). Toggle in the session nav row. */
+  .toc-toggle { display: none; align-items: center; gap: 6px; flex: none; margin-left: auto; font: inherit; font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
+  .toc-toggle svg { display: block; }
+  .toc-toggle:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .toc-toggle.active { color: var(--orange); border-color: var(--orange-dim); }
+  .session-toc { display: none; width: 244px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 16px 6px 28px; }
+  .toc-head { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); padding: 0 10px 8px; }
+  .toc-item { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-left: 2px solid transparent; cursor: pointer; padding: 5px 10px; border-radius: 0 4px 4px 0; }
+  .toc-item .toc-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .toc-item .toc-kind { flex: none; color: var(--faint); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .toc-item:hover { background: var(--raised); color: var(--fg); }
+  .toc-item.active { color: var(--orange); border-left-color: var(--orange); }
+  @media (min-width: 1300px) {
+    .toc-toggle { display: inline-flex; }
+    #view-sessions.toc-open .session-toc { display: block; }
+  }
   .session-claude { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
   .session-claude:empty { display: none; }
   .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
@@ -436,13 +454,18 @@
     </section>
 
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
-      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span></div>
+      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span>
+        <button class="toc-toggle" id="toc-toggle" title="Toggle contents" aria-label="Toggle table of contents"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h2M2 8h2M2 12h2M6 4h8M6 8h8M6 12h8"/></svg><span>contents</span></button>
+      </div>
       <div class="session-body" id="session-body">
-        <div class="empty" id="session-empty" style="margin:18px">
-          No sessions yet. An agent creates one with <code>muckdb session create NAME</code>,
-          then posts panels with <code>muckdb session post</code> / <code>muckdb session tile</code>.
+        <div class="panels-scroll" id="panels-scroll">
+          <div class="empty" id="session-empty" style="margin:18px">
+            No sessions yet. An agent creates one with <code>muckdb session create NAME</code>,
+            then posts panels with <code>muckdb session post</code> / <code>muckdb session tile</code>.
+          </div>
+          <div class="panels" id="panels"></div>
         </div>
-        <div class="panels" id="panels"></div>
+        <aside class="session-toc" id="session-toc" aria-label="Panel contents"></aside>
       </div>
     </section>
 
@@ -485,6 +508,7 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, zoomPanel: null,
+    tocOpen: true,      // session table-of-contents visible (wide screens only)
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
     theme: "hearth",
@@ -493,6 +517,7 @@
   let searchTimer = null, refreshTimer = null;
   let suppressSync = false, pendingNav = null, brush = null;
   let charts = [];
+  let tocObserver = null;
 
   // ---- themes -----------------------------------------------------------
   // Each theme sets the base CSS variables (gradients/derived vars recompute
@@ -1491,11 +1516,58 @@
     renderSessionHead(s);
     const tiles = s.tiles || [];
     $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("") : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
+    renderToc(tiles);
     state.panelSel = -1;
     tiles.forEach((t) => {
       if (t.type !== "view") return;
       if (t.sql && state.tileMode[t.name] === "sql") showTileSql(t); else loadTileChart(t);
     });
+  }
+  // ---- session table of contents (wide screens) ------------------------
+  function applyTocState() {
+    const view = $("view-sessions"); if (view) view.classList.toggle("toc-open", state.tocOpen);
+    const btn = $("toc-toggle"); if (btn) btn.classList.toggle("active", state.tocOpen);
+  }
+  function toggleToc() {
+    state.tocOpen = !state.tocOpen;
+    try { localStorage.setItem("muckdb.toc", state.tocOpen ? "1" : "0"); } catch (_) {}
+    applyTocState();
+  }
+  // One TOC entry per panel, in order; clicking jumps to it. Markdown panels are
+  // included (they're usually the intro/summary you most want to jump to).
+  function renderToc(tiles) {
+    const el = $("session-toc"); if (!el) return;
+    if (!tiles || !tiles.length) { el.innerHTML = ""; if (tocObserver) tocObserver.disconnect(); return; }
+    el.innerHTML = `<div class="toc-head">contents</div>` + tiles.map((t) => {
+      const kind = t.type === "markdown" ? "md" : ((t.chart && t.chart.kind) || "table");
+      const label = t.title || t.name;
+      return `<button class="toc-item" data-toc="${attr(t.name)}" title="${attr(label)}"><span class="toc-label">${esc(label)}</span><span class="toc-kind">${esc(kind)}</span></button>`;
+    }).join("");
+    setupTocSpy();
+  }
+  function scrollToPanel(name) {
+    const panel = document.querySelector(`#panels [data-tile="${cssEsc(name)}"]`);
+    if (panel) panel.scrollIntoView({ block: "start", behavior: "smooth" });
+  }
+  // Highlight the TOC entry for whichever panel is nearest the top of the scroll
+  // area, so the contents list tracks the reader's position.
+  function setupTocSpy() {
+    if (tocObserver) tocObserver.disconnect();
+    const scroller = $("panels-scroll"); if (!scroller || !window.IntersectionObserver) return;
+    const items = {};
+    document.querySelectorAll("#session-toc .toc-item").forEach((it) => { items[it.dataset.toc] = it; });
+    const visible = new Set();
+    tocObserver = new IntersectionObserver((entries) => {
+      entries.forEach((e) => {
+        const name = e.target.dataset.tile; if (!name) return;
+        if (e.isIntersecting) visible.add(name); else visible.delete(name);
+      });
+      const panels = [...document.querySelectorAll("#panels .panel")];
+      const top = panels.find((p) => visible.has(p.dataset.tile));
+      Object.values(items).forEach((it) => it.classList.remove("active"));
+      if (top && items[top.dataset.tile]) items[top.dataset.tile].classList.add("active");
+    }, { root: scroller, rootMargin: "0px 0px -65% 0px", threshold: 0 });
+    document.querySelectorAll("#panels .panel").forEach((p) => tocObserver.observe(p));
   }
   // Keyboard navigation of session panels — mirrors the picker: a left amber bar
   // marks the selection, and the chosen panel scrolls to the top of its container.
@@ -1513,7 +1585,7 @@
   }
   function panelHtml(t) {
     if (t.type === "markdown") {
-      return `<div class="panel wide"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
+      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -2125,6 +2197,8 @@
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
     if (ev.target.closest("[data-run]")) { runQuery(); return; }
+    if (ev.target.closest("#toc-toggle")) { toggleToc(); return; }
+    const toc = ev.target.closest("[data-toc]"); if (toc) { scrollToPanel(toc.dataset.toc); return; }
     const sess = ev.target.closest("[data-session]"); if (sess) { loadSession(sess.dataset.session, true); return; }
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
     const ts = ev.target.closest("[data-tsql]"); if (ts) { toggleTileSql(ts.dataset.tsql); return; }
@@ -2336,6 +2410,8 @@
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
   }
   applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
+  try { state.tocOpen = localStorage.getItem("muckdb.toc") !== "0"; } catch (_) {}
+  applyTocState();
 
   // Opened at the bare root? Resume the last-visited location (persisted across
   // restarts) before parsing, so reopening muckdb lands where you left off.
