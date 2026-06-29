@@ -184,3 +184,11 @@ cargo fmt              # not --check — actually format the tree
 cargo clippy --all-targets -- -D warnings
 cargo test
 ```
+
+A tracked pre-commit hook (`.githooks/pre-commit`) runs `cargo fmt` and re-stages
+any reformatted `.rs` files so the format check can't go red. `core.hooksPath` is
+per-clone local config, so enable it once after cloning:
+
+```sh
+git config core.hooksPath .githooks
+```

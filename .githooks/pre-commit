@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+# Pre-commit hook: keep the tree rustfmt-clean so CI's `cargo fmt --check` stays green.
+# Runs cargo fmt, then re-stages any already-staged .rs files it reformatted.
+set -euo pipefail
+
+# Only act on staged Rust files.
+mapfile -t staged_rs < <(git diff --cached --name-only --diff-filter=ACM -- '*.rs')
+[ ${#staged_rs[@]} -eq 0 ] && exit 0
+
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "pre-commit: cargo not found, skipping rustfmt" >&2
+  exit 0
+fi
+
+cargo fmt
+
+# Re-stage any of the originally-staged files that fmt changed.
+changed=0
+for f in "${staged_rs[@]}"; do
+  if [ -f "$f" ] && ! git diff --quiet -- "$f"; then
+    git add -- "$f"
+    changed=1
+  fi
+done
+
+[ "$changed" -eq 1 ] && echo "pre-commit: ran cargo fmt and re-staged formatted files"
+exit 0
