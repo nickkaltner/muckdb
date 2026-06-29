@@ -196,9 +196,27 @@ muckdb session rm <name> [--tile TILE]
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
   of skewing by the viewer's timezone.
 - **Label your axes** with `--xlabel`/`--ylabel` so a chart is readable on its own.
-- **Describe almost every chart** with `--caption` — one line on what it shows and
-  the so-what (the trend, the outlier, the takeaway). A chart with no caption makes
-  the human guess; treat the caption as part of building the tile, not optional.
+- **Caption every chart** with `--caption` — this is required, not optional. One
+  line on what it shows and the so-what (the trend, the outlier, the takeaway). A
+  chart with no caption makes the human guess what they're looking at; treat
+  writing the caption as part of building the tile. Pair it with `--title` (the
+  panel heading) and `--xlabel`/`--ylabel` so the panel is self-explanatory on its
+  own. If a one-liner isn't enough, add an adjacent markdown panel for the full
+  description.
+- **Pick the chart that packs in the most information.** Don't default everything
+  to a single-series bar chart — choose the kind that shows the most per panel:
+  - **`stacked` bars** when each x has a breakdown that sums to a meaningful total
+    (revenue split by category, errors by type per day). One panel then shows both
+    the total *and* its composition — far denser than one bar per total or a
+    separate chart per series.
+  - **`area`** for a cumulative or volume-over-time feel, and **stacked areas**
+    (multiple `--y`) to show how a total and its parts evolve together over time —
+    the temporal analogue of a stacked bar.
+  - **`line`** is the go-to for **temporal data** — anything with a `TIMESTAMP`/
+    `DATE` x. It carries trend, seasonality, and multiple series at once cleanly;
+    plot several `--y` columns to compare measures on one time axis. Prefer it over
+    bars when the x is continuous time and you care about the *shape* of the change.
+  - **`scatter`** when you want every raw point (density/clusters), not an aggregate.
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid
@@ -215,19 +233,30 @@ muckdb session rm <name> [--tile TILE]
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
-- **Reference lines & events — use them liberally.** `--target` and `--threshold`
-  draw horizontal lines at a y-value (target = accent/dotted, threshold =
-  warning/dashed). **`--event`** draws a vertical line at an x-position (a
-  timestamp on a time axis, or a category label) — **strongly recommended on any
-  time series** to mark when something happened (a deploy, an incident, a campaign,
-  a config change); it turns "the line jumped" into "the line jumped *when we
-  shipped X*." Each takes `VALUE` or `VALUE|label`, e.g.
+- **Reference lines & events — use them to draw the eye to what matters.**
+  `--target` and `--threshold` draw horizontal lines at a y-value (target =
+  accent/dotted, threshold = warning/dashed) — use them to anchor a series against
+  an SLA, budget, or limit so "good vs bad" is visible at a glance. **`--event`**
+  draws a vertical line at an x-position (a timestamp on a time axis, or a category
+  label) and is the best way to **draw attention to an important moment** — a
+  deploy, an incident, a campaign, a config change. **Add one to essentially every
+  time series**: it turns "the line jumped" into "the line jumped *when we shipped
+  X*," which is usually the whole point of the chart. Each takes `VALUE` or
+  `VALUE|label`, e.g.
   `--target '20|SLA' --threshold '30|max' --event '2026-05-15T00:00|deploy'`.
   Markers are part of the tile, so **add or update them anytime** by re-posting the
   tile with the same `--name` (and the new `--event`/`--target` flags) — it
   replaces the panel in place and the dashboard updates live.
 
-## Column display formats (units, currency, decimals)
+## Column display formats (units, currency, decimals) — set them, always
+
+**Format every numeric column that has a unit.** A bare `4343.33` makes the human
+guess (dollars? ms? a count?); `$4,343.33 USD` answers it. This is not a nicety —
+an unformatted money/duration/percentage column is a half-finished panel. Make
+setting formats a standard step right after you build your views, *before* you
+post tiles: for each numeric column a chart or table will show, attach a currency,
+a unit suffix, a percent, or a thousands separator. It costs one command per
+column and applies everywhere that column appears (facets, charts, stats, tables).
 
 Attach a display format to a column so facets, charts, stats and tables show
 `$4,343.33 USD` instead of `4343.33`:
@@ -277,6 +306,14 @@ been running.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
+- **Caption and label every tile.** Always pass `--caption` (what it shows + the
+  takeaway) and, on charts, `--title`/`--xlabel`/`--ylabel`. An unlabelled panel
+  isn't done — see the caption note in the command reference above.
+- **Format numeric columns before posting tiles.** Set a `muckdb format` (currency,
+  unit suffix, percent, thousands) for every money/duration/rate/count column a
+  panel will display, so values render as `$1,234.56 USD` / `42 ms` / `12.5%`
+  everywhere — see "Column display formats" above. Treat it as a standard step, not
+  an afterthought.
 - **Markdown for narrative, charts for data.** Lead with a markdown summary tile
   (prose + a markdown table of the key figures), then supporting chart tiles.
   Never dump raw rows into chat — summarise in markdown, evidence in a chart/view
