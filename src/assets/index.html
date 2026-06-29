@@ -1464,6 +1464,53 @@
     const f = (v) => Math.round(v + (255 - v) * amt);
     return `rgb(${f(r)},${f(g)},${f(b)})`;
   }
+  // #rrggbb → [h(0-360), s(0-1), l(0-1)] and back, so we can generate colours.
+  function hexToHsl(hex) {
+    const n = parseInt(String(hex).slice(1), 16);
+    const r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, b = (n & 255) / 255;
+    const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn;
+    const l = (mx + mn) / 2;
+    const s = d === 0 ? 0 : d / (1 - Math.abs(2 * l - 1));
+    let h = 0;
+    if (d) {
+      if (mx === r) h = ((g - b) / d) % 6;
+      else if (mx === g) h = (b - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h *= 60; if (h < 0) h += 360;
+    }
+    return [h, s, l];
+  }
+  function hslToHex(h, s, l) {
+    h = ((h % 360) + 360) % 360;
+    const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+    let r = 0, g = 0, b = 0;
+    if (h < 60) { r = c; g = x; } else if (h < 120) { r = x; g = c; }
+    else if (h < 180) { g = c; b = x; } else if (h < 240) { g = x; b = c; }
+    else if (h < 300) { r = x; b = c; } else { r = c; b = x; }
+    const to = (v) => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+    return "#" + to(r) + to(g) + to(b);
+  }
+  // N distinguishable categorical colours, one per bar/slice/series. For a small
+  // set (≤ CAT_CURATED) we use the theme's hand-picked `chart` colours; beyond
+  // that they start to look samey, so we sweep the hue wheel from the theme
+  // accent — evenly spaced hues on a scale with a gentle lightness zig-zag so
+  // even adjacent bars stay easy to tell apart.
+  const CAT_CURATED = 4;
+  function catColors(n) {
+    if (n <= CAT_CURATED) return PAL.slice(0, n);
+    const cs = getComputedStyle(document.documentElement);
+    const accent = cs.getPropertyValue("--orange").trim() || PAL[0];
+    const [h0, s0] = hexToHsl(accent);
+    const light = !!(THEMES[state.theme] && THEMES[state.theme].light);
+    const s = Math.min(0.68, Math.max(0.45, s0));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const h = h0 + (360 * i) / n;
+      const l = light ? 0.40 + (i % 2) * 0.06 : 0.62 - (i % 2) * 0.07;
+      out.push(hslToHex(h, s, l));
+    }
+    return out;
+  }
   // Per-segment radial gradient for pie slices: lighter at the centre, base at
   // the rim, giving each slice depth while staying distinct.
   function radialSeg(hex) {
@@ -1612,8 +1659,9 @@
     if (kind === "pie") {
       const yi = cols.indexOf(ys[0]);
       const labels = rows.map((r) => String(r[xi]));
+      const pieCols = catColors(labels.length);
       const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(PAL[(c.dataIndex || 0) % PAL.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: PAL[i % PAL.length], strokeStyle: PAL[i % PAL.length], fontColor: fg, index: i })) } } } } };
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(pieCols[(c.dataIndex || 0) % pieCols.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: pieCols[i % pieCols.length], strokeStyle: pieCols[i % pieCols.length], fontColor: fg, index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
@@ -1627,9 +1675,13 @@
     // Round the top of bars when the active theme opts in (theme.barRadius).
     const barRadius = BAR_RADIUS
       ? { topLeft: BAR_RADIUS, topRight: BAR_RADIUS, bottomLeft: 0, bottomRight: 0 } : 0;
+    // Multi-series charts (stacked / grouped bars, multi line / area) colour by
+    // series from the same scale as solid bars, so a dashboard speaks one colour
+    // language. For ≤ CAT_CURATED series this is just the curated palette.
+    const seriesCols = catColors(ys.length);
     const datasets = ys.map((c, i) => {
       const yi = cols.indexOf(c);
-      const col = PAL[i % PAL.length];
+      const col = seriesCols[i % seriesCols.length];
       // Bars: a single series is either one left→right gradient (continuous data,
       // the default) or, with --bars solid, a different palette colour per bar
       // (categorical data like HTTP methods). Grouped series stay solid-per-series.
@@ -1637,9 +1689,10 @@
       let bg, border = col;
       if (type === "bar") {
         if (single) {
-          bg = spec.bars === "solid"
-            ? (ctx) => PAL[(ctx.dataIndex || 0) % PAL.length]
-            : bargradN(BARGRAD);
+          if (spec.bars === "solid") {
+            const cc = catColors(rows.length);
+            bg = (ctx) => cc[(ctx.dataIndex || 0) % cc.length];
+          } else bg = bargradN(BARGRAD);
         } else {
           bg = col;
         }

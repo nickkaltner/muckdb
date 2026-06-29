@@ -25,7 +25,9 @@ echo "muckdb demo → seeding $DB"
 CREATE OR REPLACE TABLE sales AS
 SELECT
   i AS id,
-  ['Northland','Eastvale','Southport','Westend'][1 + (i % 4)::BIGINT]              AS region,
+  ['Northland','Eastvale','Southport','Westend','Brightmoor','Cedar Hills',
+   'Fairview','Glenwood','Harborline','Ironside','Junewood','Kingsford',
+   'Lakeshore','Mistvale'][1 + (i % 14)::BIGINT]                                  AS region,
   ['Widget','Gadget','Gizmo','Sprocket','Cog'][1 + (hash(i*7)  % 5)::BIGINT]      AS product,
   ['Hardware','Software','Services'][1 + (hash(i*13) % 3)::BIGINT]                AS category,
   round(20 + (hash(i*3) % 480) + random()*50, 2)                           AS amount,
@@ -135,7 +137,7 @@ MD
 "$MUCKDB" session tile "$SESSION" --name revenue --title "Revenue by region" \
   --db "$DB" --view sales_by_region --chart bar --x region --y revenue --bars solid \
   --xlabel Region --ylabel Revenue \
-  --caption "Categorical — regions are distinct buckets, so each bar gets its own solid colour from the theme palette." >/dev/null
+  --caption "Categorical — regions are distinct buckets, so each bar gets its own solid colour. Past the curated palette the colours sweep the hue scale so all 14 stay easy to tell apart." >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name by_kind --title "Events by type" \
   --db "$DB" --view events_by_kind --chart bar --x kind --y count --bars solid \
