@@ -246,10 +246,14 @@ async fn api_preview(Query(p): Query<PreviewParams>) -> Response {
 struct StatsParams {
     db: String,
     table: String,
+    // Active search + facet filters (ignored by schema, which reuses this type).
+    q: Option<String>,
+    filter: Option<String>,
 }
 
 async fn api_stats(Query(p): Query<StatsParams>) -> Response {
-    match introspect::stats(&p.db, &p.table) {
+    let filters = parse_filters(p.filter.as_deref());
+    match introspect::stats(&p.db, &p.table, p.q.as_deref(), &filters) {
         Ok(stats) => Json(stats).into_response(),
         Err(e) => error_json(&e),
     }
@@ -288,6 +292,8 @@ struct ExportParams {
     format: Option<String>,
     q: Option<String>,
     filter: Option<String>,
+    /// JSON array of column names to exclude (facet eyes the user closed).
+    hide: Option<String>,
 }
 
 /// Keep a table name safe to drop into a Content-Disposition filename.
@@ -306,7 +312,12 @@ fn safe_filename(name: &str) -> String {
 async fn api_export(Query(p): Query<ExportParams>) -> Response {
     let fmt = p.format.as_deref().unwrap_or("csv").to_ascii_lowercase();
     let filters = parse_filters(p.filter.as_deref());
-    match introspect::export(&p.db, &p.table, &fmt, p.q.as_deref(), &filters) {
+    let hidden: Vec<String> = p
+        .hide
+        .as_deref()
+        .and_then(|h| serde_json::from_str(h).ok())
+        .unwrap_or_default();
+    match introspect::export(&p.db, &p.table, &fmt, p.q.as_deref(), &filters, &hidden) {
         Ok(body) => {
             let (ctype, ext) = if fmt == "json" {
                 ("application/json", "json")

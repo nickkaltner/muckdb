@@ -198,6 +198,18 @@ mod tests {
     }
 
     #[test]
+    fn db_id_is_stable_and_distinct_per_path() {
+        // The id must be deterministic across processes/restarts — the web UI
+        // persists `/db/<id>/` links and resolves them after the daemon restarts.
+        assert_eq!(db_id("/data/ponds.duckdb"), db_id("/data/ponds.duckdb"));
+        assert_ne!(db_id("/data/ponds.duckdb"), db_id("/data/other.duckdb"));
+        // 8 lowercase hex chars.
+        let id = db_id("/data/ponds.duckdb");
+        assert_eq!(id.len(), 8);
+        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
+
+    #[test]
     fn databases_are_deduped_most_recent_first() {
         let records = [
             rec(1, Phase::Start, Some("/a.db"), None),

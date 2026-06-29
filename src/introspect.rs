@@ -54,6 +54,13 @@ pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
     serde_json::from_str(trimmed).context("parsing duckdb JSON output")
 }
 
+/// Coerce a duckdb JSON scalar to f64. DuckDB's `-json` renders DECIMAL and
+/// HUGEINT as quoted strings (to avoid precision loss), so a plain `as_f64()`
+/// misses them — fall back to parsing the string.
+fn json_f64(v: &Value) -> Option<f64> {
+    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+}
+
 /// Escape an identifier for safe interpolation inside double quotes.
 fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
@@ -396,15 +403,29 @@ pub fn export(
     format: &str,
     q: Option<&str>,
     filters: &[Filter],
+    hidden: &[String],
 ) -> Result<String> {
     if !Path::new(db).exists() {
         bail!("database file does not exist");
     }
     let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
+    // Search still runs across every column; only the projection drops hidden ones.
     let where_sql = build_where(&columns, q, filters)
         .map(|w| format!(" WHERE {w}"))
         .unwrap_or_default();
-    let sql = format!("SELECT * FROM {}{}", quote_ident(table), where_sql);
+    // Columns whose facet eye is closed are excluded from the export. If that
+    // would leave nothing (everything hidden), fall back to all columns.
+    let visible: Vec<&String> = columns.iter().filter(|c| !hidden.contains(c)).collect();
+    let projection = if hidden.is_empty() || visible.is_empty() {
+        "*".to_string()
+    } else {
+        visible
+            .iter()
+            .map(|c| quote_ident(c))
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
+    let sql = format!("SELECT {} FROM {}{}", projection, quote_ident(table), where_sql);
 
     let out_flag = if format.eq_ignore_ascii_case("json") {
         "-json"
@@ -688,15 +709,33 @@ pub fn facets(
 const HIST_BINS: usize = 12;
 /// Number of top values kept per categorical column (facets).
 const TOP_VALUES: usize = 12;
+/// Columns whose approximate distinct count is at or below this get an exact
+/// `count(DISTINCT …)` instead — cheap at low cardinality, and avoids the
+/// HyperLogLog approximation being visibly wrong for small sets.
+const EXACT_DISTINCT_MAX: i64 = 10_000;
 
 /// Compute per-column statistics for a table: summaries for every column,
 /// histograms for numeric columns, and top values (facets) for the rest.
-pub fn stats(db: &str, table: &str) -> Result<TableStats> {
+pub fn stats(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Result<TableStats> {
     if !Path::new(db).exists() {
         bail!("database file does not exist");
     }
     let cols = describe(db, table)?;
     let tbl = quote_ident(table);
+
+    // Active search + facet filters scope every figure on this tab. `where_sql`
+    // is the leading clause for `FROM tbl`; `and_sql` appends to helper queries
+    // that already carry their own `WHERE col IS NOT NULL`.
+    let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+    let where_cond = build_where(&col_names, q, filters);
+    let where_sql = where_cond
+        .as_ref()
+        .map(|w| format!(" WHERE {w}"))
+        .unwrap_or_default();
+    let and_sql = where_cond
+        .as_ref()
+        .map(|w| format!(" AND ({w})"))
+        .unwrap_or_default();
 
     // One pass for row count + per-column null/distinct (+ numeric min/max/avg).
     let mut sel = String::from("SELECT count(*) AS n");
@@ -712,19 +751,53 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
             ));
         }
     }
-    sel.push_str(&format!(" FROM {tbl}"));
+    sel.push_str(&format!(" FROM {tbl}{where_sql}"));
     let agg = query_json(db, &sel)?;
     let agg = agg.first().cloned().unwrap_or(Value::Null);
 
     let row_count = agg.get("n").and_then(Value::as_i64).unwrap_or(0);
-    let getf = |k: &str| agg.get(k).and_then(Value::as_f64);
-    let geti = |k: &str| agg.get(k).and_then(Value::as_i64).unwrap_or(0);
+    let getf = |k: &str| agg.get(k).and_then(json_f64);
+    let geti = |k: &str| {
+        agg.get(k)
+            .and_then(|v| v.as_i64().or_else(|| json_f64(v).map(|f| f as i64)))
+            .unwrap_or(0)
+    };
+
+    // Refine the approximate distinct counts: any column the HLL estimate puts at
+    // low cardinality is recounted exactly in a single extra pass (cheap there),
+    // so small sets show a precise distinct count rather than an HLL guess.
+    let small: Vec<usize> = (0..cols.len())
+        .filter(|i| geti(&format!("nd{i}")) <= EXACT_DISTINCT_MAX)
+        .collect();
+    let mut exact_distinct = std::collections::HashMap::new();
+    if !small.is_empty() {
+        let proj = small
+            .iter()
+            .map(|&i| format!("count(DISTINCT {}) AS d{i}", quote_ident(&cols[i].0)))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let row = query_json(db, &format!("SELECT {proj} FROM {tbl}{where_sql}"))?
+            .first()
+            .cloned()
+            .unwrap_or(Value::Null);
+        for &i in &small {
+            if let Some(v) = row
+                .get(format!("d{i}"))
+                .and_then(|v| v.as_i64().or_else(|| json_f64(v).map(|f| f as i64)))
+            {
+                exact_distinct.insert(i, v);
+            }
+        }
+    }
 
     let mut columns = Vec::with_capacity(cols.len());
     for (i, (name, ty)) in cols.iter().enumerate() {
         let numeric = is_numeric(ty);
         let nulls = row_count - geti(&format!("nn{i}"));
-        let distinct = geti(&format!("nd{i}"));
+        let distinct = exact_distinct
+            .get(&i)
+            .copied()
+            .unwrap_or_else(|| geti(&format!("nd{i}")));
         let (min, max, avg, q1, median, q3) = if numeric {
             (
                 getf(&format!("mn{i}")),
@@ -746,17 +819,17 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
 
         if numeric {
             if let (Some(lo), Some(hi)) = (min, max) {
-                let raw = histogram_buckets(db, &tbl, &q, lo, hi)?;
+                let raw = histogram_buckets(db, &tbl, &q, lo, hi, &and_sql)?;
                 histogram = bucketize(lo, hi, HIST_BINS, &raw);
             }
         } else if temporal {
-            timeline = temporal_buckets(db, &tbl, &q)?;
+            timeline = temporal_buckets(db, &tbl, &q, &and_sql)?;
         } else {
             let rows = query_json(
                 db,
                 &format!(
                     "SELECT CAST({q} AS VARCHAR) AS v, count(*) AS c FROM {tbl} \
-                     WHERE {q} IS NOT NULL GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
+                     WHERE {q} IS NOT NULL{and_sql} GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
                 ),
             )?;
             top = rows
@@ -793,12 +866,12 @@ pub fn stats(db: &str, table: &str) -> Result<TableStats> {
 }
 
 /// Date-bucketed counts (time order) for a temporal column, auto-granularity.
-fn temporal_buckets(db: &str, tbl: &str, qc: &str) -> Result<Vec<TimeBin>> {
+fn temporal_buckets(db: &str, tbl: &str, qc: &str, and_sql: &str) -> Result<Vec<TimeBin>> {
     let row = query_json(
         db,
         &format!(
             "SELECT datediff('day', CAST(min({qc}) AS TIMESTAMP), CAST(max({qc}) AS TIMESTAMP)) AS days \
-             FROM {tbl} WHERE {qc} IS NOT NULL"
+             FROM {tbl} WHERE {qc} IS NOT NULL{and_sql}"
         ),
     )?;
     let days = row
@@ -815,7 +888,7 @@ fn temporal_buckets(db: &str, tbl: &str, qc: &str) -> Result<Vec<TimeBin>> {
         db,
         &format!(
             "SELECT date_trunc('{gran}', CAST({qc} AS TIMESTAMP))::VARCHAR AS b, count(*) AS c \
-             FROM {tbl} WHERE {qc} IS NOT NULL GROUP BY b ORDER BY b"
+             FROM {tbl} WHERE {qc} IS NOT NULL{and_sql} GROUP BY b ORDER BY b"
         ),
     )?;
     Ok(brows
@@ -831,7 +904,14 @@ fn temporal_buckets(db: &str, tbl: &str, qc: &str) -> Result<Vec<TimeBin>> {
 
 /// Run duckdb's `width_bucket` for a numeric column, returning
 /// `(bucket_index, count)` pairs for `bucketize` to lay out.
-fn histogram_buckets(db: &str, tbl: &str, q: &str, lo: f64, hi: f64) -> Result<Vec<(i64, i64)>> {
+fn histogram_buckets(
+    db: &str,
+    tbl: &str,
+    q: &str,
+    lo: f64,
+    hi: f64,
+    and_sql: &str,
+) -> Result<Vec<(i64, i64)>> {
     if !matches!(lo.partial_cmp(&hi), Some(std::cmp::Ordering::Less)) {
         return Ok(Vec::new());
     }
@@ -843,7 +923,7 @@ fn histogram_buckets(db: &str, tbl: &str, q: &str, lo: f64, hi: f64) -> Result<V
         db,
         &format!(
             "SELECT CAST(floor(({q} - {lo}) / {width}) AS BIGINT) + 1 AS b, \
-             count(*) AS c FROM {tbl} WHERE {q} IS NOT NULL GROUP BY b ORDER BY b"
+             count(*) AS c FROM {tbl} WHERE {q} IS NOT NULL{and_sql} GROUP BY b ORDER BY b"
         ),
     )?;
     Ok(rows
@@ -1076,5 +1156,88 @@ mod tests {
                 count: 4
             }
         );
+    }
+
+    #[test]
+    fn json_f64_reads_numbers_and_quoted_decimals() {
+        // DuckDB renders DOUBLE/BIGINT as JSON numbers but DECIMAL/HUGEINT as
+        // quoted strings — both must coerce to f64.
+        assert_eq!(json_f64(&Value::from(185.0)), Some(185.0));
+        assert_eq!(json_f64(&Value::from(9)), Some(9.0));
+        assert_eq!(json_f64(&Value::from("185.0")), Some(185.0));
+        assert_eq!(json_f64(&Value::from("-3.5")), Some(-3.5));
+        assert_eq!(json_f64(&Value::Null), None);
+        assert_eq!(json_f64(&Value::from("not a number")), None);
+    }
+
+    // ---- stats() integration (needs the `duckdb` CLI) --------------------
+    fn duckdb_ok() -> bool {
+        Command::new("duckdb")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+    /// A unique temp db path; the file is created when duckdb first writes it.
+    fn temp_db(tag: &str) -> String {
+        let mut p = std::env::temp_dir();
+        p.push(format!("muckdb_test_{}_{tag}.duckdb", std::process::id()));
+        let path = p.to_string_lossy().into_owned();
+        let _ = std::fs::remove_file(&path);
+        path
+    }
+    fn run_sql(db: &str, sql: &str) {
+        let out = Command::new("duckdb")
+            .arg(db)
+            .arg("-c")
+            .arg(sql)
+            .output()
+            .expect("run duckdb");
+        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+    }
+    fn col<'a>(s: &'a TableStats, name: &str) -> &'a ColumnStat {
+        s.columns.iter().find(|c| c.name == name).expect("column")
+    }
+
+    #[test]
+    fn stats_reports_exact_distinct_for_small_cardinality() {
+        if !duckdb_ok() {
+            eprintln!("skipping stats_reports_exact_distinct_for_small_cardinality: no duckdb");
+            return;
+        }
+        let db = temp_db("distinct");
+        // 37 groups is small enough for the exact recount but large enough that
+        // the HyperLogLog approximation would not reliably land on 37.
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, ('g' || (i % 37)::VARCHAR) AS grp, \
+             (i * 1.0) AS amt FROM range(200) g(i);",
+        );
+        let s = stats(&db, "t", None, &[]).unwrap();
+        assert_eq!(s.row_count, 200);
+        assert_eq!(col(&s, "grp").distinct, 37, "grp distinct must be exact");
+        assert_eq!(col(&s, "id").distinct, 200, "id distinct must be exact");
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn stats_are_scoped_to_active_filters() {
+        if !duckdb_ok() {
+            eprintln!("skipping stats_are_scoped_to_active_filters: no duckdb");
+            return;
+        }
+        let db = temp_db("filtered");
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, ('g' || (i % 37)::VARCHAR) AS grp, \
+             (i * 1.0) AS amt FROM range(200) g(i);",
+        );
+        // grp = 'g0' selects i in {0,37,74,111,148,185} → 6 rows, max amt 185.
+        let f = vf("grp", "g0");
+        let s = stats(&db, "t", None, std::slice::from_ref(&f)).unwrap();
+        assert_eq!(s.row_count, 6, "row count reflects the filter");
+        assert_eq!(col(&s, "grp").distinct, 1, "filtered grp has one value");
+        assert_eq!(col(&s, "amt").max, Some(185.0), "numeric range is filtered");
+        std::fs::remove_file(&db).ok();
     }
 }

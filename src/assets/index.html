@@ -171,7 +171,21 @@
   .facet-clear { font-size: 11px; color: var(--muted); background: none; border: 0; cursor: pointer; padding: 2px 0 10px; }
   .facet-clear:hover { color: var(--orange); }
   .facet-group { margin-bottom: 14px; }
-  .facet-col { font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .facet-col { display: flex; align-items: center; gap: 6px; font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+  .facet-col .fc-name { position: relative; flex: 0 1 auto; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; transition: color 0.28s ease; }
+  /* Strike-through drawn as a line that scales in from the left, so toggling a
+     column off/on animates (text-decoration can't be transitioned). */
+  .facet-col .fc-name::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: currentColor; transform: scaleX(0); transform-origin: left center; transition: transform 0.28s ease; }
+  .facet-col.col-hidden .fc-name { color: var(--faint); }
+  .facet-col.col-hidden .fc-name::after { transform: scaleX(1); }
+  .facet-col .eye { display: inline-flex; align-items: center; justify-content: center; flex: none; background: none; border: 0; color: var(--faint); cursor: pointer; padding: 2px; margin: -2px -2px -2px auto; border-radius: 4px; opacity: 0.55; transition: opacity 0.12s, color 0.12s; }
+  .facet-col .eye svg { display: block; }
+  .facet-col:hover .eye, .facet-col .eye.off { opacity: 1; }
+  .facet-col .eye:hover { color: var(--orange); background: var(--raised); }
+  .facet-col .eye.off { color: var(--orange); }
+  .facet-col .eye svg { transform-origin: center; }
+  .facet-col .eye.blink svg { animation: eye-blink 0.3s ease; }
+  @keyframes eye-blink { 0% { transform: scaleY(0.1); opacity: 0.35; } 55% { transform: scaleY(1.2); } 100% { transform: scaleY(1); opacity: 1; } }
   .facet-val { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 4px 6px; border-radius: 4px; position: relative; }
   .facet-val:hover { background: var(--raised); }
   .facet-val .box { width: 13px; height: 13px; border: 1px solid var(--line); border-radius: 3px; z-index: 1; }
@@ -459,7 +473,7 @@
     selDb: null, tables: [], selTable: null,
     mode: "table",      // "table" | "query"
     subview: "rows",    // "rows" | "stats" | "schema"
-    q: "", filters: [], facets: [],
+    q: "", filters: [], facets: [], hidden: [],
     sort: null, dir: "asc",
     page: 0, total: 0,
     pageMode: "auto", pageSize: 25,
@@ -707,7 +721,7 @@
       parse: (g) => g[0] === "db" && { tab: "databases", dbId: g[1] || null, mode: g[2] === "query" ? "query" : "table", table: g[2] === "query" ? null : (g[2] || null) } },
   ];
   // Query-string keys, named once so they don't appear as magic strings below.
-  const QP = { view: "view", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", sql: "sql" };
+  const QP = { view: "view", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", hidden: "hide", sql: "sql" };
   // The subviews a `?view=` may select (anything else falls back to rows).
   const SUBVIEWS = ["stats", "schema"];
 
@@ -724,6 +738,7 @@
       if (state.page > 0) p.set(QP.page, String(state.page + 1));
       if (state.pageMode !== "auto") p.set(QP.psize, state.pageMode);
       if (state.filters.length) p.set(QP.filters, JSON.stringify(state.filters));
+      if (state.hidden.length) p.set(QP.hidden, JSON.stringify(state.hidden));
     } else if (state.mode === "query" && state.sql && state.sql !== DEFAULT_SQL) {
       p.set(QP.sql, state.sql);
     }
@@ -733,6 +748,9 @@
     if (suppressSync) return;
     const qs = buildQuery();
     const url = buildPath() + (qs ? "?" + qs : "");
+    // Remember where we are so a fresh open (new tab, or after a daemon
+    // restart) resumes here instead of resetting to the sessions tab.
+    try { localStorage.setItem("muckdb.lasturl", url); } catch (_) {}
     if (url === location.pathname + location.search) return;
     if (push) history.pushState(null, "", url); else history.replaceState(null, "", url);
   }
@@ -742,8 +760,9 @@
     for (const r of ROUTES) { const m = r.parse(segs); if (m) { matched = m; break; } }
     const nav = Object.assign({ tab: "sessions", dbId: null, table: null, mode: "table", sessionId: null, expand: null }, matched);
     const p = new URLSearchParams(location.search);
-    let filters = [];
+    let filters = [], hidden = [];
     try { const f = p.get(QP.filters); if (f) filters = JSON.parse(f); } catch (_) {}
+    try { const h = p.get(QP.hidden); if (h) hidden = JSON.parse(h); } catch (_) {}
     nav.sub = SUBVIEWS.includes(p.get(QP.view)) ? p.get(QP.view) : "rows";
     nav.q = p.get(QP.q) || "";
     nav.sort = p.get(QP.sort) || null;
@@ -751,6 +770,7 @@
     nav.page = Math.max(0, (parseInt(p.get(QP.page), 10) || 1) - 1);
     nav.ps = p.get(QP.psize) || "auto";
     nav.filters = Array.isArray(filters) ? filters : [];
+    nav.hidden = Array.isArray(hidden) ? hidden : [];
     nav.sql = p.get(QP.sql) || "";
     return nav;
   }
@@ -866,7 +886,7 @@
   async function selectDb(path, restore) {
     state.selDb = path; state.selTable = null; state.tables = [];
     state.mode = "table"; state.subview = "rows";
-    state.q = ""; state.filters = []; state.page = 0; state.facets = []; state.sort = null; state.dir = "asc";
+    state.q = ""; state.filters = []; state.page = 0; state.facets = []; state.hidden = []; state.sort = null; state.dir = "asc";
     renderDbNav();
     $("facet-panel").innerHTML = "";
     $("results").innerHTML = '<div class="note">loading tables…</div>';
@@ -894,6 +914,7 @@
     if (restore && restore.ps) { state.pageMode = restore.ps; }
     state.pageSize = state.pageMode === "auto" ? autoPageSize() : Number(state.pageMode);
     state.facets = [];
+    state.hidden = restore && Array.isArray(restore.hidden) ? restore.hidden.slice() : [];
     document.querySelector(".db-body").classList.remove("full");
     renderTableNav();
     buildFacetShell();
@@ -927,16 +948,25 @@
     const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
     body.innerHTML = clear + (state.facets.length ? groups : '<div class="note">No columns to facet.</div>');
   }
+  // Eye toggle in each facet header: open eye = column shown in the rows table,
+  // slashed eye = hidden. Clicking it removes/restores that column from the table.
+  const EYE_ON = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M1 8s2.6-4.5 7-4.5S15 8 15 8s-2.6 4.5-7 4.5S1 8 1 8Z"/><circle cx="8" cy="8" r="1.9"/></svg>`;
+  const EYE_OFF = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="M6.3 3.8A6.6 6.6 0 0 1 8 3.5c4.4 0 7 4.5 7 4.5a13 13 0 0 1-2 2.5M4 4.6A12.5 12.5 0 0 0 1 8s2.6 4.5 7 4.5a6.5 6.5 0 0 0 2.6-.5"/><path d="M2 2l12 12"/></svg>`;
+  function facetHead(name) {
+    const hidden = state.hidden.includes(name);
+    const t = hidden ? "show column in table" : "hide column from table";
+    return `<div class="facet-col${hidden ? " col-hidden" : ""}"><span class="fc-name" title="${attr(name)}">${esc(name)}</span><button class="eye${hidden ? " off" : ""}" data-eye="${attr(name)}" title="${t}" aria-label="${t}">${hidden ? EYE_OFF : EYE_ON}</button></div>`;
+  }
   function renderValuesFacet(f) {
     const max = Math.max(1, ...f.values.map((v) => v.count));
     const vals = f.values.map((v) => {
       const on = hasFilter(f.name, v.value) ? " on" : "";
       return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}"><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span></button>`;
     }).join("");
-    return `<div class="facet-group"><div class="facet-col">${esc(f.name)}</div>${vals}</div>`;
+    return `<div class="facet-group">${facetHead(f.name)}${vals}</div>`;
   }
   function renderRangeFacet(f) {
-    const head = `<div class="facet-col">${esc(f.name)}</div>`;
+    const head = facetHead(f.name);
     if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range.</div></div>`;
     const ff = (v) => fmtColNumHtml(state.selDb, f.name, state.selTable, v);
     if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${ff(f.min)}</div></div>`;
@@ -952,7 +982,7 @@
       </div></div>`;
   }
   function renderTimeFacet(f) {
-    const head = `<div class="facet-col">${esc(f.name)}</div>`;
+    const head = facetHead(f.name);
     if (!f.min || !f.max) return `<div class="facet-group">${head}<div class="range-note">no dates.</div></div>`;
     const tf = state.filters.find((x) => x.column === f.name && (x.tmin !== undefined || x.tmax !== undefined));
     const lo = (tf && tf.tmin) || f.min, hi = (tf && tf.tmax) || f.max;
@@ -1042,13 +1072,20 @@
       const data = await (await fetch("/api/preview?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       state.total = data.total || 0;
-      const cols = data.columns || [], rows = data.rows || [];
+      const allCols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">No rows match the current filters.</div>'; return; }
+      // Columns whose facet eye is closed are dropped from the table (the rows
+      // still load, we just don't render those cells). Keep a parallel index list
+      // so each visible cell maps back to its real column for formatting.
+      const hide = new Set(state.hidden);
+      const visIdx = allCols.map((_, i) => i).filter((i) => !hide.has(allCols[i]));
+      if (!visIdx.length) { slot.innerHTML = '<div class="note">All columns hidden — click an eye in the facet panel to show one.</div>'; return; }
+      const cols = visIdx.map((i) => allCols[i]);
       const head = cols.map((c) => {
         const ind = state.sort === c ? `<span class="ind">${state.dir === "asc" ? "▲" : "▼"}</span>` : "";
         return `<th class="sortable" data-sortcol="${attr(c)}">${esc(c)}${ind}</th>`;
       }).join("");
-      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], state.selTable, state.selDb)).join("") + "</tr>").join("");
+      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb)).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       // Uniform-width labels keep the native select compact so its chevron sits
       // right next to the value (the aria-label + pagination context carry meaning).
@@ -1074,8 +1111,11 @@
     const slot = $("result-body");
     if (!slot) return;
     slot.innerHTML = '<div class="note">computing stats…</div>';
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
     try {
-      const data = await (await fetch("/api/stats?" + new URLSearchParams({ db: state.selDb, table: state.selTable }))).json();
+      const data = await (await fetch("/api/stats?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       slot.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
@@ -1831,6 +1871,26 @@
     if (i >= 0) state.filters.splice(i, 1); else state.filters.push({ column, value });
     afterFilterChange();
   }
+  // Show/hide a column in the rows table via its facet eye. Filtering/faceting on
+  // a hidden column still works — it just isn't rendered as a table column.
+  function toggleColHidden(column) {
+    const i = state.hidden.indexOf(column);
+    const hide = i < 0;
+    if (i >= 0) state.hidden.splice(i, 1); else state.hidden.push(column);
+    // Update this eye in place (rather than re-rendering the whole panel) so the
+    // icon can play its blink animation — a fresh node wouldn't transition.
+    document.querySelectorAll("#facet-body .eye").forEach((btn) => {
+      if (btn.dataset.eye !== column) return;
+      btn.classList.toggle("off", hide);
+      btn.innerHTML = hide ? EYE_OFF : EYE_ON;
+      const t = hide ? "show column in table" : "hide column from table";
+      btn.title = t; btn.setAttribute("aria-label", t);
+      const head = btn.closest(".facet-col"); if (head) head.classList.toggle("col-hidden", hide);
+      btn.classList.remove("blink"); void btn.offsetWidth; btn.classList.add("blink");
+    });
+    if (state.subview === "rows") loadRows();
+    syncUrl(false);
+  }
   function setRange(col, lo, hi, fmin, fmax) {
     state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined && f.tmin === undefined));
     const eps = (fmax - fmin) / 1000;
@@ -1844,7 +1904,9 @@
   }
   function afterFilterChange() {
     state.page = 0;
-    if (state.subview !== "rows") state.subview = "rows";
+    // Stay on stats so its figures update with the filter; schema ignores
+    // filters, so fall back to rows to show the effect there.
+    if (state.subview === "schema") state.subview = "rows";
     loadFacets(); renderResults(); syncUrl(false);
   }
   function liveRange(input) {
@@ -1863,6 +1925,7 @@
     const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });
     if (state.q.trim()) p.set("q", state.q.trim());
     if (state.filters.length) p.set("filter", JSON.stringify(state.filters));
+    if (state.hidden.length) p.set("hide", JSON.stringify(state.hidden));
     const a = document.createElement("a");
     a.href = "/api/export?" + p.toString(); a.download = `${state.selTable}.${format}`;
     document.body.appendChild(a); a.click(); a.remove();
@@ -1955,6 +2018,7 @@
     const sub = ev.target.closest("[data-sub]"); if (sub) { state.subview = sub.dataset.sub; renderResults(); syncUrl(true); return; }
     const sc = ev.target.closest("[data-sortcol]"); if (sc) { sortBy(sc.dataset.sortcol); return; }
     const rm = ev.target.closest("[data-rmfilter]"); if (rm) { burstAt(rm); state.filters.splice(Number(rm.dataset.rmfilter), 1); afterFilterChange(); return; }
+    const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
     const facet = ev.target.closest("[data-fcol]"); if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
@@ -2171,6 +2235,14 @@
   }
   applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
 
+  // Opened at the bare root? Resume the last-visited location (persisted across
+  // restarts) before parsing, so reopening muckdb lands where you left off.
+  if (location.pathname === "/" && !location.search) {
+    try {
+      const last = localStorage.getItem("muckdb.lasturl");
+      if (last && last !== "/") history.replaceState(null, "", last);
+    } catch (_) {}
+  }
   const initial = parseUrl();
   suppressSync = true; setTab(initial.tab); suppressSync = false;
   if (initial.tab === "sessions") {
