@@ -192,3 +192,29 @@ per-clone local config, so enable it once after cloning:
 ```sh
 git config core.hooksPath .githooks
 ```
+
+## Cutting a release (binaries + Homebrew)
+
+**Plain pushes to `main` do NOT build a release** — they only run CI. The release
+workflow (`.github/workflows/release.yml`: build macOS+Linux binaries → create the
+GitHub release → bump the Homebrew tap formula) fires **only on a pushed `v*`
+tag**. So after merging changes you want to ship, you must cut a tagged release —
+it won't happen on its own.
+
+The convention is **one bump commit per release, and that commit is what gets
+tagged** (the `vX.Y.Z` tag points at the commit that sets `version = "X.Y.Z"`):
+
+```sh
+# 1. Bump the version in BOTH Cargo.toml and Cargo.lock (the [[package]] muckdb entry).
+# 2. Commit just that bump:
+git commit -am "chore: release vX.Y.Z"
+# 3. Tag that commit and push the branch + the tag:
+git tag vX.Y.Z
+git push origin main
+git push origin vX.Y.Z          # <-- this is what triggers the release build
+```
+
+`git push` alone does not push tags — you must push the tag explicitly. Confirm it
+started with `gh run list --workflow=release.yml`. Check the latest released
+version with `git tag --sort=-creatordate | head` (and `git describe --tags` shows
+how many commits HEAD is ahead of the last tag).
