@@ -260,7 +260,11 @@
   .pager .psize:hover { border-color: var(--orange-dim); }
 
   .stats-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-  .stat-card { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
+  /* While seeding the morph's start values, freeze transitions so committing the
+     start state doesn't itself animate (see animateStatGeom). */
+  .stats-grid.seeding .stat-card, .stats-grid.seeding .bar, .stats-grid.seeding .tbar,
+  .stats-grid.seeding .box-iqr, .stats-grid.seeding .box-med { transition: none !important; }
+  .stat-card { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; overflow: hidden; transition: height 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   .stat-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .stat-name { font-size: 13px; color: var(--fg); }
   .stat-type { font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--orange-dim); }
@@ -268,7 +272,7 @@
   .stat-meta b { color: var(--muted); font-weight: 400; }
   .hist { display: flex; align-items: flex-end; gap: 2px; height: 64px; margin-top: 6px; position: relative; }
   .hist[data-col] { cursor: crosshair; }
-  .hist .bar { flex: 1; background: var(--grad-bar); min-height: 2px; border-radius: 2px 2px 0 0; opacity: 0.9; }
+  .hist .bar { flex: 1; background: var(--grad-bar); min-height: 2px; border-radius: 2px 2px 0 0; opacity: 0.9; transition: height 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   .hist .bar:hover { opacity: 1; }
   .hist .brush-sel { position: absolute; top: 0; bottom: 0; background: rgba(255, 122, 26, 0.22); border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; }
   .hist-hint { font-size: 10px; color: var(--faint); margin-top: 4px; }
@@ -276,8 +280,8 @@
   .stat-card .box { position: relative; height: 16px; margin-top: 9px; }
   .box-whisk { position: absolute; top: 50%; height: 1px; background: var(--faint); transform: translateY(-50%); }
   .box-cap { position: absolute; top: 50%; width: 1px; height: 9px; background: var(--muted); transform: translateY(-50%); }
-  .box-iqr { position: absolute; top: 50%; height: 12px; background: color-mix(in srgb, var(--orange) 30%, transparent); border: 1px solid var(--orange-dim); border-radius: 2px; transform: translateY(-50%); }
-  .box-med { position: absolute; top: 50%; width: 2px; height: 12px; background: var(--orange); transform: translateY(-50%); }
+  .box-iqr { position: absolute; top: 50%; height: 12px; background: color-mix(in srgb, var(--orange) 30%, transparent); border: 1px solid var(--orange-dim); border-radius: 2px; transform: translateY(-50%); transition: left 0.42s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
+  .box-med { position: absolute; top: 50%; width: 2px; height: 12px; background: var(--orange); transform: translateY(-50%); transition: left 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   .stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
   .stat-nums b { color: var(--fg); font-weight: 400; }
   .toplist { display: flex; flex-direction: column; gap: 4px; }
@@ -285,7 +289,7 @@
   .toprow:hover { background: var(--raised); }
   .toprow .tv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .toprow .tc { color: var(--faint); z-index: 1; }
-  .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; }
+  .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; transition: width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
 
   /* display-only affixes (prefix/suffix) render muted so the value stands out */
   .fmt-affix { color: var(--muted); }
@@ -398,7 +402,9 @@
     .facet-panel { border-right: 0; border-bottom: 1px solid var(--line); max-height: 200px; }
     .subtitle, .seg-counts { display: none; }
   }
-  @media (prefers-reduced-motion: reduce) { .entry.fresh { animation: none; } .conn.live .cursor { animation: none; } }
+  @media (prefers-reduced-motion: reduce) { .entry.fresh { animation: none; } .conn.live .cursor { animation: none; }
+    .hist .bar, .toprow .tbar, .box-iqr, .box-med, .stat-card, .facet-col .fc-name, .facet-col .fc-name::after { transition: none; }
+    .facet-col .eye.blink svg { animation: none; } }
 </style>
 </head>
 <body>
@@ -999,16 +1005,31 @@
   }
 
   // ---- results (table mode) --------------------------------------------
-  function renderResults() {
-    const t = state.tables.find((x) => x.name === state.selTable);
-    const colCount = t ? `${t.column_count} columns` : "";
-    const chips = state.filters.map((f, i) => {
+  function filterChipsHtml() {
+    return state.filters.map((f, i) => {
       let label;
       if (f.value !== undefined) label = `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`;
       else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tmin)}→${fmtDMY(f.tmax)}`;
       else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
       return `<button class="fchip" data-rmfilter="${i}" aria-label="remove filter — ${esc(f.column)}">${label}<span class="x">✕</span></button>`;
     }).join("");
+  }
+  // Update just the active-filter chip row in place, without rebuilding the
+  // results body — so a stats grid below survives and can animate its changes.
+  function syncFilterChips() {
+    const results = $("results"), body = $("result-body");
+    if (!results || !body) return;
+    let bar = results.querySelector(".active-filters");
+    const html = filterChipsHtml();
+    if (html) {
+      if (!bar) { bar = document.createElement("div"); bar.className = "active-filters"; results.insertBefore(bar, body); }
+      bar.innerHTML = html;
+    } else if (bar) { bar.remove(); }
+  }
+  function renderResults() {
+    const t = state.tables.find((x) => x.name === state.selTable);
+    const colCount = t ? `${t.column_count} columns` : "";
+    const chips = filterChipsHtml();
     const exp = state.subview === "rows"
       ? `<span class="export"><span class="exlabel">export</span><button class="exlink" data-export="csv">csv</button><button class="exlink" data-export="json">json</button></span><button class="export-mini" id="export-combo" hidden>⬇ export<span class="cv-caret">▾</span></button>`
       : "";
@@ -1110,7 +1131,11 @@
   async function loadStats() {
     const slot = $("result-body");
     if (!slot) return;
-    slot.innerHTML = '<div class="note">computing stats…</div>';
+    // Keep the existing grid on screen during the (fast) refetch so we can morph
+    // from it; only show the placeholder on the first stats render.
+    const hadGrid = slot.querySelector(".stats-grid");
+    const prev = hadGrid ? captureStatGeom(slot) : null;
+    if (!hadGrid) slot.innerHTML = '<div class="note">computing stats…</div>';
     const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
     if (state.q.trim()) params.set("q", state.q.trim());
     if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
@@ -1118,7 +1143,83 @@
       const data = await (await fetch("/api/stats?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       slot.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
+      if (prev) animateStatGeom(slot, prev);
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  // Snapshot the bar geometry of the current stat cards, keyed by column, so the
+  // next render can animate from these values. Histogram/timeline bars match by
+  // index; top-value bars match by value (so a re-sorted category still morphs);
+  // the box plot keeps its iqr/median positions.
+  function captureStatGeom(slot) {
+    const map = {};
+    slot.querySelectorAll(".stat-card[data-col]").forEach((card) => {
+      const topByVal = {};
+      card.querySelectorAll(".toprow").forEach((r) => {
+        const b = r.querySelector(".tbar"); if (b) topByVal[r.dataset.fval] = b.style.width;
+      });
+      const iqr = card.querySelector(".box-iqr"), med = card.querySelector(".box-med");
+      map[card.dataset.col] = {
+        bars: [...card.querySelectorAll(".hist .bar")].map((b) => b.style.height),
+        topByVal,
+        box: iqr && med ? { iqrLeft: iqr.style.left, iqrW: iqr.style.width, medLeft: med.style.left } : null,
+        h: card.getBoundingClientRect().height,
+      };
+    });
+    return map;
+  }
+  // Seed the freshly-rendered cards with their previous geometry, commit it with
+  // transitions frozen, then restore the targets so CSS tweens between them.
+  // Transitions must be OFF while seeding: any layout read (the card-height
+  // measurement) would otherwise commit the *new* values as the baseline and the
+  // bars wouldn't have anything to animate from.
+  function animateStatGeom(slot, prev) {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const grid = slot.querySelector(".stats-grid"); if (!grid) return;
+    const cards = [...grid.querySelectorAll(".stat-card[data-col]")];
+    grid.classList.add("seeding"); // freeze transitions while we set start values
+
+    const pending = []; // {el, prop, target}
+    const seed = (el, prop, from) => { pending.push({ el, prop, target: el.style[prop] }); el.style[prop] = from; };
+    cards.forEach((card) => {
+      const p = prev[card.dataset.col]; if (!p) return;
+      const bars = [...card.querySelectorAll(".hist .bar")];
+      if (p.bars && p.bars.length === bars.length) bars.forEach((b, j) => seed(b, "height", p.bars[j] || "0%"));
+      card.querySelectorAll(".toprow .tbar").forEach((bar) => {
+        const old = p.topByVal && p.topByVal[bar.parentElement.dataset.fval];
+        if (old != null) seed(bar, "width", old);
+      });
+      if (p.box) {
+        const iqr = card.querySelector(".box-iqr"), med = card.querySelector(".box-med");
+        if (iqr) { seed(iqr, "left", p.box.iqrLeft); seed(iqr, "width", p.box.iqrW); }
+        if (med) seed(med, "left", p.box.medLeft);
+      }
+    });
+    // Card height FLIP: measure each card's natural new height (bars are already
+    // seeded to old values, but they sit in fixed-height boxes so don't affect
+    // it), then pin to the old height. Transitions are frozen, so these reads and
+    // writes don't kick off any animation yet.
+    const flips = [];
+    cards.forEach((card) => {
+      const p = prev[card.dataset.col];
+      if (p && p.h != null) {
+        const newH = card.getBoundingClientRect().height;
+        if (Math.abs(newH - p.h) > 0.5) flips.push({ card, to: newH });
+      }
+    });
+    flips.forEach((f) => { f.card.style.height = prev[f.card.dataset.col].h + "px"; });
+
+    if (!pending.length && !flips.length) { grid.classList.remove("seeding"); return; }
+    void grid.offsetWidth;            // commit the start values (transitions off)
+    grid.classList.remove("seeding"); // re-enable transitions
+    pending.forEach((x) => { x.el.style[x.prop] = x.target; });
+    flips.forEach((f) => {
+      f.card.style.height = f.to + "px";
+      // Release back to auto once settled, so cards stay responsive to resize.
+      f.card.addEventListener("transitionend", function te(e) {
+        if (e.propertyName !== "height" || e.target !== f.card) return;
+        f.card.style.height = ""; f.card.removeEventListener("transitionend", te);
+      });
+    });
   }
   function statCard(c, rowCount) {
     const F = (v) => fmtColNum(state.selDb, c.name, state.selTable, v);
@@ -1142,7 +1243,7 @@
       const max = Math.max(1, ...c.top.map((t) => t.count));
       body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
     } else { body = '<div class="note">no distribution available.</div>'; }
-    return `<div class="stat-card"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
+    return `<div class="stat-card" data-col="${attr(c.name)}"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
   }
   // Horizontal box-and-whisker over [min..max]: whiskers to min/max, box from
   // q1 to q3, line at the median. Degenerate (zero-width) ranges are skipped.
@@ -1904,10 +2005,11 @@
   }
   function afterFilterChange() {
     state.page = 0;
-    // Stay on stats so its figures update with the filter; schema ignores
-    // filters, so fall back to rows to show the effect there.
-    if (state.subview === "schema") state.subview = "rows";
-    loadFacets(); renderResults(); syncUrl(false);
+    // Schema ignores filters — fall back to rows (full re-render) to show the
+    // effect. For rows/stats, patch the chip row in place and reload the body so
+    // the stats grid survives and its bars can animate between filter states.
+    if (state.subview === "schema") { state.subview = "rows"; loadFacets(); renderResults(); syncUrl(false); return; }
+    loadFacets(); syncFilterChips(); reloadBody(); syncUrl(false);
   }
   function liveRange(input) {
     const box = input.closest(".range-slider");
