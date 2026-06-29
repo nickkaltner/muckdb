@@ -167,3 +167,20 @@ Sessions are JSON files under the muckdb data dir
 (`~/.local/share/muckdb/sessions/` on Linux,
 `~/Library/Application Support/muckdb/sessions/` on macOS); the command ledger is
 `history.jsonl` beside it. The CLI writes; the daemon watches and pushes updates.
+
+## Developing muckdb (keep CI green)
+
+CI (`.github/workflows/ci.yml`) runs, in order, on every push/PR across
+ubuntu + macos: `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings`
+→ `cargo build` → `cargo test`. `fmt --check` is strict and is the most common
+cause of red — committing code that hasn't been run through `cargo fmt` fails the
+whole job.
+
+**Before committing any Rust change, always run these and only commit once they
+pass clean:**
+
+```sh
+cargo fmt              # not --check — actually format the tree
+cargo clippy --all-targets -- -D warnings
+cargo test
+```

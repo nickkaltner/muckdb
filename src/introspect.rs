@@ -58,7 +58,8 @@ pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
 /// HUGEINT as quoted strings (to avoid precision loss), so a plain `as_f64()`
 /// misses them — fall back to parsing the string.
 fn json_f64(v: &Value) -> Option<f64> {
-    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
 /// Escape an identifier for safe interpolation inside double quotes.
@@ -425,7 +426,12 @@ pub fn export(
             .collect::<Vec<_>>()
             .join(", ")
     };
-    let sql = format!("SELECT {} FROM {}{}", projection, quote_ident(table), where_sql);
+    let sql = format!(
+        "SELECT {} FROM {}{}",
+        projection,
+        quote_ident(table),
+        where_sql
+    );
 
     let out_flag = if format.eq_ignore_ascii_case("json") {
         "-json"
@@ -1193,7 +1199,11 @@ mod tests {
             .arg(sql)
             .output()
             .expect("run duckdb");
-        assert!(out.status.success(), "{}", String::from_utf8_lossy(&out.stderr));
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
     }
     fn col<'a>(s: &'a TableStats, name: &str) -> &'a ColumnStat {
         s.columns.iter().find(|c| c.name == name).expect("column")

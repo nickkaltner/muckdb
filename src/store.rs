@@ -206,7 +206,10 @@ mod tests {
         // 8 lowercase hex chars.
         let id = db_id("/data/ponds.duckdb");
         assert_eq!(id.len(), 8);
-        assert!(id.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+        assert!(
+            id.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase())
+        );
     }
 
     #[test]
