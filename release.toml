@@ -1,0 +1,11 @@
+# cargo-release config (https://github.com/crate-ci/cargo-release)
+#
+# muckdb is distributed as prebuilt binaries via the GitHub release workflow and
+# the Homebrew tap — NOT crates.io. cargo-release's only job here is to bump the
+# version in Cargo.toml + Cargo.lock, commit, tag `vX.Y.Z`, and push; the pushed
+# tag is what triggers .github/workflows/release.yml to build and publish.
+
+publish = false                                   # never push to crates.io
+tag-name = "v{{version}}"                          # matches the workflow's tags: ["v*"] trigger
+pre-release-commit-message = "chore: release {{version}}"
+push = true                                        # push the branch + tag to origin

@@ -201,20 +201,36 @@ GitHub release → bump the Homebrew tap formula) fires **only on a pushed `v*`
 tag**. So after merging changes you want to ship, you must cut a tagged release —
 it won't happen on its own.
 
+Use **`cargo release`** (the `cargo-release` crate, configured by `release.toml`).
+It does the whole flow in one command — bump `Cargo.toml` + `Cargo.lock`, make the
+`chore: release X.Y.Z` commit, tag it `vX.Y.Z`, and push the branch + tag (which is
+what fires `release.yml`). `release.toml` sets `publish = false` so it never
+touches crates.io.
+
+```sh
+cargo install cargo-release      # one-time, if not already installed
+
+# Working tree must be clean first (cargo release refuses with uncommitted changes).
+cargo release patch              # dry-run: shows the plan, changes nothing
+cargo release patch --execute    # actually bump + commit + tag + push
+#            ^ patch | minor | major, or an exact version e.g. `cargo release 0.2.0`
+```
+
+Then confirm the build started with `gh run list --workflow=release.yml`.
+
 The convention is **one bump commit per release, and that commit is what gets
-tagged** (the `vX.Y.Z` tag points at the commit that sets `version = "X.Y.Z"`):
+tagged** (the `vX.Y.Z` tag points at the commit that sets `version = "X.Y.Z"`) —
+`cargo release` produces exactly that. Commit any other changes *before* releasing
+so the release commit contains only the version bump.
+
+Manual fallback (if `cargo release` is unavailable) — same end result:
 
 ```sh
 # 1. Bump the version in BOTH Cargo.toml and Cargo.lock (the [[package]] muckdb entry).
-# 2. Commit just that bump:
-git commit -am "chore: release vX.Y.Z"
-# 3. Tag that commit and push the branch + the tag:
-git tag vX.Y.Z
-git push origin main
-git push origin vX.Y.Z          # <-- this is what triggers the release build
+git commit -am "chore: release X.Y.Z"        # 2. commit just the bump
+git tag vX.Y.Z && git push origin main && git push origin vX.Y.Z   # 3. tag + push
 ```
 
-`git push` alone does not push tags — you must push the tag explicitly. Confirm it
-started with `gh run list --workflow=release.yml`. Check the latest released
-version with `git tag --sort=-creatordate | head` (and `git describe --tags` shows
-how many commits HEAD is ahead of the last tag).
+`git push` alone does not push tags — push the tag explicitly. Check the latest
+released version with `git tag --sort=-creatordate | head` (and `git describe
+--tags` shows how many commits HEAD is ahead of the last tag).
