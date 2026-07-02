@@ -68,6 +68,15 @@ fn quote_ident(name: &str) -> String {
 }
 
 /// Escape a string for safe interpolation inside single quotes (SQL literal).
+/// A plain `YYYY-MM-DD` (no time component) — the shape a day-level facet sends.
+fn is_bare_date(s: &str) -> bool {
+    s.len() == 10
+        && s.bytes().enumerate().all(|(i, b)| match i {
+            4 | 7 => b == b'-',
+            _ => b.is_ascii_digit(),
+        })
+}
+
 fn escape_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
@@ -170,7 +179,11 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
     }
 
     // Temporal range filters: compare against ISO date/time string literals,
-    // which duckdb casts to the column's type.
+    // which duckdb casts to the column's type. A bare-date tmax means "that
+    // whole day" — cast to midnight it would drop the rest of the day for
+    // timestamp columns, so widen it to an exclusive next-day bound. A tmax
+    // with a time component is already an exclusive boundary (the client sends
+    // the display zone's next-midnight instant).
     for f in filters.iter().filter(|f| f.is_trange()) {
         let col = quote_ident(&f.column);
         let mut parts: Vec<String> = Vec::new();
@@ -178,7 +191,12 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
             parts.push(format!("{col} >= '{}'", escape_literal(lo)));
         }
         if let Some(hi) = &f.tmax {
-            parts.push(format!("{col} <= '{}'", escape_literal(hi)));
+            let hi_lit = escape_literal(hi);
+            if is_bare_date(hi) {
+                parts.push(format!("{col} < DATE '{hi_lit}' + INTERVAL 1 DAY"));
+            } else {
+                parts.push(format!("{col} < '{hi_lit}'"));
+            }
         }
         if !parts.is_empty() {
             clauses.push(format!("({})", parts.join(" AND ")));
@@ -1088,6 +1106,8 @@ mod tests {
     #[test]
     fn build_where_temporal_range_uses_string_literals() {
         let cols = vec!["seen".to_string()];
+        // A bare-date tmax covers that whole day (exclusive next-day bound),
+        // so timestamp columns keep their last day's 00:01–23:59 rows.
         assert_eq!(
             build_where(
                 &cols,
@@ -1095,8 +1115,26 @@ mod tests {
                 &[tf("seen", Some("2026-01-01"), Some("2026-02-01"))]
             )
             .unwrap(),
-            "(\"seen\" >= '2026-01-01' AND \"seen\" <= '2026-02-01')"
+            "(\"seen\" >= '2026-01-01' AND \"seen\" < DATE '2026-02-01' + INTERVAL 1 DAY)"
         );
+        // A timestamp tmax is already an exclusive boundary.
+        assert_eq!(
+            build_where(
+                &cols,
+                None,
+                &[tf("seen", None, Some("2026-01-31 14:00:00"))]
+            )
+            .unwrap(),
+            "(\"seen\" < '2026-01-31 14:00:00')"
+        );
+    }
+
+    #[test]
+    fn bare_date_detection() {
+        assert!(is_bare_date("2026-06-30"));
+        assert!(!is_bare_date("2026-06-30 14:00:00"));
+        assert!(!is_bare_date("2026-6-30"));
+        assert!(!is_bare_date("30/06/2026"));
     }
 
     #[test]

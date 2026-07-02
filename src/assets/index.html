@@ -1101,16 +1101,24 @@
     const head = facetHead(f.name);
     if (!f.min || !f.max) return `<div class="facet-group">${head}<div class="range-note">no dates.</div></div>`;
     const tf = state.filters.find((x) => x.column === f.name && (x.tmin !== undefined || x.tmax !== undefined));
-    const lo = (tf && tf.tmin) || f.min, hi = (tf && tf.tmax) || f.max;
+    // Days are shown in the column's display zone (--tz format), so the range
+    // matches the cells — a max of 2026-06-30 20:00 UTC reads 2026-07-01 in +10.
+    const tz = facetTz(f.name) || "utc";
+    const dayLo = tf ? (tf.tlo || String(tf.tmin).slice(0, 10)) : zoneDay(f.min, tz);
+    const dayHi = tf ? (tf.thi || String(tf.tmax).slice(0, 10)) : zoneDay(f.max, tz);
     const bmax = Math.max(1, ...f.bins.map((b) => b.count));
     const bars = f.bins.map((b) => `<div class="tb" data-label="${attr(b.label)}" style="height:${Math.round((b.count / bmax) * 100)}%" title="${attr(b.label)} · ${b.count}"></div>`).join("");
+    // Plain ISO text inputs, not <input type=date>: the native picker renders
+    // in the *browser's* locale (often mm/dd/yyyy) which misreads everywhere
+    // else; YYYY-MM-DD is unambiguous and matches the SQL the human writes.
+    const dateInput = (cls, v) => `<input type="text" class="tdate ${cls}" value="${attr(v)}" placeholder="YYYY-MM-DD" maxlength="10" spellcheck="false" />`;
     return `<div class="facet-group" data-tcol="${attr(f.name)}">${head}
-      <div class="range-readout"><span>${fmtDMY(lo)}</span> <span class="rsep">–</span> <span>${fmtDMY(hi)}</span></div>
+      <div class="range-readout"><span>${fmtDMY(dayLo)}</span> <span class="rsep">–</span> <span>${fmtDMY(dayHi)}</span></div>
       <div class="thist" data-tcol="${attr(f.name)}" title="click a bar or drag to pick a date range">${bars}</div>
       <div class="trange">
-        <input type="date" class="tdate tdate-lo" value="${attr(lo.slice(0, 10))}" />
+        ${dateInput("tdate-lo", dayLo)}
         <span class="rsep">–</span>
-        <input type="date" class="tdate tdate-hi" value="${attr(hi.slice(0, 10))}" />
+        ${dateInput("tdate-hi", dayHi)}
       </div></div>`;
   }
 
@@ -1119,7 +1127,7 @@
     return state.filters.map((f, i) => {
       let label;
       if (f.value !== undefined) label = `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`;
-      else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tmin)}→${fmtDMY(f.tmax)}`;
+      else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tlo || f.tmin)}→${fmtDMY(f.thi || f.tmax)}`;
       else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
       return `<button class="fchip" data-rmfilter="${i}" aria-label="remove filter — ${esc(f.column)}">${label}<span class="x">✕</span></button>`;
     }).join("");
@@ -1992,6 +2000,31 @@
     const off = tz && tz !== "utc" ? zoneOffsetMs(t, tz) : 0;
     return t + off + new Date(t).getTimezoneOffset() * 60000;
   }
+  // The calendar day ("YYYY-MM-DD") an instant falls on in a zone — so a facet
+  // over a `--tz local` column reads the same days the table shows, not UTC's.
+  function zoneDay(v, tz) {
+    const t = parseTs(v); if (isNaN(t)) return String(v).slice(0, 10);
+    const z = !tz || tz === "utc" ? "UTC" : tz === "local" ? undefined : tz;
+    try { return new Date(t).toLocaleDateString("sv-SE", { timeZone: z }); }
+    catch (_) { return String(v).slice(0, 10); }
+  }
+  // The instant at which a zone's calendar day starts (its local midnight).
+  function zoneDayStart(day, tz) {
+    const t0 = Date.parse(day + "T00:00:00Z");
+    if (!tz || tz === "utc") return t0;
+    const z = tz === "local" ? (Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC") : tz;
+    let t = t0 - zoneOffsetMs(t0, z);
+    return t0 - zoneOffsetMs(t, z); // second pass settles DST-edge days
+  }
+  function nextDayStr(day) {
+    return new Date(Date.parse(day + "T00:00:00Z") + 86400000).toISOString().slice(0, 10);
+  }
+  function utcSqlStr(t) { return new Date(t).toISOString().slice(0, 19).replace("T", " "); }
+  // The display zone for a temporal facet column, or null when unformatted.
+  function facetTz(col) {
+    const f = colFmt(state.selDb, col, state.selTable);
+    return f && f.tz ? f.tz : null;
+  }
   // A zone's UTC offset at an instant, via Intl (no tz database of our own).
   function zoneOffsetMs(t, tz) {
     try {
@@ -2334,9 +2367,20 @@
     if (lo > fmin + eps || hi < fmax - eps) state.filters.push({ column: col, min: lo, max: hi });
     afterFilterChange();
   }
-  function setTRange(col, tmin, tmax, fmin, fmax) {
+  // dayLo/dayHi are inclusive calendar days in the column's display zone. For
+  // the default UTC zone they pass through as bare dates (the server widens a
+  // bare-date tmax to cover the whole day); for a --tz column they become the
+  // zone's midnight instants as UTC timestamps, with tlo/thi kept for display.
+  function setTRange(col, dayLo, dayHi, fmin, fmax) {
     state.filters = state.filters.filter((f) => !(f.column === col && (f.tmin !== undefined || f.tmax !== undefined)));
-    if (tmin > fmin.slice(0, 10) || tmax < fmax.slice(0, 10)) state.filters.push({ column: col, tmin, tmax });
+    const tz = facetTz(col) || "utc";
+    const covers = dayLo <= zoneDay(fmin, tz) && dayHi >= zoneDay(fmax, tz);
+    if (!covers) {
+      if (tz === "utc") state.filters.push({ column: col, tmin: dayLo, tmax: dayHi });
+      else state.filters.push({ column: col, tlo: dayLo, thi: dayHi,
+        tmin: utcSqlStr(zoneDayStart(dayLo, tz)),
+        tmax: utcSqlStr(zoneDayStart(nextDayStr(dayHi), tz)) });
+    }
     afterFilterChange();
   }
   function afterFilterChange() {
@@ -2500,7 +2544,8 @@
       setRange(box.dataset.rcol, Math.min(a, b), Math.max(a, b), parseFloat(box.dataset.fmin), parseFloat(box.dataset.fmax));
     } else if (ev.target.classList.contains("tdate")) {
       const grp = ev.target.closest("[data-tcol]");
-      const lo = grp.querySelector(".tdate-lo").value, hi = grp.querySelector(".tdate-hi").value;
+      const lo = grp.querySelector(".tdate-lo").value.trim(), hi = grp.querySelector(".tdate-hi").value.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(lo) || !/^\d{4}-\d{2}-\d{2}$/.test(hi)) return; // half-typed
       const f = state.facets.find((x) => x.name === grp.dataset.tcol) || {};
       setTRange(grp.dataset.tcol, lo, hi, (f.min || lo), (f.max || hi));
     }
@@ -2563,10 +2608,13 @@
     if (b.type === "time") {
       const end = timeBarIdx(b, ev.clientX);
       const lo = Math.min(b.start, end), hi = Math.max(b.start, end);
-      const tmin = String(b.bars[lo].dataset.label).slice(0, 10);
-      const tmax = String(b.bars[hi].dataset.label).slice(0, 10);
+      // Bucket labels are UTC bucket starts — read them as display-zone days
+      // so the picked range matches the readout on a --tz column.
+      const tz = facetTz(b.col) || "utc";
+      const dayLo = zoneDay(String(b.bars[lo].dataset.label), tz);
+      const dayHi = zoneDay(String(b.bars[hi].dataset.label), tz);
       const f = state.facets.find((x) => x.name === b.col) || {};
-      setTRange(b.col, tmin, tmax, f.min || tmin, f.max || tmax);
+      setTRange(b.col, dayLo, dayHi, f.min || dayLo, f.max || dayHi);
       return;
     }
     const f0 = clamp((Math.min(b.x0, ev.clientX) - b.rect.left) / b.rect.width, 0, 1);
