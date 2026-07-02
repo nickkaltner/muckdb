@@ -186,7 +186,9 @@ muckdb session rm <name> [--tile TILE]
   (`claude_session`), so a human can tell which conversation produced a dashboard.
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
-- `--md -` reads the markdown from stdin (good for long/heredoc content).
+- `--md -` reads the markdown from stdin (good for long/heredoc content). An
+  inline `--md "..."` honours `\n`/`\t` escapes (shells leave them literal
+  inside double quotes), so `--md "# Title\n\nBody"` renders as real lines.
 - A tile is a **view** (`--view`, references a named duckdb view) or **inline
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
@@ -277,10 +279,34 @@ muckdb <db> -c "COMMENT ON COLUMN sales.amount IS 'muckdb:{\"prefix\":\"\$\",\"s
 ```
 
 The registry overrides the comment. Flags: `--currency CODE`, `--prefix`,
-`--suffix`, `--decimals N`, `--thousands`, `--percent`, `--clear`. A registry
-entry keyed by column name (no `--table`) is the easy win — it formats that
-column everywhere it appears, including the derived columns your chart views
-produce.
+`--suffix`, `--decimals N`, `--thousands`, `--percent`, `--tz Z`, `--epoch U`,
+`--clear`. A registry entry keyed by column name (no `--table`) is the easy win —
+it formats that column everywhere it appears, including the derived columns your
+chart views produce. When you do scope with `--table`, use the name a tile
+actually queries (the **view** name you post, not the base table under it).
+
+### Timestamps: `--tz` and `--epoch`
+
+Naive DB timestamps are treated as **UTC instants** everywhere. Two flags make
+time columns readable:
+
+```sh
+muckdb format <db> created_at --tz local      # show in the viewer's timezone
+muckdb format <db> ts --tz Australia/Brisbane # or a fixed IANA zone / utc
+muckdb format <db> ts_ms --epoch ms           # numeric epoch column: s | ms | us
+```
+
+`--tz` converts the column's display (tables, facets, stats) to that zone —
+`2026-06-28 10:00:00 GMT+10` — and a chart with that column on the x-axis draws
+its **time axis in the same zone**. Without a `--tz`, chart time axes render the
+UTC wall clock so daily/hourly buckets stay on their boundaries. `--epoch` marks
+a numeric column as an epoch so it renders (and charts) as time; columns with
+time-ish names (`ts`, `*_at`, `*_ms`, `epoch`, …) and plausible epoch values are
+detected automatically, so the flag is mostly for odd names or overrides.
+
+Time axes are granularity-aware on their own: a `DATE` (or midnight-truncated)
+column never shows hour ticks, first-of-month data ticks by month, hour ticks
+render `HH:mm` with a bold date label at each day boundary.
 
 ## Inspecting state (read it back as JSON)
 

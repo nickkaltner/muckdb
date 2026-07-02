@@ -16,7 +16,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{paths, store};
 
-/// How to render a numeric value. All fields optional; an empty Format is a no-op.
+/// How to render a column value. All fields optional; an empty Format is a no-op.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Format {
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -28,6 +28,15 @@ pub struct Format {
     /// Group the integer part with thousands separators.
     #[serde(default, skip_serializing_if = "is_false")]
     pub group: bool,
+    /// Render the value as a date/time in this zone: "local" (the viewer's),
+    /// "utc", or an IANA name like "Australia/Brisbane". Naive DB timestamps
+    /// are read as UTC instants. Charts with this column on the x-axis draw
+    /// their time axis in the same zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tz: Option<String>,
+    /// The stored value is a numeric epoch in this unit: "s" | "ms" | "us".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub epoch: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -36,7 +45,12 @@ fn is_false(b: &bool) -> bool {
 
 impl Format {
     fn is_empty(&self) -> bool {
-        self.prefix.is_none() && self.suffix.is_none() && self.decimals.is_none() && !self.group
+        self.prefix.is_none()
+            && self.suffix.is_none()
+            && self.decimals.is_none()
+            && !self.group
+            && self.tz.is_none()
+            && self.epoch.is_none()
     }
 }
 
@@ -187,6 +201,23 @@ pub fn cli(args: &[String]) -> Result<i32> {
             "--decimals" => fmt.decimals = next().parse().ok(),
             "--thousands" | "--group" => fmt.group = true,
             "--percent" => fmt.suffix = Some("%".to_string()),
+            "--tz" | "--timezone" => {
+                let z = next();
+                // "local"/"utc" are keywords (any case); IANA names pass through.
+                fmt.tz = Some(match z.to_lowercase().as_str() {
+                    "local" => "local".to_string(),
+                    "utc" => "utc".to_string(),
+                    _ => z,
+                });
+            }
+            "--epoch" => {
+                let u = next().to_lowercase();
+                if !matches!(u.as_str(), "s" | "ms" | "us") {
+                    eprintln!("--epoch must be s, ms or us (got {u:?})");
+                    return Ok(2);
+                }
+                fmt.epoch = Some(u);
+            }
             "--currency" => {
                 let code = next().to_uppercase();
                 fmt.prefix = Some(currency_symbol(&code));
@@ -259,6 +290,10 @@ fn usage() -> Result<i32> {
          --decimals N        fixed decimal places\n  \
          --thousands         group with thousands separators\n  \
          --percent           append %\n  \
+         --tz Z              show a timestamp column in a zone: local, utc,\n                      \
+         or an IANA name (e.g. Australia/Brisbane); naive\n                      \
+         timestamps are read as UTC. Applies to charts too.\n  \
+         --epoch U           the column is a numeric epoch: s, ms or us\n  \
          --clear             remove the format for this column"
     );
     Ok(2)
@@ -300,6 +335,14 @@ mod tests {
     }
 
     #[test]
+    fn parse_comment_reads_tz_and_epoch() {
+        let f = parse_comment("muckdb:{\"tz\":\"local\",\"epoch\":\"ms\"}").unwrap();
+        assert_eq!(f.tz.as_deref(), Some("local"));
+        assert_eq!(f.epoch.as_deref(), Some("ms"));
+        assert!(!f.is_empty()); // tz/epoch alone make the format non-empty
+    }
+
+    #[test]
     fn empty_format_serializes_to_empty_object() {
         let f = Format::default();
         assert!(f.is_empty());
@@ -310,9 +353,8 @@ mod tests {
     fn format_skips_default_fields_when_serializing() {
         let f = Format {
             prefix: Some("$".into()),
-            suffix: None,
             decimals: Some(0),
-            group: false,
+            ..Format::default()
         };
         // suffix/group are defaults and must be omitted (so comments stay terse).
         assert_eq!(

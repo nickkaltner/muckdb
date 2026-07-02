@@ -755,10 +755,27 @@
     return (table && m.tables[table + "." + col]) || m.columns[col] || null;
   }
   function groupInt(s) { return s.replace(/\B(?=(\d{3})+(?!\d))/g, ","); }
+  // Render a timestamp-formatted column value ({tz} and/or {epoch} in the
+  // format): epoch numbers are scaled to ms, naive strings read as UTC, then
+  // shown as "2026-06-29 14:30:05" in the requested zone with its abbreviation
+  // ("local" = the viewer's zone). Returns [text, zoneAbbrev] or null.
+  function fmtTs(fmt, v) {
+    const t = fmt.epoch ? epochToMs(Number(v), fmt.epoch) : parseTs(v);
+    if (isNaN(t)) return null;
+    const tz = !fmt.tz || fmt.tz === "local" ? undefined : fmt.tz === "utc" ? "UTC" : fmt.tz;
+    const d = new Date(t);
+    try {
+      const s = d.toLocaleString("sv-SE", { timeZone: tz });
+      const zn = new Intl.DateTimeFormat("en-US", { timeZone: tz, timeZoneName: "short" })
+        .formatToParts(d).find((p) => p.type === "timeZoneName");
+      return [s, zn ? zn.value : ""];
+    } catch (_) { return null; } // unknown zone name — show the raw value
+  }
   // Apply a format spec to a numeric value; returns a string (or the raw value
   // unchanged when it isn't a finite number).
   function applyFmt(fmt, v) {
     if (!fmt || v === null || v === undefined || v === "") return v;
+    if (fmt.tz || fmt.epoch) { const ts = fmtTs(fmt, v); return ts ? ts[0] + (ts[1] ? " " + ts[1] : "") : v; }
     const n = Number(v); if (!isFinite(n)) return v;
     let s = fmt.decimals != null ? n.toFixed(fmt.decimals) : String(n);
     if (fmt.group) { const neg = s.startsWith("-"); if (neg) s = s.slice(1); const [i, d] = s.split("."); s = (neg ? "-" : "") + groupInt(i) + (d ? "." + d : ""); }
@@ -774,6 +791,7 @@
   function affixHtml(s) { return s ? `<span class="fmt-affix">${esc(s)}</span>` : ""; }
   function applyFmtHtml(fmt, v) {
     if (!fmt || v === null || v === undefined || v === "") return esc(v);
+    if (fmt.tz || fmt.epoch) { const ts = fmtTs(fmt, v); return ts ? esc(ts[0]) + affixHtml(ts[1] ? " " + ts[1] : "") : esc(v); }
     const n = Number(v); if (!isFinite(n)) return esc(v);
     let s = fmt.decimals != null ? n.toFixed(fmt.decimals) : String(n);
     if (fmt.group) { const neg = s.startsWith("-"); if (neg) s = s.slice(1); const [i, d] = s.split("."); s = (neg ? "-" : "") + groupInt(i) + (d ? "." + d : ""); }
@@ -1216,6 +1234,7 @@
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
+    if (f && (f.tz || f.epoch) && String(v).trim() !== "") return `<td>${applyFmtHtml(f, v)}</td>`;
     if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${applyFmtHtml(f, Number(v))}</td>`;
     return `<td>${esc(String(v))}</td>`;
   }
@@ -1370,7 +1389,12 @@
         if (f.suffix) bits.push(`suffix ${esc(f.suffix.trim() || f.suffix)}`);
         if (f.decimals != null) bits.push(`${f.decimals} dp`);
         if (f.group) bits.push("grouped");
-        return `<span class="fmt-eg">${applyFmtHtml(f, 1234.5)}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
+        if (f.tz) bits.push(`tz ${esc(f.tz)}`);
+        if (f.epoch) bits.push(`epoch ${esc(f.epoch)}`);
+        // Example value: an epoch/tz format needs a timestamp, not 1234.5.
+        const eg = f.epoch ? (f.epoch === "s" ? 1735689600 : f.epoch === "us" ? 1735689600e6 : 1735689600e3)
+          : f.tz ? "2025-01-01 00:00:00" : 1234.5;
+        return `<span class="fmt-eg">${applyFmtHtml(f, eg)}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
       };
       const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td><td class="fmt-col">${fmtCell(c.name)}</td></tr>`).join("");
       let defn;
@@ -1903,33 +1927,94 @@
       return g;
     };
   }
-  // Detect an x column whose values are dates/timestamps (ISO-ish), so the chart
-  // can use a real time axis (Chart.js then picks tick units/spacing by width).
+  // Detect an x column whose values are dates/timestamps (ISO-ish, incl. tz
+  // offsets like "+00" / "+10:30" from TIMESTAMPTZ), so the chart can use a real
+  // time axis (Chart.js then picks tick units/spacing by width).
+  const TS_RE = /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?(\.\d+)?([zZ]|[+-]\d{2}(:?\d{2})?)?)?$/;
   function isDateish(vals) {
     const sample = vals.filter((v) => v != null && v !== "").slice(0, 20);
     if (!sample.length) return false;
     return sample.every((v) => typeof v !== "number" &&
-      /^\d{4}-\d{2}-\d{2}([ T]\d{2}:\d{2}(:\d{2})?)?/.test(String(v)) &&
-      !isNaN(Date.parse(String(v).replace(" ", "T"))));
+      TS_RE.test(String(v).trim()) && !isNaN(parseTs(v)));
   }
-  // Parse a date-ish value for a time axis and pin it to a UTC wall-clock.
-  // DB timestamps are tz-naive (or stored UTC); a date-only value parses as UTC
-  // midnight while a naive datetime parses as *local* — and Chart.js then renders
-  // in local time, so a daily bucket at UTC-midnight slides to e.g. 10am and bars
-  // stop lining up with their day. We normalise every value to a UTC instant,
-  // then shift by the viewer's offset so the local-time renderer shows the UTC
-  // components — keeping daily/hourly buckets on their real boundaries.
-  function toMs(v) {
-    const s = String(v).trim().replace(" ", "T");
-    const hasZone = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s);
-    const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(s);
-    const t = Date.parse(hasZone ? s : dateOnly ? s + "T00:00:00Z" : s + "Z");
+  // Parse a DB date/timestamp string to a UTC-instant ms. Naive values (no zone)
+  // are read as UTC — the storage convention; zoned values (TIMESTAMPTZ prints
+  // "+00" / "+10:30", which Date.parse alone rejects when short) are normalised.
+  function parseTs(v) {
+    let s = String(v).trim();
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return Date.parse(s + "T00:00:00Z");
+    s = s.replace(" ", "T");
+    if (/[zZ]$/.test(s)) return Date.parse(s.slice(0, -1) + "Z");
+    const m = s.match(/[T]\d{2}:\d{2}(:\d{2})?(\.\d+)?([+-]\d{2}(:?\d{2})?)$/);
+    if (m) {
+      const off = m[3];
+      const norm = off.length === 3 ? off + ":00"
+        : off.length === 5 ? off.slice(0, 3) + ":" + off.slice(3) : off;
+      return Date.parse(s.slice(0, s.length - off.length) + norm);
+    }
+    return Date.parse(s + "Z");
+  }
+  // The tick floor for date-ish x values: date-only (or midnight-truncated)
+  // data must never show hour ticks, first-of-month data reads as monthly.
+  function dateGranularity(vals) {
+    const s = vals.filter((v) => v != null && v !== "").slice(0, 50).map((v) => String(v).trim());
+    if (!s.length) return null;
+    const mid = "([ T]00:00(:00(\\.0+)?)?)?$";
+    if (s.every((v) => new RegExp("^\\d{4}-\\d{2}-01" + mid).test(v))) return "month";
+    if (s.every((v) => new RegExp("^\\d{4}-\\d{2}-\\d{2}" + mid).test(v))) return "day";
+    return null;
+  }
+  // Numeric epoch detection: the column name must hint at time AND every value
+  // must sit in a plausible epoch range — seconds/millis/micros for 1990–2100.
+  // (The ranges are disjoint, and plain counts/ids named "revenue" etc never
+  // qualify because of the name gate.) A column format {epoch: unit} overrides.
+  function epochUnit(name, vals) {
+    if (!/(^|_)(ts|time|timestamp|date|datetime|epoch|at)($|_)|_(at|ts|time|ms|us|sec)$/i.test(String(name || ""))) return null;
+    const nums = vals.filter((v) => v != null && v !== "").slice(0, 50).map(Number);
+    if (!nums.length || !nums.every((n) => isFinite(n))) return null;
+    const within = (lo, hi) => nums.every((n) => n >= lo && n <= hi);
+    if (within(631e6, 41e8)) return "s";
+    if (within(631e9, 41e11)) return "ms";
+    if (within(631e12, 41e14)) return "us";
+    return null;
+  }
+  function epochToMs(n, unit) {
+    return unit === "s" ? n * 1000 : unit === "us" ? n / 1000 : n;
+  }
+  // Shift an instant so Chart.js's local-time renderer displays the wall clock
+  // of `tz`: "utc" (default — keeps daily/hourly buckets on their boundaries),
+  // "local" (the viewer's clock), or an IANA zone name. Without the shift a
+  // daily bucket at UTC-midnight slides to e.g. 10am for an AEST viewer and
+  // bars stop lining up with their day.
+  function pinMs(t, tz) {
     if (isNaN(t)) return NaN;
-    return t + new Date(t).getTimezoneOffset() * 60000;
+    if (tz === "local") return t;
+    const off = tz && tz !== "utc" ? zoneOffsetMs(t, tz) : 0;
+    return t + off + new Date(t).getTimezoneOffset() * 60000;
   }
-  function chartOpts(scatter, time, stacked) {
+  // A zone's UTC offset at an instant, via Intl (no tz database of our own).
+  function zoneOffsetMs(t, tz) {
+    try {
+      const p = new Intl.DateTimeFormat("en-US", { timeZone: tz, hour12: false,
+        year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" }).formatToParts(new Date(t));
+      const g = (k) => +p.find((x) => x.type === k).value;
+      return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second")) - Math.floor(t / 1000) * 1000;
+    } catch (_) { return 0; }
+  }
+  function chartOpts(scatter, time, stacked, minUnit, offset) {
+    // Major (unit-boundary) ticks get the next unit's format via major.enabled —
+    // so on an hourly axis each midnight reads "Jun 30" in bold instead of a
+    // second anonymous "12AM", and its gridline is drawn stronger.
+    const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.05)");
     const x = time
-      ? { type: "time", grid: { color: "rgba(255,255,255,0.05)" }, ticks: { autoSkip: true, maxRotation: 0 } }
+      ? { type: "time",
+          time: Object.assign({
+            displayFormats: { hour: "HH:mm", minute: "HH:mm", day: "MMM d", week: "MMM d", month: "MMM yyyy", quarter: "MMM yyyy", year: "yyyy" },
+            tooltipFormat: minUnit === "day" ? "MMM d, yyyy" : minUnit === "month" ? "MMM yyyy" : "MMM d yyyy, HH:mm",
+          }, minUnit ? { minUnit } : {}),
+          offset: !!offset, grid: { color: gridCol, offset: !!offset },
+          ticks: { autoSkip: true, maxRotation: 0, major: { enabled: true },
+            font: (ctx) => (ctx.tick && ctx.tick.major ? { weight: "bold" } : {}) } }
       : { type: scatter ? "linear" : "category", grid: { color: "rgba(255,255,255,0.05)" } };
     if (stacked) x.stacked = true;
     const y = { grid: { color: "rgba(255,255,255,0.05)" } };
@@ -2009,9 +2094,19 @@
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
     if (!ys.length) ys = [cols[1] || cols[0]];
-    const timeX = isDateish(rows.map((r) => r[xi]));
-    const xv = (r) => (timeX ? toMs(r[xi]) : +r[xi]);
-    const anno = annoSpec(spec, timeX);
+    const xname = cols[xi];
+    const xf = colFmt(db, xname, table);
+    const xvals = rows.map((r) => r[xi]);
+    // A time axis comes from date-ish strings, a numeric epoch column (detected,
+    // or forced by a column format), and renders in the format's tz if set.
+    const epoch = (xf && xf.epoch) || epochUnit(xname, xvals);
+    const timeX = !!epoch || isDateish(xvals);
+    const axisTz = (xf && xf.tz) || "utc";
+    const minUnit = epoch ? null : dateGranularity(xvals);
+    const toX = (v) => (epoch != null && isFinite(Number(v))
+      ? pinMs(epochToMs(Number(v), epoch), axisTz) : pinMs(parseTs(v), axisTz));
+    const xv = (r) => (timeX ? toX(r[xi]) : +r[xi]);
+    const anno = annoSpec(spec, timeX ? toX : null);
     // Apply column display formats to the y-axis ticks and tooltips.
     const applyYFmt = (o) => {
       const yf0 = colFmt(db, ys[0], table);
@@ -2045,7 +2140,7 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX))); if (anno) o.plugins.muckAnno = anno;
+      const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX, false, minUnit))); if (anno) o.plugins.muckAnno = anno;
       o.plugins.legend.display = false; // one series — the title already names it
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
@@ -2086,26 +2181,28 @@
       return { label: c,
         data: timeX ? rows.map((r) => ({ x: xv(r), y: +r[yi] })) : rows.map((r) => +r[yi]),
         borderColor: border, borderWidth: type === "line" ? 2 : 0,
-        backgroundColor: bg, fill: kind === "area", tension: 0.3,
+        // monotone: smooth but never overshoots past the data points, so a
+        // line between two low days can't dip below both of them.
+        backgroundColor: bg, fill: kind === "area", cubicInterpolationMode: "monotone",
         pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: col,
         borderRadius: type !== "bar" ? 0 : (stacked ? (i === ys.length - 1 ? barRadius : 0) : barRadius), borderSkipped: false, maxBarThickness: 120,
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked))); if (anno) o.plugins.muckAnno = anno;
+    const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar"))); if (anno) o.plugins.muckAnno = anno;
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
   }
   // Resolve a tile's target/threshold/event markers into pixel-resolvable values.
   // targets & thresholds are horizontal (numeric y); events are vertical (x).
-  function annoSpec(spec, timeX) {
+  function annoSpec(spec, toX) {
     if (!spec) return null;
     const mk = (arr, kind) => (arr || [])
       .map((m) => ({ value: parseFloat(m.value), label: m.label, kind }))
       .filter((m) => isFinite(m.value));
     const hlines = [...mk(spec.targets, "target"), ...mk(spec.thresholds, "threshold")];
     const vlines = (spec.events || [])
-      .map((e) => ({ label: e.label, value: timeX ? toMs(e.value) : e.value }))
+      .map((e) => ({ label: e.label, value: toX ? toX(e.value) : e.value }))
       .filter((v) => v.value != null && !(typeof v.value === "number" && isNaN(v.value)));
     return (hlines.length || vlines.length) ? { hlines, vlines } : null;
   }

@@ -65,7 +65,9 @@ muckdb session rm <name> [--tile TILE]
   `muckdb ls session <id>` (`claude_session`).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
-- `--md -` reads the markdown from stdin (good for long/heredoc content).
+- `--md -` reads the markdown from stdin (good for long/heredoc content). An
+  inline `--md "..."` honours `\n`/`\t` escapes (shells leave them literal
+  inside double quotes), so `--md "# Title\n\nBody"` renders as real lines.
 - A tile is a **view** (`--view`, references a named duckdb view) or **inline
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
@@ -115,15 +117,27 @@ Attach a unit/currency/decimal format to a column so facets, charts, stats and
 tables render it nicely (e.g. `$4,343.33 USD`):
 
 ```
-muckdb format <db> <column> [--table T] [--currency USD | --prefix $ --suffix ' USD' --decimals N --thousands --percent] [--clear]
+muckdb format <db> <column> [--table T] [--currency USD | --prefix $ --suffix ' USD' --decimals N --thousands --percent] [--tz local|utc|Area/City] [--epoch s|ms|us] [--clear]
 muckdb format list [<db>]
 ```
 
 A registry entry keyed by column name applies wherever that column appears
 (including derived view columns charts plot); `--table` scopes it to one
-relation. Formats also read from a DuckDB column comment (`COMMENT ON COLUMN
-t.c IS 'muckdb:{"prefix":"$","decimals":2,"group":true}'`), which travels with
-the database; the registry overrides the comment.
+relation — use the name a tile actually queries (the **view** you post, not the
+base table under it). Formats also read from a DuckDB column comment
+(`COMMENT ON COLUMN t.c IS 'muckdb:{"prefix":"$","decimals":2,"group":true}'`),
+which travels with the database; the registry overrides the comment.
+
+**Timestamps.** Naive DB timestamps are treated as UTC instants. `--tz local`
+(or `utc`, or an IANA zone like `Australia/Brisbane`) shows a timestamp column
+in that zone in tables, facets and stats — and a chart with that column on x
+draws its time axis in the same zone. Without a `--tz`, time axes render the
+UTC wall clock so daily/hourly buckets stay on their boundaries. `--epoch
+s|ms|us` marks a numeric column as an epoch so it displays and charts as time
+(columns with time-ish names and plausible epoch values are auto-detected).
+Time axes are granularity-aware: DATE or midnight-truncated columns never show
+hour ticks, first-of-month data ticks monthly, and hourly axes get a bold date
+label at each day boundary.
 
 ## Inspecting state (read it back as JSON)
 

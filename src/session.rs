@@ -265,7 +265,30 @@ fn read_md(value: &str) -> Result<String> {
         std::io::stdin().read_to_string(&mut buf)?;
         Ok(buf)
     } else {
-        Ok(value.to_string())
+        // Agents routinely pass `--md "# Title\n\nBody"` inside double quotes,
+        // where the shell leaves `\n` literal — honour those escapes so the
+        // panel doesn't render a one-line "\n"-riddled string. A literal
+        // backslash-n survives via `\\n`; multi-line content is better piped
+        // through `--md -` (stdin, taken verbatim above).
+        let mut out = String::with_capacity(value.len());
+        let mut chars = value.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '\\' {
+                out.push(c);
+                continue;
+            }
+            match chars.next() {
+                Some('n') => out.push('\n'),
+                Some('t') => out.push('\t'),
+                Some('\\') => out.push('\\'),
+                Some(other) => {
+                    out.push('\\');
+                    out.push(other);
+                }
+                None => out.push('\\'),
+            }
+        }
+        Ok(out)
     }
 }
 
@@ -526,5 +549,15 @@ mod tests {
         let raw = [s("--flag")];
         let a = Args::parse(&raw);
         assert_eq!(a.get("flag"), Some(""));
+    }
+
+    #[test]
+    fn read_md_unescapes_shell_literal_newlines() {
+        assert_eq!(read_md("# T\\n\\nBody").unwrap(), "# T\n\nBody");
+        assert_eq!(read_md("a\\tb").unwrap(), "a\tb");
+        assert_eq!(read_md("keep \\\\n literal").unwrap(), "keep \\n literal");
+        assert_eq!(read_md("real\nnewline").unwrap(), "real\nnewline"); // untouched
+        assert_eq!(read_md("trailing\\").unwrap(), "trailing\\");
+        assert_eq!(read_md("\\x unknown").unwrap(), "\\x unknown");
     }
 }
