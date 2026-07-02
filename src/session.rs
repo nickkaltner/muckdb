@@ -3,12 +3,14 @@
 //! rendered as a chart and explorable as a faceted search. Stored as one JSON
 //! file per session under the data dir, shared with the daemon.
 
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 use crate::{paths, store};
 
@@ -119,6 +121,83 @@ pub struct Session {
     pub updated: u64,
     #[serde(default)]
     pub tiles: Vec<Tile>,
+}
+
+// ---- viewer activity -------------------------------------------------------
+//
+// What the human has actually looked at: session opens, panel zooms, explore
+// clicks. Kept in its own file (activity.json) rather than the session JSON so
+// activity writes don't churn the watched sessions dir (which would re-render
+// every open dashboard) and can't race the CLI over session files. Agents read
+// it back through `muckdb ls sessions` / `ls session <id>`, which merge it in —
+// e.g. a tile with zero zooms/explores that the human has had many chances to
+// open is a hint to present that data differently.
+
+/// Per-tile interaction counts.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TileActivity {
+    #[serde(default)]
+    pub zooms: u64,
+    #[serde(default)]
+    pub explores: u64,
+    /// Last interaction (ms since epoch).
+    #[serde(default)]
+    pub last: u64,
+}
+
+/// Per-session view counts plus per-tile interactions.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct SessionActivity {
+    /// Times a human opened this dashboard (screenshot renders don't count).
+    #[serde(default)]
+    pub views: u64,
+    /// Last human open (ms since epoch).
+    #[serde(default)]
+    pub last_viewed: u64,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub tiles: BTreeMap<String, TileActivity>,
+}
+
+fn activity_path() -> Result<PathBuf> {
+    Ok(paths::data_dir()?.join("activity.json"))
+}
+
+/// The whole activity registry, keyed by session id (empty when none yet).
+pub fn load_activity() -> BTreeMap<String, SessionActivity> {
+    let Ok(path) = activity_path() else {
+        return BTreeMap::new();
+    };
+    fs::read_to_string(&path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+/// Record one interaction: `tile: None` counts a session open; otherwise
+/// `action` is "zoom" or "explore" on that tile.
+pub fn record_activity(session: &str, tile: Option<&str>, action: &str) -> Result<()> {
+    let mut all = load_activity();
+    let s = all.entry(session.to_string()).or_default();
+    let now = store::now_millis();
+    match tile {
+        None => {
+            s.views += 1;
+            s.last_viewed = now;
+        }
+        Some(t) => {
+            let ta = s.tiles.entry(t.to_string()).or_default();
+            match action {
+                "zoom" => ta.zooms += 1,
+                "explore" => ta.explores += 1,
+                _ => {}
+            }
+            ta.last = now;
+        }
+    }
+    let path = activity_path()?;
+    fs::write(&path, serde_json::to_string_pretty(&all)?)
+        .with_context(|| format!("writing {path:?}"))?;
+    Ok(())
 }
 
 /// Slugify a name into a filesystem/URL-safe id.
@@ -244,6 +323,9 @@ struct Args {
     positionals: Vec<String>,
 }
 
+/// Flags that take no value — the parser must not eat the next argument.
+const BOOL_FLAGS: &[&str] = &["no-validate"];
+
 impl Args {
     fn parse(args: &[String]) -> Self {
         let mut flags = Vec::new();
@@ -252,6 +334,11 @@ impl Args {
         while i < args.len() {
             let a = &args[i];
             if let Some(key) = a.strip_prefix("--") {
+                if BOOL_FLAGS.contains(&key) {
+                    flags.push((key.to_string(), String::new()));
+                    i += 1;
+                    continue;
+                }
                 let val = args.get(i + 1).cloned().unwrap_or_default();
                 flags.push((key.to_string(), val));
                 i += 2;
@@ -297,6 +384,103 @@ fn parse_markers(raw: &[&str]) -> Vec<Marker> {
             }
         })
         .collect()
+}
+
+/// Levenshtein distance, for "did you mean" suggestions on typo'd names.
+fn edit_distance(a: &str, b: &str) -> usize {
+    let a: Vec<char> = a.chars().collect();
+    let b: Vec<char> = b.chars().collect();
+    let mut prev: Vec<usize> = (0..=b.len()).collect();
+    for (i, ca) in a.iter().enumerate() {
+        let mut cur = vec![i + 1];
+        for (j, cb) in b.iter().enumerate() {
+            let sub = prev[j] + usize::from(ca != cb);
+            cur.push(sub.min(prev[j + 1] + 1).min(cur[j] + 1));
+        }
+        prev = cur;
+    }
+    prev[b.len()]
+}
+
+/// The closest of `options` to `target` (case-insensitive, distance ≤ 2).
+fn closest<'a>(target: &str, options: impl Iterator<Item = &'a str>) -> Option<&'a str> {
+    options
+        .map(|o| (edit_distance(&target.to_lowercase(), &o.to_lowercase()), o))
+        .filter(|(d, _)| *d <= 2)
+        .min_by_key(|(d, _)| *d)
+        .map(|(_, o)| o)
+}
+
+/// Validate a data tile against its database before saving, so a typo'd view
+/// or column fails loudly at post time instead of rendering an empty panel.
+/// A db that exists but can't be queried right now (e.g. lock-held) only
+/// warns — a busy database shouldn't block a dashboard update.
+fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart) -> Result<()> {
+    if !std::path::Path::new(db).exists() {
+        bail!("database not found: {db}");
+    }
+    // Resolve the columns the tile will plot.
+    let described = match view {
+        Some(v) => {
+            crate::introspect::query_json(db, &format!("DESCRIBE \"{}\"", v.replace('"', "\"\"")))
+        }
+        None => {
+            let q = sql.unwrap_or("").trim().trim_end_matches(';');
+            crate::introspect::query_json(db, &format!("DESCRIBE {q}"))
+        }
+    };
+    let rows = match described {
+        Ok(rows) => rows,
+        Err(e) => {
+            // Distinguish "the relation/SQL is wrong" from "the db is unreadable".
+            match crate::introspect::list_tables(db) {
+                Err(_) => {
+                    eprintln!("warning: could not validate tile ({e:#}); posting anyway");
+                    return Ok(());
+                }
+                Ok(rels) => {
+                    if let Some(v) = view {
+                        let names: Vec<String> = rels.iter().map(|r| r.name.clone()).collect();
+                        let hint = closest(v, names.iter().map(String::as_str))
+                            .map(|c| format!(" — did you mean '{c}'?"))
+                            .unwrap_or_default();
+                        bail!(
+                            "view '{v}' not found in {db}{hint}\navailable: {}\n(use --no-validate to skip this check)",
+                            names.join(", ")
+                        );
+                    }
+                    bail!("--sql failed to parse: {e:#}\n(use --no-validate to skip this check)");
+                }
+            }
+        }
+    };
+    let cols: Vec<String> = rows
+        .iter()
+        .filter_map(|r| {
+            r.get("column_name")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+        })
+        .collect();
+    let check = |what: &str, c: &str| -> Result<()> {
+        if !cols.iter().any(|x| x == c) {
+            let hint = closest(c, cols.iter().map(String::as_str))
+                .map(|m| format!(" — did you mean '{m}'?"))
+                .unwrap_or_default();
+            bail!(
+                "{what} '{c}' is not a column of the tile's data{hint}\ncolumns: {}\n(use --no-validate to skip this check)",
+                cols.join(", ")
+            );
+        }
+        Ok(())
+    };
+    if let Some(x) = &chart.x {
+        check("--x", x)?;
+    }
+    for y in &chart.y {
+        check("--y", y)?;
+    }
+    Ok(())
 }
 
 fn read_md(value: &str) -> Result<String> {
@@ -435,6 +619,17 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 caption: p.get("caption").map(str::to_string),
                 trashed: false,
             };
+            if p.get("no-validate").is_none()
+                && let Tile::View {
+                    db,
+                    view,
+                    sql,
+                    chart,
+                    ..
+                } = &tile
+            {
+                validate_tile(db, view.as_deref(), sql.as_deref(), chart)?;
+            }
             let mut s = load_or_new(&id, None)?;
             upsert_tile(&mut s, tile);
             save(&s)?;
@@ -591,6 +786,25 @@ mod tests {
         let raw = [s("--flag")];
         let a = Args::parse(&raw);
         assert_eq!(a.get("flag"), Some(""));
+    }
+
+    #[test]
+    fn closest_suggests_near_misses_only() {
+        let opts = ["v_species", "v_daily", "readings"];
+        assert_eq!(
+            closest("v_speciess", opts.iter().copied()),
+            Some("v_species")
+        );
+        assert_eq!(closest("V_DAILY", opts.iter().copied()), Some("v_daily")); // case-insensitive
+        assert_eq!(closest("totally_wrong", opts.iter().copied()), None); // distance > 2
+    }
+
+    #[test]
+    fn bool_flags_do_not_eat_the_next_argument() {
+        let raw = [s("--no-validate"), s("--db"), s("x.duckdb")];
+        let a = Args::parse(&raw);
+        assert_eq!(a.get("no-validate"), Some(""));
+        assert_eq!(a.get("db"), Some("x.duckdb"));
     }
 
     #[test]

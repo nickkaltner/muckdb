@@ -60,6 +60,7 @@ pub async fn run() -> Result<()> {
         .route("/api/session", get(api_session))
         .route("/api/shot", get(api_shot))
         .route("/api/trash", post(api_trash))
+        .route("/api/activity", post(api_activity))
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/ws", get(ws_handler))
@@ -412,6 +413,26 @@ async fn api_trash(Query(p): Query<TrashParams>) -> Response {
             Json(json!({ "error": "no such session or tile" })),
         )
             .into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ActivityParams {
+    session: String,
+    tile: Option<String>,
+    /// "view" (no tile) | "zoom" | "explore".
+    #[serde(default)]
+    action: String,
+}
+
+/// Record a human interaction (session open, panel zoom, explore click) in
+/// activity.json — read back by `muckdb ls session(s)` so agents can see what
+/// the human actually looks at. Writes outside the watched sessions dir, so
+/// this never triggers a re-render.
+async fn api_activity(Query(p): Query<ActivityParams>) -> Response {
+    match session::record_activity(&p.session, p.tile.as_deref(), &p.action) {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
         Err(e) => error_json(&e),
     }
 }

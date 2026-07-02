@@ -184,6 +184,10 @@ muckdb session rm <name> [--tile TILE]
   on `create` to record the Claude Code session UUID on the dashboard. It's shown
   at the top of the session view and returned by `muckdb ls session <id>`
   (`claude_session`), so a human can tell which conversation produced a dashboard.
+- **Posts are validated against the database.** A missing view, unparseable
+  `--sql`, or a `--x`/`--y` that isn't a column of the result fails immediately
+  with a "did you mean" suggestion and the available names — fix and re-post.
+  `--no-validate` skips the check (e.g. posting before the view exists).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
 - `--md -` reads the markdown from stdin (good for long/heredoc content). An
@@ -328,6 +332,13 @@ muckdb ls history [--limit N]  # the command ledger (args, exit codes, session t
 Use these to check a session's current tiles before updating one, to find a
 database's `id` (for building a `/db/<id>/…` link), or to see what the human has
 been running.
+
+**See what the human actually looks at.** Session JSON from `ls sessions` /
+`ls session <id>` includes an `activity` block recorded from the web UI:
+per-session `views`/`last_viewed`, and per-tile `zooms`/`explores`/`last`.
+Use it to adapt: a session with many views is worth keeping polished; a tile
+the human zooms or explores repeatedly deserves more depth; a tile with zero
+interactions across many views is a hint to present that data differently.
 
 ## See what you built — screenshot a panel
 

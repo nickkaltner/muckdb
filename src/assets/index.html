@@ -1568,6 +1568,7 @@
   }
   async function zoomTile(name) {
     const t = sessionTile(name); if (!t || t.type !== "view") return;
+    postActivity(name, "zoom");
     state.zoomPanel = name; syncUrl(true);
     const exploreBtn = t.view ? `<button class="zoom-explore" data-zexplore>explore</button>` : "";
     const layer = document.createElement("div");
@@ -1643,9 +1644,15 @@
     } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }
     syncUrl(!!push);
   }
+  let viewPostedFor = null; // session id whose open has been counted this visit
   function renderPanels(s) {
     destroyCharts();
     renderSessionHead(s);
+    // Count a human open once per navigation, not per live re-render.
+    if (!SHOT && state.selSession && state.selSession !== viewPostedFor) {
+      viewPostedFor = state.selSession;
+      postActivity(null, "view");
+    }
     let tiles = s.tiles || [];
     if (SHOT && SHOT.tile) tiles = tiles.filter((t) => t.name === SHOT.tile);
     // Trashed panels are hidden here and listed in the TOC's trash section
@@ -2310,9 +2317,18 @@
     const hl = ta.previousElementSibling;
     if (hl) { hl.innerHTML = sqlHi(ta.value) + "\n"; hl.scrollTop = ta.scrollTop; hl.scrollLeft = ta.scrollLeft; }
   }
+  // Tell the daemon what the human looks at (activity.json → `muckdb ls`).
+  // Screenshot renders don't count.
+  function postActivity(tile, action) {
+    if (SHOT || !state.selSession) return;
+    const q = new URLSearchParams({ session: state.selSession, action });
+    if (tile) q.set("tile", tile);
+    fetch("/api/activity?" + q, { method: "POST" }).catch(() => {});
+  }
   function exploreTile(name) {
     const t = (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name);
     if (!t || !t.view) return;
+    postActivity(name, "explore");
     setTab("databases");
     selectDb(t.db, { table: t.view, sub: "rows" });
   }
@@ -2329,12 +2345,6 @@
     const btn = document.querySelector(`[data-tsql="${cssEsc(name)}"]`);
     if (btn) btn.classList.toggle("active", state.tileMode[name] === "sql");
     if (state.tileMode[name] === "sql") showTileSql(t); else loadTileChart(t);
-  }
-  function exploreTile(name) {
-    const t = (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name);
-    if (!t || !t.view) return;
-    setTab("databases");
-    selectDb(t.db, { table: t.view, sub: "rows" });
   }
 
   // Minimal, safe-ish markdown renderer for session notes.

@@ -135,13 +135,33 @@ fn ls(args: &[String]) -> anyhow::Result<i32> {
                 serde_json::to_string_pretty(&introspect::list_tables(db)?)?
             );
         }
-        "sessions" => println!("{}", serde_json::to_string_pretty(&session::list()?)?),
+        // Sessions carry an "activity" block (views, per-tile zooms/explores)
+        // recorded from the web UI — what the human has actually looked at.
+        "sessions" => {
+            let acts = session::load_activity();
+            let list: Vec<serde_json::Value> = session::list()?
+                .into_iter()
+                .map(|s| {
+                    let mut v = serde_json::to_value(&s).unwrap_or_default();
+                    if let Some(a) = acts.get(&s.id) {
+                        v["activity"] =
+                            serde_json::json!({ "views": a.views, "last_viewed": a.last_viewed });
+                    }
+                    v
+                })
+                .collect();
+            println!("{}", serde_json::to_string_pretty(&list)?);
+        }
         "session" => {
             let id = args.get(1).context("usage: muckdb ls session <id>")?;
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&session::load(&session::slug(id))?)?
-            );
+            let id = session::slug(id);
+            let mut v = serde_json::to_value(session::load(&id)?)?;
+            if !v.is_null()
+                && let Some(a) = session::load_activity().get(&id)
+            {
+                v["activity"] = serde_json::to_value(a)?;
+            }
+            println!("{}", serde_json::to_string_pretty(&v)?);
         }
         "history" => {
             let st = store::load_state()?;
