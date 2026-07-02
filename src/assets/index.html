@@ -17,6 +17,7 @@
     --grad-bar: linear-gradient(180deg, var(--amber), var(--ember));
     --glow: radial-gradient(1000px 460px at 80% -14%, rgba(255,138,46,0.07), transparent 70%);
     --hi: inset 0 1px 0 rgba(255,236,210,0.05);
+    --selection: rgba(255, 122, 26, 0.28);
     --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     --titlebar-h: 46px; --tabs-h: 38px; --statusline-h: 30px;
@@ -30,7 +31,7 @@
   html.flat .stat-card, html.flat .entry { background: var(--surface); }
   a { color: var(--orange); text-decoration: none; }
   a:hover { text-decoration: underline; }
-  ::selection { background: rgba(255, 122, 26, 0.28); }
+  ::selection { background: var(--selection); }
   :focus-visible { outline: 2px solid var(--orange); outline-offset: 2px; border-radius: 3px; }
 
   /* themed scrollbars everywhere */
@@ -322,7 +323,7 @@
   .sqledit .sqlbox { position: relative; background: transparent; color: transparent; caret-color: var(--orange); resize: vertical; }
   .sqledit .sqlbox:focus { outline: none; }
   .sqledit:focus-within .sql-hl { border-color: var(--orange-dim); }
-  .sqledit .sqlbox::selection { background: rgba(255, 122, 26, 0.30); }
+  .sqledit .sqlbox::selection { background: var(--selection); }
   .sql-hl .s-kw { color: var(--orange); } .sql-hl .s-str { color: var(--ok); }
   .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #7fb6ad; }
   .runbtn { font: inherit; font-size: 12px; background: var(--grad-accent); color: var(--on-accent); font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; box-shadow: var(--hi); }
@@ -350,6 +351,11 @@
   .toc-item .toc-kind { flex: none; color: var(--faint); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
   .toc-item:hover { background: var(--raised); color: var(--fg); }
   .toc-item.active { color: var(--orange); border-left-color: var(--orange); }
+  /* Trash section: hidden panels wait here; clicking one restores it. */
+  .toc-trash-head { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
+  .toc-item.trash .toc-label { color: var(--faint); }
+  .toc-item.trash:hover .toc-label { color: var(--fg); }
+  .panel-act[data-trash]:hover { border-color: var(--fail); color: var(--fail); }
   @media (min-width: 1300px) {
     .toc-toggle { display: inline-flex; }
     #view-sessions.toc-open .session-toc { display: block; }
@@ -374,6 +380,19 @@
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 300px; }
   .panel-caption { font-size: 11px; color: var(--faint); margin-top: 8px; }
+  .panel-act.busy { opacity: 0.5; pointer-events: none; }
+  .panel-act.flash-ok { border-color: var(--ok); color: var(--ok); }
+  .panel-act.flash-err { border-color: var(--fail); color: var(--fail); }
+  /* Screenshot mode (?shot=1[&tile=NAME]): bare panels for headless capture.
+     All chrome is hidden and the page grows to its content so the capture pass
+     can size the window from body scrollHeight (stamped as data-shot-h). */
+  html.shot, body.shot { height: auto; }
+  body.shot { background-attachment: scroll; }
+  body.shot .titlebar, body.shot .tabs, body.shot .statusline, body.shot .navrow,
+  body.shot .session-toc, body.shot .panel-actions, body.shot #session-empty { display: none !important; }
+  body.shot main { height: auto; overflow: visible; }
+  body.shot .session-body { display: block; overflow: visible; }
+  body.shot .panels-scroll { overflow: visible; }
   pre.sql { font-family: var(--mono); font-size: 12px; line-height: 1.55; background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; margin: 0; overflow: auto; max-height: 320px; white-space: pre-wrap; word-break: break-word; }
   pre.sql .s-kw { color: var(--orange); }
   pre.sql .s-str { color: var(--ok); }
@@ -508,6 +527,8 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, zoomPanel: null,
+    trash: {},          // session id → names of panels hidden in this browser
+
     tocOpen: true,      // session table-of-contents visible (wide screens only)
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
@@ -516,6 +537,15 @@
   let lastIds = new Set();
   let searchTimer = null, refreshTimer = null;
   let suppressSync = false, pendingNav = null, brush = null;
+
+  // Screenshot mode (?shot=1[&tile=NAME]) — used by `muckdb session screenshot`
+  // and /api/shot. Renders bare panels (optionally just one tile), no live
+  // socket, no animations, and stamps the content height on <html> when done.
+  const SHOT = (() => {
+    const p = new URLSearchParams(location.search);
+    return p.get("shot") === "1" ? { tile: p.get("tile") || null } : null;
+  })();
+  if (SHOT) { document.documentElement.classList.add("shot"); document.body.classList.add("shot"); }
   let charts = [];
   let tocObserver = null;
 
@@ -597,16 +627,50 @@
       barRadius: 6,
       chart: ["#c77dff", "#3fe0ec", "#ff8ad8", "#a6f25a", "#ffb86c", "#ff6b8a", "#8a9bff", "#e6c860"],
     },
+    // "citrus phosphor": acid lime on near-black green glass. High contrast —
+    // deep bg, bright fg, luminous accent — with mint/gold/coral reserved for
+    // reference markers so they pop against green data. Its 20 chart colours
+    // are all curated (catN), so categorical charts never fall back to the
+    // generated hue sweep until the 21st category.
     lime: {
       label: "lime", vars: {
-        bg: "#080b06", surface: "#0f150c", raised: "#161f11", line: "#283820", "line-soft": "#121a0e",
-        fg: "#e6f3dc", muted: "#94a888", faint: "#5a6e50", "on-accent": "#080b06",
-        orange: "#a6e24e", amber: "#c6f26a", ember: "#6fae2f", "orange-dim": "#5a8f2a", teal: "#4bc4a0",
-        ok: "#b8e26a", fail: "#e0728a",
-        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(166,226,78,0.07), transparent 70%)",
+        bg: "#050803", surface: "#0b1207", raised: "#142010", line: "#2e4520", "line-soft": "#0f1909",
+        fg: "#eefadf", muted: "#a3b993", faint: "#647758", "on-accent": "#060a03", mist: "#c8dcb6",
+        orange: "#b6f13a", amber: "#d7fa66", ember: "#7ecb2b", "orange-dim": "#649c2a", teal: "#3fe6ad",
+        ok: "#7be08a", fail: "#ff6d70",
+        glow: "radial-gradient(1100px 520px at 80% -14%, rgba(182,241,58,0.14), transparent 68%), radial-gradient(760px 460px at 6% 112%, rgba(63,230,173,0.09), transparent 72%)",
+        "grad-panel": "linear-gradient(180deg, rgba(182,241,58,0.055), rgba(182,241,58,0) 58%)",
+        hi: "inset 0 1px 0 rgba(215,250,102,0.09)",
+        selection: "rgba(182, 241, 58, 0.32)",
+        "anno-target": "#3fe6ad", "anno-threshold": "#ff6d70", "anno-event": "#ffd23f",
       },
-      grad2: ["#d6f26a", "#4a8f3a"],
-      chart: ["#a6e24e", "#4fc4b0", "#e0c060", "#cf8fd0", "#8aa6e0", "#d3946a", "#6fd08a", "#b894d8"],
+      grad2: ["#eaffa0", "#4a9f1a"],
+      bargrad: ["#f6ffd4", "#b6f13a", "#2c5e12"],
+      barRadius: 6,
+      catN: 20,
+      // Hue families alternate so adjacent bars/slices/series stay distinct.
+      chart: [
+        "#c3f542", // lime — the lead
+        "#3fe6ad", // mint
+        "#ffd23f", // citrus gold
+        "#4fc3f7", // sky
+        "#ff7fb2", // guava
+        "#b78bff", // violet
+        "#ffa04a", // tangerine
+        "#2ac8d8", // teal
+        "#ff6a5e", // coral
+        "#7d9ff7", // cornflower
+        "#e8f772", // citron
+        "#e08ae6", // orchid
+        "#54d96b", // leaf
+        "#ffc48c", // apricot
+        "#98a5ff", // periwinkle
+        "#e0517f", // raspberry
+        "#bdd97a", // pistachio
+        "#5fb8d9", // petrol
+        "#d9b356", // brass
+        "#c9a3d9", // mauve
+      ],
     },
     paper: {
       label: "paper", light: true, vars: {
@@ -638,7 +702,7 @@
   // theme's grad-panel/hi) fall back to the :root defaults when not provided.
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
     "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi",
-    "anno-target", "anno-threshold", "anno-event"];
+    "selection", "anno-target", "anno-threshold", "anno-event"];
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.hearth;
     state.theme = THEMES[name] ? name : "hearth";
@@ -649,6 +713,9 @@
     GRAD2 = (t.grad2 || [t.chart[0], t.chart[1]]).slice();
     BARGRAD = (t.bargrad || t.grad2 || [t.chart[0], t.chart[1]]).slice();
     BAR_RADIUS = t.barRadius || 0;
+    // How many of the theme's chart colours are curated-categorical (see
+    // catColors); themes with a long hand-picked list opt in via catN.
+    CAT_N = Math.min(t.catN || CAT_CURATED, t.chart.length);
     // "flat" themes drop the ambient glow + panel gradients on the non-session
     // pages (databases, ledger); session dashboards keep their charty look.
     document.documentElement.classList.toggle("flat", !!t.flat);
@@ -776,7 +843,7 @@
     return p.toString();
   }
   function syncUrl(push) {
-    if (suppressSync) return;
+    if (suppressSync || SHOT) return;
     const qs = buildQuery();
     const url = buildPath() + (qs ? "?" + qs : "");
     // Remember where we are so a fresh open (new tab, or after a daemon
@@ -1505,23 +1572,69 @@
     $("panels").innerHTML = '<div class="note" style="padding:18px">loading…</div>';
     try {
       const s = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json();
-      if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; return; }
+      if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; if (SHOT) markShotReady(); return; }
       state.sessionData = s;
       renderPanels(s);
-    } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; }
+    } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }
     syncUrl(!!push);
   }
   function renderPanels(s) {
     destroyCharts();
     renderSessionHead(s);
-    const tiles = s.tiles || [];
-    $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("") : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
-    renderToc(tiles);
+    let tiles = s.tiles || [];
+    if (SHOT && SHOT.tile) tiles = tiles.filter((t) => t.name === SHOT.tile);
+    // Panels the viewer has trashed are hidden here and listed in the TOC's
+    // trash section instead. A per-browser preference — screenshot mode (a
+    // fresh profile) and other viewers still see everything.
+    const trashedNames = SHOT ? [] : pruneTrash(s);
+    const trashed = tiles.filter((t) => trashedNames.includes(t.name));
+    tiles = tiles.filter((t) => !trashedNames.includes(t.name));
+    $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("")
+      : trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
+      : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
+    renderToc(tiles, trashed);
     state.panelSel = -1;
-    tiles.forEach((t) => {
-      if (t.type !== "view") return;
-      if (t.sql && state.tileMode[t.name] === "sql") showTileSql(t); else loadTileChart(t);
-    });
+    const loads = tiles.map((t) => {
+      if (t.type !== "view") return null;
+      if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
+      return loadTileChart(t);
+    }).filter(Boolean);
+    if (SHOT) Promise.allSettled(loads).then(markShotReady);
+  }
+  // ---- panel trash (per-browser hide/restore) ---------------------------
+  // Drop trash entries for tiles that no longer exist, then return the list.
+  function pruneTrash(s) {
+    const id = state.selSession;
+    if (!id || !state.trash[id]) return [];
+    const names = new Set((s.tiles || []).map((t) => t.name));
+    const list = state.trash[id].filter((n) => names.has(n));
+    if (list.length) state.trash[id] = list; else delete state.trash[id];
+    return list;
+  }
+  function saveTrash() { try { localStorage.setItem("muckdb.trash", JSON.stringify(state.trash)); } catch (_) {} }
+  function trashTile(name) {
+    if (!state.selSession || !state.sessionData) return;
+    const list = state.trash[state.selSession] || (state.trash[state.selSession] = []);
+    if (!list.includes(name)) list.push(name);
+    saveTrash();
+    if (state.zoomPanel === name) closeZoom();
+    renderPanels(state.sessionData);
+  }
+  function restoreTile(name) {
+    const list = state.trash[state.selSession] || [];
+    const i = list.indexOf(name);
+    if (i >= 0) list.splice(i, 1);
+    if (!list.length) delete state.trash[state.selSession];
+    saveTrash();
+    if (state.sessionData) renderPanels(state.sessionData);
+  }
+  // Screenshot mode: once every tile has loaded (and a layout pass has run),
+  // stamp the rendered content height on <html> for the capture pass to read.
+  function markShotReady() {
+    setTimeout(() => {
+      document.documentElement.setAttribute("data-shot-h", String(Math.ceil(document.body.scrollHeight)));
+      document.documentElement.setAttribute("data-shot-ready", "1");
+    }, 60);
   }
   // ---- session table of contents (wide screens) ------------------------
   function applyTocState() {
@@ -1535,14 +1648,23 @@
   }
   // One TOC entry per panel, in order; clicking jumps to it. Markdown panels are
   // included (they're usually the intro/summary you most want to jump to).
-  function renderToc(tiles) {
+  function tocKind(t) { return t.type === "markdown" ? "md" : ((t.chart && t.chart.kind) || "table"); }
+  function renderToc(tiles, trashed) {
     const el = $("session-toc"); if (!el) return;
-    if (!tiles || !tiles.length) { el.innerHTML = ""; if (tocObserver) tocObserver.disconnect(); return; }
-    el.innerHTML = `<div class="toc-head">contents</div>` + tiles.map((t) => {
-      const kind = t.type === "markdown" ? "md" : ((t.chart && t.chart.kind) || "table");
+    trashed = trashed || [];
+    if ((!tiles || !tiles.length) && !trashed.length) { el.innerHTML = ""; if (tocObserver) tocObserver.disconnect(); return; }
+    const items = (tiles || []).map((t) => {
       const label = t.title || t.name;
-      return `<button class="toc-item" data-toc="${attr(t.name)}" title="${attr(label)}"><span class="toc-label">${esc(label)}</span><span class="toc-kind">${esc(kind)}</span></button>`;
+      return `<button class="toc-item" data-toc="${attr(t.name)}" title="${attr(label)}"><span class="toc-label">${esc(label)}</span><span class="toc-kind">${esc(tocKind(t))}</span></button>`;
     }).join("");
+    // Trashed panels: clicking one restores it to the contents above.
+    const trashItems = trashed.length
+      ? `<div class="toc-head toc-trash-head">trash</div>` + trashed.map((t) => {
+          const label = t.title || t.name;
+          return `<button class="toc-item trash" data-restore="${attr(t.name)}" title="Restore this panel"><span class="toc-label">${esc(label)}</span><span class="toc-kind">${esc(tocKind(t))}</span></button>`;
+        }).join("")
+      : "";
+    el.innerHTML = `<div class="toc-head">contents</div>` + items + trashItems;
     setupTocSpy();
   }
   function scrollToPanel(name) {
@@ -1583,9 +1705,52 @@
     state.panelSel = -1;
     document.querySelectorAll("#panels .panel.sel").forEach((p) => p.classList.remove("sel"));
   }
+  // Copy-as-image: each panel gets a button that fetches a server-side
+  // headless-browser render of just that tile (/api/shot) and puts the PNG on
+  // the clipboard — the same pixels `muckdb session screenshot` produces.
+  const SVG_COPYIMG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="6" cy="6.2" r="1.2"/><path d="M2 11.5l3.5-3 3 2.5 3-2.5 2.5 2"/></svg>';
+  function copyImgBtn(name) {
+    return `<button class="panel-act icon" data-copyimg="${attr(name)}" title="Copy panel as image" aria-label="Copy panel as image">${SVG_COPYIMG}</button>`;
+  }
+  function flashBtn(btn, cls) { btn.classList.add("flash-" + cls); setTimeout(() => btn.classList.remove("flash-" + cls), 1400); }
+  async function copyPanelImage(name, btn) {
+    if (!state.selSession || btn.classList.contains("busy")) return;
+    btn.classList.add("busy");
+    const url = "/api/shot?" + new URLSearchParams({ session: state.selSession, tile: name });
+    const fetchPng = () => fetch(url).then(async (r) => {
+      const blob = await r.blob();
+      if (blob.type !== "image/png") {
+        let msg = "screenshot failed"; try { msg = JSON.parse(await blob.text()).error || msg; } catch (_) {}
+        throw new Error(msg);
+      }
+      return blob;
+    });
+    try {
+      // Hand the promise straight to ClipboardItem so the user gesture is
+      // still fresh when permission is checked (the render takes seconds).
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": fetchPng() })]);
+      flashBtn(btn, "ok");
+    } catch (e) {
+      // Clipboard images unsupported or denied — fall back to a download.
+      try {
+        const blob = await fetchPng();
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(blob);
+        a.download = `${state.selSession}-${name}.png`;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+        flashBtn(btn, "ok");
+      } catch (e2) { console.warn("copy panel image:", e2); flashBtn(btn, "err"); }
+    } finally { btn.classList.remove("busy"); }
+  }
+  // Hide a panel into the TOC's trash section (restored by clicking it there).
+  const SVG_TRASH_X = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  function trashBtn(name) {
+    return `<button class="panel-act icon" data-trash="${attr(name)}" title="Hide panel (restore from the trash in contents)" aria-label="Hide panel">${SVG_TRASH_X}</button>`;
+  }
   function panelHtml(t) {
     if (t.type === "markdown") {
-      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
+      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -1598,7 +1763,7 @@
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     return `<div class="panel" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>
-        <span class="panel-actions">${sqlBtn}${contractBtn}${zoomBtn}${explore}</span></div>
+        <span class="panel-actions">${sqlBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div></div>`;
   }
   async function loadTileChart(t) {
@@ -1704,13 +1869,15 @@
     return "#" + to(r) + to(g) + to(b);
   }
   // N distinguishable categorical colours, one per bar/slice/series. For a small
-  // set (≤ CAT_CURATED) we use the theme's hand-picked `chart` colours; beyond
-  // that they start to look samey, so we sweep the hue wheel from the theme
-  // accent — evenly spaced hues on a scale with a gentle lightness zig-zag so
-  // even adjacent bars stay easy to tell apart.
+  // set (≤ the theme's curated count, CAT_N) we use the theme's hand-picked
+  // `chart` colours; beyond that they start to look samey, so we sweep the hue
+  // wheel from the theme accent — evenly spaced hues on a scale with a gentle
+  // lightness zig-zag so even adjacent bars stay easy to tell apart. Most themes
+  // curate 4; themes with a longer designed list raise it via `catN`.
   const CAT_CURATED = 4;
+  let CAT_N = CAT_CURATED;
   function catColors(n) {
-    if (n <= CAT_CURATED) return PAL.slice(0, n);
+    if (n <= CAT_N) return PAL.slice(0, n);
     const cs = getComputedStyle(document.documentElement);
     const accent = cs.getPropertyValue("--orange").trim() || PAL[0];
     const [h0, s0] = hexToHsl(accent);
@@ -2171,6 +2338,9 @@
       else { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) {} ta.remove(); }
       return;
     }
+    const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
+    const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
+    const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
     const ctr = ev.target.closest("[data-contract]");
     if (ctr) {
@@ -2408,9 +2578,12 @@
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
+    // Screenshot mode captures right after render — draw everything at once.
+    if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }
   }
   applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
   try { state.tocOpen = localStorage.getItem("muckdb.toc") !== "0"; } catch (_) {}
+  try { state.trash = JSON.parse(localStorage.getItem("muckdb.trash") || "{}") || {}; } catch (_) {}
   applyTocState();
 
   // Opened at the bare root? Resume the last-visited location (persisted across
@@ -2429,7 +2602,9 @@
     if (initial.sessionId) loadSession(initial.sessionId, false).then(() => { if (initial.expand) zoomTile(initial.expand); });
   } else pendingNav = initial;
   window.addEventListener("popstate", () => restoreFromNav(parseUrl()));
-  connect();
+  // Screenshot mode is a one-off render: a live socket would only hold the
+  // headless browser's virtual time open.
+  if (!SHOT) connect();
 })();
 </script>
 </body>

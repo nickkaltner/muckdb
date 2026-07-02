@@ -176,6 +176,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
+muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -298,6 +299,27 @@ Use these to check a session's current tiles before updating one, to find a
 database's `id` (for building a `/db/<id>/…` link), or to see what the human has
 been running.
 
+## See what you built — screenshot a panel
+
+`muckdb session screenshot` renders a session (or one tile) exactly as the web
+UI shows it and writes a PNG — so **you can look at your own dashboard** instead
+of guessing how a chart came out:
+
+```sh
+muckdb session screenshot pond-analysis --tile species --out species.png
+# then Read species.png to view it
+```
+
+- Omit `--tile` to capture the whole dashboard; the image auto-fits the content
+  height. `--out` defaults to `muckdb-<session>[-<tile>].png` in the cwd.
+- **Verify visually after building.** After posting tiles, screenshot the
+  session and look at it — wrong chart kind, an empty series, or unreadable
+  labels are obvious in the image and invisible in the CLI output.
+- Needs a Chromium-based browser installed (chromium/chrome/brave/edge; override
+  with `MUCKDB_BROWSER=/path/to/browser`). Renders in ~1s.
+- The same render backs `GET /api/shot?session=<id>&tile=<name>` (returns
+  `image/png`) and the **copy-image button** on every panel in the web UI.
+
 ## Good habits
 
 - **Get it into duckdb first.** Whatever the source or format, land it in a table,
@@ -320,6 +342,9 @@ been running.
   (see "Summarise tabular data with markdown panels" above).
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
+- **Look at what you built.** `muckdb session screenshot <id> [--tile T]` gives
+  you a PNG of the rendered dashboard — read it and check the charts say what you
+  think they say before telling the human it's done.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links
   to a specific table/view/query also work, e.g.
   `/db/<id>/<table>/?view=stats`.

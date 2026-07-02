@@ -56,6 +56,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
+muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -141,6 +142,16 @@ Use these to check a session's current tiles before updating one, to find a
 database's `id` (for building a `/db/<id>/…` link), or to see what the human has
 been running.
 
+## Screenshots — see what you built
+
+`muckdb session screenshot <name> [--tile TILE] [--out F.png]` renders the
+session (or one tile) exactly as the web UI shows it and writes a PNG — read the
+file to check your dashboard looks right. Omit `--tile` for the whole dashboard;
+the height auto-fits the content. Needs a Chromium-based browser (chromium/
+chrome/brave/edge, or `MUCKDB_BROWSER=/path`). The same render is available as
+`GET /api/shot?session=<id>&tile=<name>` (`image/png`) and behind the copy-image
+button on every panel in the web UI.
+
 ## Good habits
 
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
@@ -156,6 +167,9 @@ been running.
   in a chart or explorable view tile beside it.
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
+- **Look at what you built.** `muckdb session screenshot <id> [--tile T]` gives
+  you a PNG of the rendered dashboard — read it and check the charts say what
+  you think they say before telling the human it's done.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links
   to a specific table/view/query also work, e.g.
   `/db/<id>/<table>/?view=stats`.

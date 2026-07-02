@@ -377,6 +377,52 @@ pub fn cli(args: &[String]) -> Result<i32> {
             println!("set tile '{tile_name}' in session {id}");
             Ok(0)
         }
+        // Capture the dashboard (or one panel) as a PNG so agents can *see*
+        // what they built. Renders via a local headless Chromium.
+        "screenshot" | "shot" => {
+            let name = session_arg
+                .context("usage: muckdb session screenshot <name> [--tile T] [--out F.png]")?;
+            let id = slug(&name);
+            let s = load(&id)?.with_context(|| format!("no such session '{id}'"))?;
+            let tile = p.get("tile").map(str::to_string);
+            if let Some(t) = &tile
+                && !s.tiles.iter().any(|x| x.name() == t.as_str())
+            {
+                let names: Vec<&str> = s.tiles.iter().map(|x| x.name()).collect();
+                bail!(
+                    "no tile '{t}' in session {id} (tiles: {})",
+                    names.join(", ")
+                );
+            }
+            let width = p
+                .get("width")
+                .and_then(|w| w.parse().ok())
+                .unwrap_or(crate::shot::DEFAULT_WIDTH);
+            let height = p.get("height").and_then(|h| h.parse().ok());
+            let out = p.get("out").map(PathBuf::from).unwrap_or_else(|| {
+                PathBuf::from(match &tile {
+                    Some(t) => format!("muckdb-{id}-{}.png", slug(t)),
+                    None => format!("muckdb-{id}.png"),
+                })
+            });
+            crate::facade::ensure_daemon()?;
+            let png = crate::shot::capture_png(&id, tile.as_deref(), width, height)?;
+            fs::write(&out, &png).with_context(|| format!("writing {out:?}"))?;
+            let abs = out.canonicalize().unwrap_or(out);
+            match &tile {
+                Some(t) => println!(
+                    "screenshot of tile '{t}' in session {id}: {} ({} kB)",
+                    abs.display(),
+                    png.len() / 1024
+                ),
+                None => println!(
+                    "screenshot of session {id}: {} ({} kB)",
+                    abs.display(),
+                    png.len() / 1024
+                ),
+            }
+            Ok(0)
+        }
         "rm" => {
             let name = session_arg.context("usage: muckdb session rm <name> [--tile T]")?;
             let id = slug(&name);
@@ -396,13 +442,14 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|tile|rm> ...\n\
+                "usage: muckdb session <create|list|post|tile|screenshot|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n  \
+                 screenshot <name> [--tile TILE] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
                  rm <name> [--tile TILE]"
             );
             Ok(2)

@@ -90,12 +90,22 @@ muckdb session tile analysis --name temp --db mydb.db \
 
 muckdb session list
 muckdb session rm analysis --tile temp     # or: rm analysis (whole session)
+
+# capture the dashboard (or one tile) as a PNG — lets an agent *see* the result
+muckdb session screenshot analysis --tile species --out species.png
 ```
 
 Re-running `post`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table`.
 Each data tile has an **explore** button that opens the view in the faceted
-table explorer.
+table explorer, and every panel has a **copy-image** button that puts a PNG of
+the rendered panel on the clipboard, plus an **✕** that hides it into a *trash*
+section of the contents sidebar (click it there to restore it — a per-browser
+preference; other viewers and screenshots still see every panel).
+
+`session screenshot` (and the copy-image button) render through a local headless
+Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a
+browser binary. The image auto-fits the rendered content height.
 
 **Try it:** `./demo.sh` seeds sample data (sales, a regular sensor series, and an
 irregular event stream) and builds a demo dashboard, then prints the URL.
@@ -132,6 +142,7 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
 | `GET /api/sessions` | session dashboards (summaries) |
 | `GET /api/session?id=ID` | one session with its tiles |
+| `GET /api/shot?session=ID&tile=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
 | `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 
 The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`.

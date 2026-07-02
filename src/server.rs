@@ -58,6 +58,7 @@ pub async fn run() -> Result<()> {
         .route("/api/query", get(api_query))
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
+        .route("/api/shot", get(api_shot))
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/ws", get(ws_handler))
@@ -388,6 +389,45 @@ async fn api_session(Query(p): Query<SessionParams>) -> Response {
         Ok(Some(s)) => Json(s).into_response(),
         Ok(None) => (StatusCode::OK, Json(json!({ "error": "no such session" }))).into_response(),
         Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct ShotParams {
+    session: String,
+    tile: Option<String>,
+    width: Option<u32>,
+    height: Option<u32>,
+}
+
+/// Render a session (or one tile) to PNG via a local headless Chromium — the
+/// backend for the copy-image button and for `curl`-able panel captures.
+async fn api_shot(Query(p): Query<ShotParams>) -> Response {
+    // Validate up front so a bad name is a JSON error, not a PNG of one.
+    let id = session::slug(&p.session);
+    match session::load(&id) {
+        Ok(Some(s)) => {
+            if let Some(t) = &p.tile
+                && !s.tiles.iter().any(|x| x.name() == t.as_str())
+            {
+                return error_json(&anyhow::anyhow!("no tile '{t}' in session {id}"));
+            }
+        }
+        Ok(None) => return error_json(&anyhow::anyhow!("no such session '{id}'")),
+        Err(e) => return error_json(&e),
+    }
+    // One capture at a time — each spawns a browser.
+    static LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+    let _guard = LOCK.lock().await;
+    let width = p.width.unwrap_or(crate::shot::DEFAULT_WIDTH);
+    let result = tokio::task::spawn_blocking(move || {
+        crate::shot::capture_png(&id, p.tile.as_deref(), width, p.height)
+    })
+    .await;
+    match result {
+        Ok(Ok(png)) => ([(header::CONTENT_TYPE, "image/png")], png).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("screenshot task failed: {e}")),
     }
 }
 

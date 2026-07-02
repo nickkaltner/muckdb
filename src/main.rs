@@ -8,6 +8,7 @@ mod introspect;
 mod paths;
 mod server;
 mod session;
+mod shot;
 mod skill;
 mod store;
 
@@ -71,7 +72,7 @@ muckdb commands:
   --display              open the web UI (starts the background daemon if needed)
   --status               report whether the daemon is running
   --stop                 stop the background daemon
-  session <subcommand>   build dashboards: create | list | post | tile | rm
+  session <subcommand>   build dashboards: create | list | post | tile | screenshot | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
   skill <install|uninstall|path>   manage the muckdb Claude Code skill
