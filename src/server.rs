@@ -11,7 +11,7 @@ use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
 use axum::response::{Html, IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{Router, http::StatusCode, http::header};
 use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
@@ -59,6 +59,7 @@ pub async fn run() -> Result<()> {
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
         .route("/api/shot", get(api_shot))
+        .route("/api/trash", post(api_trash))
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/ws", get(ws_handler))
@@ -388,6 +389,29 @@ async fn api_session(Query(p): Query<SessionParams>) -> Response {
     match session::load(&p.id) {
         Ok(Some(s)) => Json(s).into_response(),
         Ok(None) => (StatusCode::OK, Json(json!({ "error": "no such session" }))).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct TrashParams {
+    session: String,
+    tile: String,
+    /// "1" to trash, "0" to restore.
+    on: String,
+}
+
+/// The one write endpoint: flip a tile's trashed flag in the session JSON.
+/// The file watcher sees the save and pushes the update to every viewer.
+async fn api_trash(Query(p): Query<TrashParams>) -> Response {
+    let on = p.on != "0";
+    match session::set_tile_trashed(&p.session, &p.tile, on) {
+        Ok(true) => Json(json!({ "ok": true })).into_response(),
+        Ok(false) => (
+            StatusCode::OK,
+            Json(json!({ "error": "no such session or tile" })),
+        )
+            .into_response(),
         Err(e) => error_json(&e),
     }
 }

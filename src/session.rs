@@ -60,6 +60,10 @@ pub enum Tile {
         #[serde(default)]
         title: Option<String>,
         markdown: String,
+        /// Hidden in the dashboard's trash (persisted with the session, so it
+        /// follows the dashboard across browsers — restore from the contents).
+        #[serde(default, skip_serializing_if = "is_false")]
+        trashed: bool,
     },
     View {
         name: String,
@@ -73,13 +77,31 @@ pub enum Tile {
         chart: Box<Chart>,
         #[serde(default)]
         caption: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        trashed: bool,
     },
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 impl Tile {
     pub fn name(&self) -> &str {
         match self {
             Tile::Markdown { name, .. } | Tile::View { name, .. } => name,
+        }
+    }
+
+    pub fn trashed(&self) -> bool {
+        match self {
+            Tile::Markdown { trashed, .. } | Tile::View { trashed, .. } => *trashed,
+        }
+    }
+
+    fn set_trashed(&mut self, on: bool) {
+        match self {
+            Tile::Markdown { trashed, .. } | Tile::View { trashed, .. } => *trashed = on,
         }
     }
 }
@@ -187,13 +209,31 @@ fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
 }
 
 /// Insert or replace a tile (matched by name), preserving order.
-fn upsert_tile(session: &mut Session, tile: Tile) {
+fn upsert_tile(session: &mut Session, mut tile: Tile) {
     if let Some(slot) = session.tiles.iter_mut().find(|t| t.name() == tile.name()) {
+        // A re-post keeps the trashed flag: agents update tiles in loops, and
+        // an update must not resurrect a panel the human threw away.
+        tile.set_trashed(slot.trashed());
         *slot = tile;
     } else {
         session.tiles.push(tile);
     }
     session.updated = store::now_millis();
+}
+
+/// Set or clear a tile's trashed flag, persisting the session. Returns whether
+/// the session and tile both existed.
+pub fn set_tile_trashed(id: &str, tile: &str, on: bool) -> Result<bool> {
+    let Some(mut s) = load(id)? else {
+        return Ok(false);
+    };
+    let Some(t) = s.tiles.iter_mut().find(|t| t.name() == tile) else {
+        return Ok(false);
+    };
+    t.set_trashed(on);
+    s.updated = store::now_millis();
+    save(&s)?;
+    Ok(true)
 }
 
 // ---- CLI -----------------------------------------------------------------
@@ -343,6 +383,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 name: p.get("name").unwrap_or("note").to_string(),
                 title: p.get("title").map(str::to_string),
                 markdown: md,
+                trashed: false,
             };
             let mut s = load_or_new(&id, None)?;
             upsert_tile(&mut s, tile);
@@ -392,6 +433,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     events: parse_markers(&p.get_all("event")),
                 }),
                 caption: p.get("caption").map(str::to_string),
+                trashed: false,
             };
             let mut s = load_or_new(&id, None)?;
             upsert_tile(&mut s, tile);

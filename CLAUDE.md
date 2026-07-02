@@ -181,6 +181,10 @@ button on every panel in the web UI.
   in a chart or explorable view tile beside it.
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
+- **Respect the trash.** The human can trash a panel in the UI; the flag persists
+  on the tile (`trashed: true` in `muckdb ls session`) and survives re-posts —
+  updating a trashed tile does not resurface it. Delete for real with
+  `muckdb session rm <session> --tile <name>`.
 - **Look at what you built.** `muckdb session screenshot <id> [--tile T]` gives
   you a PNG of the rendered dashboard — read it and check the charts say what
   you think they say before telling the human it's done.

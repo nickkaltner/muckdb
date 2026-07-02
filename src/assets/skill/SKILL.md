@@ -189,6 +189,10 @@ muckdb session rm <name> [--tile TILE]
 - `--md -` reads the markdown from stdin (good for long/heredoc content). An
   inline `--md "..."` honours `\n`/`\t` escapes (shells leave them literal
   inside double quotes), so `--md "# Title\n\nBody"` renders as real lines.
+- **Respect the trash.** The human can trash a panel in the UI; the flag
+  persists on the tile (`trashed: true` in `muckdb ls session`) and survives
+  re-posts — updating a trashed tile does not resurface it. Delete for real
+  with `muckdb session rm <session> --tile <name>`.
 - A tile is a **view** (`--view`, references a named duckdb view) or **inline
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table

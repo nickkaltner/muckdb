@@ -527,8 +527,6 @@
     pageMode: "auto", pageSize: 25,
     sql: "",
     sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, zoomPanel: null,
-    trash: {},          // session id → names of panels hidden in this browser
-
     tocOpen: true,      // session table-of-contents visible (wide screens only)
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
@@ -1650,12 +1648,12 @@
     renderSessionHead(s);
     let tiles = s.tiles || [];
     if (SHOT && SHOT.tile) tiles = tiles.filter((t) => t.name === SHOT.tile);
-    // Panels the viewer has trashed are hidden here and listed in the TOC's
-    // trash section instead. A per-browser preference — screenshot mode (a
-    // fresh profile) and other viewers still see everything.
-    const trashedNames = SHOT ? [] : pruneTrash(s);
-    const trashed = tiles.filter((t) => trashedNames.includes(t.name));
-    tiles = tiles.filter((t) => !trashedNames.includes(t.name));
+    // Trashed panels are hidden here and listed in the TOC's trash section
+    // instead. The flag lives on the tile in the session JSON, so trash follows
+    // the dashboard (every browser, and whole-dashboard screenshots) — only an
+    // explicit single-tile screenshot renders a trashed panel.
+    const trashed = SHOT && SHOT.tile ? [] : tiles.filter((t) => t.trashed);
+    tiles = tiles.filter((t) => !trashed.includes(t));
     $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("")
       : trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
       : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
@@ -1668,33 +1666,19 @@
     }).filter(Boolean);
     if (SHOT) Promise.allSettled(loads).then(markShotReady);
   }
-  // ---- panel trash (per-browser hide/restore) ---------------------------
-  // Drop trash entries for tiles that no longer exist, then return the list.
-  function pruneTrash(s) {
-    const id = state.selSession;
-    if (!id || !state.trash[id]) return [];
-    const names = new Set((s.tiles || []).map((t) => t.name));
-    const list = state.trash[id].filter((n) => names.has(n));
-    if (list.length) state.trash[id] = list; else delete state.trash[id];
-    return list;
-  }
-  function saveTrash() { try { localStorage.setItem("muckdb.trash", JSON.stringify(state.trash)); } catch (_) {} }
-  function trashTile(name) {
+  // ---- panel trash (persisted on the tile in the session JSON) ----------
+  // Optimistic: flip the flag locally and re-render at once, then tell the
+  // daemon; its save triggers the file watcher, which confirms via WebSocket.
+  function setTileTrash(name, on) {
     if (!state.selSession || !state.sessionData) return;
-    const list = state.trash[state.selSession] || (state.trash[state.selSession] = []);
-    if (!list.includes(name)) list.push(name);
-    saveTrash();
-    if (state.zoomPanel === name) closeZoom();
+    const t = (state.sessionData.tiles || []).find((x) => x.name === name);
+    if (t) t.trashed = on;
+    if (on && state.zoomPanel === name) closeZoom();
     renderPanels(state.sessionData);
+    fetch(`/api/trash?session=${encodeURIComponent(state.selSession)}&tile=${encodeURIComponent(name)}&on=${on ? 1 : 0}`, { method: "POST" }).catch(() => {});
   }
-  function restoreTile(name) {
-    const list = state.trash[state.selSession] || [];
-    const i = list.indexOf(name);
-    if (i >= 0) list.splice(i, 1);
-    if (!list.length) delete state.trash[state.selSession];
-    saveTrash();
-    if (state.sessionData) renderPanels(state.sessionData);
-  }
+  function trashTile(name) { setTileTrash(name, true); }
+  function restoreTile(name) { setTileTrash(name, false); }
   // Screenshot mode: once every tile has loaded (and a layout pass has run),
   // stamp the rendered content height on <html> for the capture pass to read.
   function markShotReady() {
@@ -2786,7 +2770,17 @@
   applyTheme(new URLSearchParams(location.search).get("theme")
     || (() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
   try { state.tocOpen = localStorage.getItem("muckdb.toc") !== "0"; } catch (_) {}
-  try { state.trash = JSON.parse(localStorage.getItem("muckdb.trash") || "{}") || {}; } catch (_) {}
+  // One-shot migration: trash used to be per-browser (localStorage); it now
+  // lives on the tile in the session JSON. Push any legacy entries to the
+  // daemon once, then drop the key.
+  try {
+    const legacyTrash = JSON.parse(localStorage.getItem("muckdb.trash") || "null");
+    if (legacyTrash) {
+      Object.entries(legacyTrash).forEach(([sid, names]) => (names || []).forEach((n) =>
+        fetch(`/api/trash?session=${encodeURIComponent(sid)}&tile=${encodeURIComponent(n)}&on=1`, { method: "POST" }).catch(() => {})));
+      localStorage.removeItem("muckdb.trash");
+    }
+  } catch (_) {}
   applyTocState();
 
   // Opened at the bare root? Resume the last-visited location (persisted across
