@@ -685,6 +685,26 @@
       grad2: ["#3f86a8", "#1f5470"],
       chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
     },
+    // "glacier": cold daylight on ice — the cool counterpart to paper's warm
+    // cream. Pale ice-blue ground, deep arctic-slate ink, glacial azure accent;
+    // bars stay square-edged (no radius) like cut ice, and the chart palette
+    // lives entirely on the cool half of the wheel.
+    glacier: {
+      label: "glacier", light: true, vars: {
+        bg: "#e9eff4", surface: "#f4f8fb", raised: "#fdfeff", line: "#c3d2dd", "line-soft": "#dae4ec",
+        fg: "#14212b", muted: "#55707f", faint: "#8aa0ad", "on-accent": "#f4fbff", mist: "#6f8b9c",
+        orange: "#0e7fc0", amber: "#2ba5d8", ember: "#085e8e", "orange-dim": "#3f7fa0", teal: "#0f8f7a",
+        ok: "#3f8f4f", fail: "#c43d4b",
+        glow: "radial-gradient(1000px 460px at 80% -14%, rgba(14,143,190,0.07), transparent 70%)",
+        "grad-panel": "linear-gradient(180deg, rgba(20,33,43,0.03), rgba(20,33,43,0) 58%)",
+        hi: "inset 0 1px 0 rgba(255,255,255,0.7)",
+        selection: "rgba(14, 143, 190, 0.22)",
+        "anno-target": "#0f8f7a", "anno-threshold": "#c43d4b", "anno-event": "#5a55c9",
+      },
+      grad2: ["#5fc8e8", "#085e8e"],
+      bargrad: ["#dff4fc", "#2ba5d8", "#0a4a70"],
+      chart: ["#0e7fc0", "#0f8f7a", "#5a55c9", "#b8437f", "#52708a", "#0a97ac", "#5e8f3e", "#8a6fd0"],
+    },
     hearth: {
       label: "hearth", flat: true, vars: {
         bg: "#1d1510", surface: "#241a13", raised: "#30231a", line: "#3f2e21", "line-soft": "#281d15",
@@ -1224,7 +1244,8 @@
         const ind = state.sort === c ? `<span class="ind">${state.dir === "asc" ? "▲" : "▼"}</span>` : "";
         return `<th class="sortable" data-sortcol="${attr(c)}">${esc(c)}${ind}</th>`;
       }).join("");
-      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb)).join("") + "</tr>").join("");
+      const au = autoEpochUnits(allCols, rows, state.selDb, state.selTable);
+      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i])).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       // Uniform-width labels keep the native select compact so its chevron sits
       // right next to the value (the aria-label + pagination context carry meaning).
@@ -1238,13 +1259,26 @@
       maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function cell(v, col, table, db) {
+  function cell(v, col, table, db, autoEpoch) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
     if (f && (f.tz || f.epoch) && String(v).trim() !== "") return `<td>${applyFmtHtml(f, v)}</td>`;
     if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${applyFmtHtml(f, Number(v))}</td>`;
+    // Auto-detected epoch column (no explicit format): show the timestamp the
+    // number means, pinned to UTC like the charts. `muckdb format --tz/--epoch`
+    // takes over the moment one is set.
+    if (!f && autoEpoch && String(v).trim() !== "") return `<td>${applyFmtHtml({ epoch: autoEpoch, tz: "utc" }, v)}</td>`;
     return `<td>${esc(String(v))}</td>`;
+  }
+  // Per-column auto-epoch units for a rowset (chart detection, reused) — so
+  // row/query/tile tables render 1782345600000 as a timestamp, not 13 digits.
+  // Columns with an explicit format are left to it (null).
+  function autoEpochUnits(cols, rows, db, table) {
+    return cols.map((c, i) => {
+      if (db && colFmt(db, c, table)) return null;
+      return epochUnit(c, rows.slice(0, 50).map((r) => r[i]));
+    });
   }
 
   async function loadStats() {
@@ -1446,7 +1480,8 @@
       const cols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">Query returned no rows.</div>'; return; }
       const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
-      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb)).join("") + "</tr>").join("");
+      const au = autoEpochUnits(cols, rows, state.selDb, null);
+      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb, au[i])).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -1823,7 +1858,8 @@
   function miniTable(cols, rows, db, table, shrunk) {
     const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
     const shown = rows.slice(0, 100);
-    const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db)).join("") + "</tr>").join("");
+    const au = autoEpochUnits(cols, shown, db, table);
+    const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i])).join("") + "</tr>").join("");
     const more = rows.length > shown.length
       ? `<div class="note" style="padding:6px 12px">+${rows.length - shown.length} more rows — use explore to see them all.</div>` : "";
     return `<div class="preview-wrap${shrunk ? " shrunk" : ""}"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
@@ -2034,6 +2070,24 @@
       return Date.UTC(g("year"), g("month") - 1, g("day"), g("hour") % 24, g("minute"), g("second")) - Math.floor(t / 1000) * 1000;
     } catch (_) { return 0; }
   }
+  // Time tooltips say which clock they're on ("UTC", "AEST", "GMT+10") — a bare
+  // 10:00 on a zone-shifted axis is otherwise ambiguous. Added as an afterTitle
+  // line so the adapter's own title formatting is left alone.
+  function zoneLabel(tz) {
+    if (!tz || tz === "utc") return "UTC";
+    const z = tz === "local" ? undefined : tz;
+    try {
+      const p = new Intl.DateTimeFormat("en-US", { timeZone: z, timeZoneName: "short" }).formatToParts(new Date());
+      const n = p.find((x) => x.type === "timeZoneName");
+      return n ? n.value : String(tz);
+    } catch (_) { return String(tz); }
+  }
+  function addZoneTitle(o, tz) {
+    o.plugins = o.plugins || {};
+    o.plugins.tooltip = o.plugins.tooltip || {};
+    const cbs = (o.plugins.tooltip.callbacks = o.plugins.tooltip.callbacks || {});
+    cbs.afterTitle = () => zoneLabel(tz);
+  }
   function chartOpts(scatter, time, stacked, minUnit, offset) {
     // Major (unit-boundary) ticks get the next unit's format via major.enabled —
     // so on an hourly axis each midnight reads "Jun 30" in bold instead of a
@@ -2174,6 +2228,7 @@
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
       const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX, false, minUnit))); if (anno) o.plugins.muckAnno = anno;
+      if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
       o.plugins.legend.display = false; // one series — the title already names it
       return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
     }
@@ -2223,6 +2278,7 @@
     });
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar"))); if (anno) o.plugins.muckAnno = anno;
+    if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
   }
@@ -2726,7 +2782,9 @@
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }
   }
-  applyTheme((() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
+  // Theme: ?theme= wins (shareable links, screenshot testing), else the saved pick.
+  applyTheme(new URLSearchParams(location.search).get("theme")
+    || (() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
   try { state.tocOpen = localStorage.getItem("muckdb.toc") !== "0"; } catch (_) {}
   try { state.trash = JSON.parse(localStorage.getItem("muckdb.trash") || "{}") || {}; } catch (_) {}
   applyTocState();
