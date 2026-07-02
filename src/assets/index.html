@@ -2355,9 +2355,14 @@
       if (sentinel) { html += blocks[+sentinel[1]]; i++; continue; }
       const h = ln.match(/^(#{1,3})\s+(.*)/);
       if (h) { html += `<h${h[1].length}>${inl(h[2])}</h${h[1].length}>`; i++; continue; }
-      // pipe table: a header row, a |---|---| separator, then body rows
+      // pipe table: a header row, a |---|---| separator, then body rows.
+      // GFM's \| escapes a literal pipe inside a cell — split on unescaped
+      // pipes only (via a placeholder), then restore the pipes.
       if (ln.includes("|") && i + 1 < lines.length && lines[i + 1].includes("|") && /^\s*\|?[\s:|-]*-[\s:|-]*\|?\s*$/.test(lines[i + 1])) {
-        const cells = (s) => s.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => inl(c.trim()));
+        const PIPE = "\u0001";
+        const cells = (s) => s.replace(/\\\|/g, PIPE)
+          .replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|")
+          .map((c) => inl(c.trim().replace(new RegExp(PIPE, "g"), "|")));
         const head = cells(ln); i += 2;
         const body = [];
         while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") { body.push(cells(lines[i])); i++; }
