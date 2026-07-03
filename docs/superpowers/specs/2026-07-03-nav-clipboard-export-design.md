@@ -101,6 +101,12 @@ session-view export button and header import button in `src/assets/index.html`;
 routes in `src/server.rs`; CLI subcommands wired in `src/session.rs`'s
 dispatcher.
 
+## 4. `muckdb --start` (added after approval)
+
+Start the background daemon without opening a browser: exactly `--display`
+minus the `open_browser` call. Sits beside `--status`/`--stop`/`--display` in
+`main.rs` and the help/docs.
+
 ## Testing
 
 - Rust unit tests: manifest round-trip, session-id collision suffixing, format
