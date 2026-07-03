@@ -136,6 +136,14 @@ Once it's a table, the rest is normal SQL: build **views** for anything you want
 to chart or let the human explore, then post tiles. If a format isn't directly
 readable, convert it to CSV/JSON/Parquet first, then load that.
 
+**Put the database somewhere durable — never in a temp/scratchpad dir.** The
+dashboard outlives your session, and its tiles keep pointing at the `--db` path
+you posted: a database created under `/tmp` or a session scratchpad disappears
+when that dir is cleaned, and every explore/chart on it then fails with
+"database does not exist". Create session databases in the project directory or
+a stable data dir (e.g. `~/.local/share/muckdb/data/`) instead — `muckdb
+session tile` warns when a `--db` lives in a temp dir.
+
 ## The core workflow
 
 ```sh

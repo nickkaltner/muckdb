@@ -320,7 +320,7 @@ fn describe(db: &str, table: &str) -> Result<Vec<(String, String)>> {
 /// List the tables and views in a database.
 pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let rows = query_json(
         db,
@@ -367,7 +367,7 @@ pub fn preview(
     dir: Option<&str>,
 ) -> Result<Preview> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     // Column order is authoritative from DESCRIBE (also drives text search and
     // the empty-result case).
@@ -425,7 +425,7 @@ pub fn export(
     hidden: &[String],
 ) -> Result<String> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
     // Search still runs across every column; only the projection drops hidden ones.
@@ -484,7 +484,7 @@ pub struct QueryResult {
 /// Run an arbitrary read-only SQL statement and return its rows.
 pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let rows = query_json(db, sql)?;
     let columns: Vec<String> = match rows.first() {
@@ -521,7 +521,7 @@ pub struct ColumnSchema {
 /// The schema (column definitions) of a table, via `DESCRIBE`.
 pub fn schema(db: &str, table: &str) -> Result<Vec<ColumnSchema>> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let rows = query_json(db, &format!("DESCRIBE {}", quote_ident(table)))?;
     Ok(rows
@@ -614,7 +614,7 @@ pub fn facets(
     filters: &[Filter],
 ) -> Result<Vec<ColumnFacet>> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let cols = describe(db, table)?;
     let all_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
@@ -742,7 +742,7 @@ const EXACT_DISTINCT_MAX: i64 = 10_000;
 /// histograms for numeric columns, and top values (facets) for the rest.
 pub fn stats(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Result<TableStats> {
     if !Path::new(db).exists() {
-        bail!("database file does not exist");
+        bail!("database file does not exist: {db}");
     }
     let cols = describe(db, table)?;
     let tbl = quote_ident(table);

@@ -187,6 +187,11 @@ button on every panel in the web UI.
 
 ## Good habits
 
+- **Keep session databases somewhere durable.** Tiles keep pointing at the
+  `--db` path they were posted with; a db created under `/tmp` or a session
+  scratchpad breaks the dashboard ("database does not exist") when that dir is
+  cleaned. Use the project dir or a stable data dir (e.g.
+  `~/.local/share/muckdb/data/`) — `session tile` warns on temp paths.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).

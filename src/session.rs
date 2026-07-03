@@ -415,9 +415,24 @@ fn closest<'a>(target: &str, options: impl Iterator<Item = &'a str>) -> Option<&
 /// or column fails loudly at post time instead of rendering an empty panel.
 /// A db that exists but can't be queried right now (e.g. lock-held) only
 /// warns — a busy database shouldn't block a dashboard update.
+/// True for paths that get cleaned out from under a dashboard (system temp
+/// dirs, agent session scratchpads) — a tile that references one will show
+/// "database does not exist" as soon as the dir is reaped.
+fn is_volatile_path(db: &str) -> bool {
+    let temp = std::env::temp_dir().display().to_string();
+    db.starts_with(&temp) || db.starts_with("/tmp/") || db.starts_with("/var/tmp/")
+}
+
 fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart) -> Result<()> {
     if !std::path::Path::new(db).exists() {
         bail!("database not found: {db}");
+    }
+    if is_volatile_path(db) {
+        eprintln!(
+            "warning: --db {db} lives in a temp directory — the dashboard will break when it's \
+             cleaned. Keep session databases somewhere durable (e.g. the project dir or \
+             ~/.local/share/muckdb/data/)."
+        );
     }
     // Resolve the columns the tile will plot.
     let described = match view {
@@ -754,6 +769,19 @@ mod tests {
 
     fn s(v: &str) -> String {
         v.to_string()
+    }
+
+    #[test]
+    fn volatile_paths_are_flagged() {
+        assert!(is_volatile_path(
+            "/tmp/claude-1000/x/scratchpad/demo.duckdb"
+        ));
+        assert!(is_volatile_path(&format!(
+            "{}/x.duckdb",
+            std::env::temp_dir().display()
+        )));
+        assert!(!is_volatile_path("/home/anko/muckdb-demo/demo.duckdb"));
+        assert!(!is_volatile_path("relative.duckdb"));
     }
 
     #[test]
