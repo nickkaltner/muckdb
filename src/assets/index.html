@@ -416,9 +416,11 @@
   .md h1 { font-size: 18px; } .md h2 { font-size: 16px; } .md h3 { font-size: 14px; }
   .md p { margin: 0 0 10px; }
   .md ul, .md ol { margin: 0 0 10px; padding-left: 20px; }
-  .md code { font-family: var(--mono); background: var(--raised); color: var(--orange); padding: 1px 5px; border-radius: 3px; font-size: 12px; }
+  /* Inline code never wraps mid-token — a path or flag split across lines is
+     unreadable. Block code (pre) keeps its own lines and scrolls instead. */
+  .md code { font-family: var(--mono); background: var(--raised); color: var(--orange); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap; }
   .md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; overflow: auto; }
-  .md pre code { background: none; color: var(--fg); padding: 0; }
+  .md pre code { background: none; color: var(--fg); padding: 0; white-space: pre; }
   .md a { color: var(--ripple, var(--orange)); }
   .md strong { color: var(--fg); }
   /* markdown tables mirror the data-panel tables: orange header on a raised bar,
