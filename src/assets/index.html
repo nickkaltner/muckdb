@@ -376,7 +376,14 @@
   .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
-  .panel { background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
+  .panel { position: relative; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
+  /* Height grip: an ⌐ corner in the bottom-right of every tile — faint while the
+     panel is hovered, solid on the grip itself; drag up/down to resize. */
+  .panel-grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: ns-resize; opacity: 0; z-index: 4; }
+  .panel-grip::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 10px; height: 10px; border-right: 2px solid var(--orange); border-bottom: 2px solid var(--orange); border-radius: 0 0 3px 0; }
+  .panel:hover .panel-grip { opacity: 0.3; }
+  .panel-grip:hover, .panel-grip.dragging { opacity: 1; }
+  body.shot .panel-grip { display: none !important; }
   .panel.sel { box-shadow: inset 3px 0 0 0 var(--orange), var(--hi); }
   .panel.wide { grid-column: 1 / -1; }
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
@@ -1695,6 +1702,7 @@
       : trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
       : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
     renderToc(tiles, trashed);
+    tiles.forEach((t) => { if (t.type === "markdown") applyTileHeight(t.name); });
     state.panelSel = -1;
     const loads = tiles.map((t) => {
       if (t.type !== "view") return null;
@@ -1864,7 +1872,7 @@
   }
   function panelHtml(t) {
     if (t.type === "markdown") {
-      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
+      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div>${gripHtml(t.name)}</div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -1878,7 +1886,30 @@
     return `<div class="panel" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>
         <span class="panel-actions">${sqlBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
-      <div class="panel-body"><div class="panel-chart"></div>${cap}</div></div>`;
+      <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${gripHtml(t.name)}</div>`;
+  }
+  // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
+  let tileHeights = {};
+  try { tileHeights = JSON.parse(localStorage.getItem("muckdb.tileh") || "{}") || {}; } catch (_) {}
+  function gripHtml(name) {
+    return `<div class="panel-grip" data-grip="${attr(name)}" title="Drag to resize height (double-click to reset)"></div>`;
+  }
+  function tileHKey(name) { return (state.selSession || "") + "/" + name; }
+  // The element whose height the grip controls: the chart/table slot on data
+  // tiles, the markdown body on note tiles.
+  function tileBodyEl(name) {
+    const p = document.querySelector(`[data-tile="${cssEsc(name)}"]`);
+    if (!p) return null;
+    return p.querySelector(".panel-chart") || p.querySelector(".panel-body .md") || p.querySelector(".panel-body");
+  }
+  function setTileHeight(el, h) { el.style.height = h + "px"; el.style.overflowY = "auto"; }
+  function applyTileHeight(name) {
+    const h = tileHeights[tileHKey(name)];
+    const el = tileBodyEl(name);
+    if (el && h) setTileHeight(el, h);
+  }
+  function saveTileHeights() {
+    try { localStorage.setItem("muckdb.tileh", JSON.stringify(tileHeights)); } catch (_) {}
   }
   async function loadTileChart(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
@@ -1892,9 +1923,10 @@
     const kind = (t.chart && t.chart.kind) || "table";
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
-    if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, state.tableShrunk[t.name]); return; }
+    if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, state.tableShrunk[t.name]); applyTileHeight(t.name); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
+    applyTileHeight(t.name);
     try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null))); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -2930,6 +2962,42 @@
       try { localStorage.removeItem("muckdb.tocw"); } catch (_) {}
     });
   })();
+  // Tile height grips (delegated — panels re-render). Drag resizes the tile's
+  // body; double-click restores the default height.
+  document.addEventListener("pointerdown", (e) => {
+    const grip = e.target.closest("[data-grip]");
+    if (!grip) return;
+    e.preventDefault();
+    const name = grip.dataset.grip;
+    const el = tileBodyEl(name);
+    if (!el) return;
+    const startY = e.clientY, startH = el.getBoundingClientRect().height;
+    grip.classList.add("dragging");
+    grip.setPointerCapture(e.pointerId);
+    const move = (ev) => setTileHeight(el, clamp(Math.round(startH + (ev.clientY - startY)), 80, 1600));
+    const up = () => {
+      grip.classList.remove("dragging");
+      grip.removeEventListener("pointermove", move);
+      grip.removeEventListener("pointerup", up);
+      grip.removeEventListener("pointercancel", up);
+      tileHeights[tileHKey(name)] = Math.round(el.getBoundingClientRect().height);
+      saveTileHeights();
+    };
+    grip.addEventListener("pointermove", move);
+    grip.addEventListener("pointerup", up);
+    grip.addEventListener("pointercancel", up);
+  });
+  document.addEventListener("dblclick", (e) => {
+    const grip = e.target.closest("[data-grip]");
+    if (!grip) return;
+    const name = grip.dataset.grip;
+    delete tileHeights[tileHKey(name)];
+    saveTileHeights();
+    const el = tileBodyEl(name);
+    if (el) { el.style.height = ""; el.style.overflowY = ""; }
+    const t = sessionTile(name);
+    if (t && t.type === "view") loadTileChart(t); // restore the default slot height
+  });
   // Screenshot mode is a one-off render: a live socket would only hold the
   // headless browser's virtual time open.
   if (!SHOT) connect();
