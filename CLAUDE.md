@@ -11,7 +11,7 @@ UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run wit
   present results to the human.
 
 The first `muckdb` call starts the background server automatically. You don't
-need to manage it (`muckdb --status` / `--stop` / `--display` exist if needed).
+need to manage it (`muckdb start` / `--status` / `--stop` / `--display` exist if needed).
 
 ## When to use it
 

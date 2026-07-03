@@ -36,6 +36,12 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         }
         Some("--status") => daemon::status(),
         Some("--stop") => daemon::stop(),
+        // Start the background daemon without opening a browser.
+        Some("start" | "--start") => {
+            facade::ensure_daemon()?;
+            println!("muckdb daemon serving at http://localhost:{}", facade::PORT);
+            Ok(0)
+        }
         // muckdb's own help (duckdb's help, rebranded, with muckdb commands on top).
         Some("--help" | "-help" | "-h" | "help") => help(),
         // Session dashboards: `muckdb session <create|list|post|tile|rm> ...`
@@ -70,6 +76,7 @@ Runs exactly like `duckdb` (same arguments, stdout, and exit codes) and also
 records every invocation and serves a live web UI at http://localhost:11000.
 
 muckdb commands:
+  start                  start the background daemon (without opening a browser)
   --display              open the web UI (starts the background daemon if needed)
   --status               report whether the daemon is running
   --stop                 stop the background daemon
