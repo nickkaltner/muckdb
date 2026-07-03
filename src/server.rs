@@ -67,6 +67,7 @@ pub async fn run() -> Result<()> {
                 .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024 * 1024)),
         )
         .route("/api/shot", get(api_shot))
+        .route("/api/forget", post(api_forget))
         .route("/api/trash", post(api_trash))
         .route("/api/activity", post(api_activity))
         .route("/chart.js", get(chart_js))
@@ -439,6 +440,21 @@ async fn api_session_import(body: axum::body::Bytes) -> Response {
         Ok(Ok(imported)) => Json(json!({ "ok": true, "id": imported.session.id })).into_response(),
         Ok(Err(e)) => error_json(&e),
         Err(e) => error_json(&anyhow::anyhow!("import task failed: {e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct ForgetParams {
+    db: String,
+}
+
+/// Append a "forget this database" tombstone (the error card's "remove this
+/// db" button). Using the db again resurfaces it; the history watcher pushes
+/// the shrunken list to every viewer.
+async fn api_forget(Query(p): Query<ForgetParams>) -> Response {
+    match store::forget_db(&p.db) {
+        Ok(()) => Json(json!({ "ok": true })).into_response(),
+        Err(e) => error_json(&e),
     }
 }
 

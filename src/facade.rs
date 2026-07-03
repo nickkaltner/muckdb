@@ -117,6 +117,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         phase: Phase::Start,
         exit_code: None,
         session: session.clone(),
+        forget: false,
     })?;
 
     // Inherit stdio so muckdb behaves exactly like duckdb (interactive shell,
@@ -136,6 +137,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         phase: Phase::End,
         exit_code: Some(code),
         session,
+        forget: false,
     })?;
 
     Ok(code)

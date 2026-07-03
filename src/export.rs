@@ -331,6 +331,7 @@ fn record_import(db: &Path, session_id: &str, seq: u64) -> Result<()> {
         phase,
         exit_code,
         session: Some(session_id.to_string()),
+        forget: false,
     };
     store::append(&mk(store::Phase::Start, None))?;
     store::append(&mk(store::Phase::End, Some(0)))

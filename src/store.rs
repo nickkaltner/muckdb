@@ -39,6 +39,14 @@ pub struct Record {
     /// The session this invocation belongs to (from `MUCKDB_SESSION`), if any.
     #[serde(default)]
     pub session: Option<String>,
+    /// A "forget this database" tombstone rather than an invocation: hides
+    /// `db_path` from the databases list until something touches it again.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub forget: bool,
+}
+
+fn is_false(b: &bool) -> bool {
+    !*b
 }
 
 /// A folded view of one invocation, derived from its `Start`/`End` records.
@@ -116,8 +124,16 @@ pub fn read_all() -> Result<Vec<Record>> {
 
 /// Fold raw records into the served `State`.
 pub fn derive_state(records: &[Record]) -> State {
+    // The most recent "forget" tombstone per database path.
+    let mut forgets: std::collections::BTreeMap<&str, u64> = std::collections::BTreeMap::new();
+    for rec in records.iter().filter(|r| r.forget) {
+        if let Some(db) = &rec.db_path {
+            let e = forgets.entry(db).or_default();
+            *e = (*e).max(rec.ts);
+        }
+    }
     let mut history: Vec<Invocation> = Vec::new();
-    for rec in records {
+    for rec in records.iter().filter(|r| !r.forget) {
         match rec.phase {
             Phase::Start => history.push(Invocation {
                 id: rec.id,
@@ -141,17 +157,35 @@ pub fn derive_state(records: &[Record]) -> State {
         }
     }
 
-    // Databases, most-recently-touched first, de-duplicated.
+    // Databases, most-recently-touched first, de-duplicated. A db whose most
+    // recent touch predates its last forget tombstone stays hidden (using it
+    // again resurfaces it).
     let mut databases: Vec<String> = Vec::new();
     for inv in history.iter().rev() {
         if let Some(db) = &inv.db_path
             && !databases.contains(db)
+            && forgets.get(db.as_str()).is_none_or(|&f| inv.ts > f)
         {
             databases.push(db.clone());
         }
     }
 
     State { history, databases }
+}
+
+/// Append a "forget this database" tombstone (the web UI's "remove this db").
+pub fn forget_db(path: &str) -> Result<()> {
+    append(&Record {
+        id: now_millis(),
+        ts: now_millis(),
+        cwd: String::new(),
+        args: vec!["db".into(), "forget".into()],
+        db_path: Some(path.to_string()),
+        phase: Phase::End,
+        exit_code: Some(0),
+        session: None,
+        forget: true,
+    })
 }
 
 /// Read the store and return the derived state in one step.
@@ -173,7 +207,30 @@ mod tests {
             phase,
             exit_code: exit,
             session: None,
+            forget: false,
         }
+    }
+
+    #[test]
+    fn forget_hides_a_db_until_it_is_used_again() {
+        let mut forget = rec(3, Phase::End, Some("/a.db"), Some(0));
+        forget.forget = true;
+        // Used (ts 1-2), forgotten (ts 3) → hidden; not an invocation either.
+        let records = vec![
+            rec(1, Phase::Start, Some("/a.db"), None),
+            rec(2, Phase::End, Some("/a.db"), Some(0)),
+            forget.clone(),
+        ];
+        let state = derive_state(&records);
+        assert!(state.databases.is_empty());
+        assert_eq!(state.history.len(), 1); // the tombstone is not history
+
+        // Touched again after the tombstone → resurfaces.
+        let mut records = records;
+        records.push(rec(9, Phase::Start, Some("/a.db"), None));
+        records.push(rec(9, Phase::End, Some("/a.db"), Some(0)));
+        let state = derive_state(&records);
+        assert_eq!(state.databases, vec!["/a.db".to_string()]);
     }
 
     #[test]

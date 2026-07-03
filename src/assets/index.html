@@ -1089,7 +1089,12 @@
     $("results").innerHTML = '<div class="note">loading tables…</div>';
     try {
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(path))).json();
-      if (data.error) { $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>`; syncUrl(true); return; }
+      if (data.error) {
+        // A dead db (e.g. deleted file) can be dropped from the list right here.
+        $("results").innerHTML = `<div class="note err">${esc(data.error)}</div>
+          <div class="note"><button class="panel-act" data-forget-db="${attr(path)}">remove this db</button></div>`;
+        syncUrl(true); return;
+      }
       state.tables = data.tables || [];
       await ensureFormats(path);
       renderTableNav();
@@ -2675,6 +2680,25 @@
       ctr.classList.toggle("active", shrunk);
       ctr.title = shrunk ? "Show all rows" : "Shrink to fewer rows";
       ctr.innerHTML = shrunk ? SVG_EXPAND_ROWS : SVG_CONTRACT;
+      return;
+    }
+    const fg = ev.target.closest("[data-forget-db]");
+    if (fg) {
+      const db = fg.dataset.forgetDb;
+      fetch("/api/forget?db=" + encodeURIComponent(db), { method: "POST" })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r.error) throw new Error(r.error);
+          toast("removed " + basename(db) + " from the list");
+          if (state.selDb === db) {
+            state.selDb = null; state.selTable = null; state.tables = [];
+            renderDbNav(); renderTableNav();
+            $("results").innerHTML = '<div class="note">database removed from the list — pick another from the db menu.</div>';
+            $("facet-panel").innerHTML = "";
+            syncUrl(false);
+          }
+        })
+        .catch((e) => toast("remove failed: " + ((e && e.message) || e), true));
       return;
     }
     const openDb = ev.target.closest("[data-open-db]");
