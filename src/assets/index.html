@@ -692,7 +692,9 @@
         orange: "#2d6e8e", amber: "#3f86a8", ember: "#1f5470", "orange-dim": "#356b86", teal: "#3f8f86",
         ok: "#5a8c3a", fail: "#b23b34",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(45,110,142,0.05), transparent 70%)",
-        "grad-panel": "linear-gradient(180deg, rgba(43,42,38,0.028), rgba(43,42,38,0) 58%)",
+        // Panels shade darker toward the bottom (ink settling on paper), with
+        // the inset `hi` keeping a lit top edge.
+        "grad-panel": "linear-gradient(180deg, rgba(43,42,38,0) 40%, rgba(43,42,38,0.055))",
         hi: "inset 0 1px 0 rgba(255,255,255,0.6)",
       },
       grad2: ["#3f86a8", "#1f5470"],
