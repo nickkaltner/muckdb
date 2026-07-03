@@ -83,6 +83,9 @@
   .zoom-actions { margin-left: auto; display: flex; gap: 8px; }
   .zoom-close, .zoom-explore { font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
   .zoom-close:hover, .zoom-explore:hover { border-color: var(--orange-dim); color: var(--orange); }
+  #toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(8px); background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 8px 14px; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 300; max-width: 70vw; }
+  #toast.show { opacity: 1; transform: translateX(-50%); }
+  #toast.err { border-color: var(--fail); color: var(--fail); }
   .zoom-chart { flex: 1; min-height: 0; padding: 16px 18px; position: relative; }
 
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); box-shadow: var(--hi); }
@@ -1776,11 +1779,25 @@
     return `<button class="panel-act icon" data-copyimg="${attr(name)}" title="Copy panel as image" aria-label="Copy panel as image">${SVG_COPYIMG}</button>`;
   }
   function flashBtn(btn, cls) { btn.classList.add("flash-" + cls); setTimeout(() => btn.classList.remove("flash-" + cls), 1400); }
+  // A transient bottom-centre notification — the place errors surface, so a
+  // failure is never just a silent red flash.
+  let toastTimer = null;
+  function toast(msg, isErr) {
+    let el = $("toast");
+    if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
+    el.textContent = msg;
+    el.classList.toggle("err", !!isErr);
+    el.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("show"), isErr ? 6000 : 2600);
+  }
   async function copyPanelImage(name, btn) {
     if (!state.selSession || btn.classList.contains("busy")) return;
     btn.classList.add("busy");
     const url = "/api/shot?" + new URLSearchParams({ session: state.selSession, tile: name });
-    const fetchPng = () => fetch(url).then(async (r) => {
+    // One fetch shared by every attempt — the render takes seconds, and a
+    // failed clipboard write must not trigger a second render.
+    const pngPromise = fetch(url).then(async (r) => {
       const blob = await r.blob();
       if (blob.type !== "image/png") {
         let msg = "screenshot failed"; try { msg = JSON.parse(await blob.text()).error || msg; } catch (_) {}
@@ -1789,21 +1806,33 @@
       return blob;
     });
     try {
-      // Hand the promise straight to ClipboardItem so the user gesture is
-      // still fresh when permission is checked (the render takes seconds).
-      await navigator.clipboard.write([new ClipboardItem({ "image/png": fetchPng() })]);
+      // Promise-based ClipboardItem first: Safari checks the user gesture when
+      // the promise is handed over, so it survives the slow render.
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": pngPromise })]);
       flashBtn(btn, "ok");
-    } catch (e) {
-      // Clipboard images unsupported or denied — fall back to a download.
+    } catch (e1) {
       try {
-        const blob = await fetchPng();
-        const a = document.createElement("a");
-        a.href = URL.createObjectURL(blob);
-        a.download = `${state.selSession}-${name}.png`;
-        a.click();
-        setTimeout(() => URL.revokeObjectURL(a.href), 10000);
-        flashBtn(btn, "ok");
-      } catch (e2) { console.warn("copy panel image:", e2); flashBtn(btn, "err"); }
+        const blob = await pngPromise; // rethrows the real /api/shot error if the fetch failed
+        try {
+          // Plain-blob write: what Chrome prefers (it auto-grants
+          // clipboard-write to the focused tab, so the elapsed await is fine).
+          await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+          flashBtn(btn, "ok");
+        } catch (e2) {
+          // Clipboard images unsupported or denied — fall back to a download.
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(blob);
+          a.download = `${state.selSession}-${name}.png`;
+          a.click();
+          setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+          toast("clipboard unavailable — downloaded the PNG instead");
+          flashBtn(btn, "ok");
+        }
+      } catch (e3) {
+        console.warn("copy panel image:", e3);
+        toast("copy image failed: " + ((e3 && e3.message) || e3), true);
+        flashBtn(btn, "err");
+      }
     } finally { btn.classList.remove("busy"); }
   }
   // Hide a panel into the TOC's trash section (restored by clicking it there).
