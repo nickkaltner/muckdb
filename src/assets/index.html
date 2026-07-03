@@ -569,8 +569,12 @@
   // from these) plus a categorical chart palette. Add one here to offer it.
   // Each theme carries `grad2` — the two colours of the single left→right gradient
   // that fills every bar (and seeds area fills), so the gradient is fixed across
-  // the whole chart rather than repeating per bar. `light: true` marks light themes
-  // so the picker can show them on a light swatch.
+  // the whole chart rather than repeating per bar. `bargrad` overrides it with a
+  // multi-stop top→bottom gradient: any number of colours, evenly spaced by
+  // default, or pinned with an `@position` suffix (0–1 from the top), e.g.
+  // ["#fff4e8", "#ffb066@0.85", "#e0601c"] — see gradStops(). The CSS-string
+  // vars (`glow`, `grad-panel`) take any linear-gradient, stops included.
+  // `light: true` marks light themes so the picker can show them on a light swatch.
   const THEMES = {
     mono: {
       label: "mono", vars: {
@@ -1924,25 +1928,36 @@
       return g;
     };
   }
-  // One top→bottom gradient between two colours spanning the whole plot area,
-  // used as the fill for every bar — so the same gradient applies across the
-  // chart rather than repeating per bar.
-  function bargrad(c0, c1) {
-    return (c) => {
-      const a = c.chart.chartArea; if (!a) return c0;
-      const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
-      g.addColorStop(0, c0); g.addColorStop(1, c1);
-      return g;
-    };
+  // Parse a theme gradient list into positioned stops. Each entry is a colour,
+  // optionally pinned with an `@position` suffix (0–1 from the top), e.g.
+  // ["#fff", "#ffb066@0.85", "#e0601c"]. Bare colours spread evenly between
+  // their pinned neighbours (CSS-style); the ends default to 0 and 1.
+  function gradStops(colors) {
+    const stops = colors.map((c) => {
+      const m = String(c).match(/^(.*?)@\s*(0?\.\d+|[01])$/);
+      return m ? { col: m[1].trim(), pos: clamp(parseFloat(m[2]), 0, 1) } : { col: String(c).trim(), pos: null };
+    });
+    if (stops[0].pos == null) stops[0].pos = 0;
+    if (stops[stops.length - 1].pos == null) stops[stops.length - 1].pos = 1;
+    let last = 0;
+    stops.forEach((s) => { if (s.pos != null) { s.pos = Math.max(s.pos, last); last = s.pos; } });
+    for (let i = 1; i < stops.length; i++) {
+      if (stops[i].pos != null) continue;
+      let j = i; while (stops[j].pos == null) j++;
+      const from = stops[i - 1].pos, span = stops[j].pos - from, n = j - i + 1;
+      for (let k = i; k < j; k++) stops[k].pos = from + span * (k - i + 1) / n;
+      i = j;
+    }
+    return stops;
   }
-  // Top→bottom gradient through N evenly-spaced colour stops (e.g. near-white →
-  // two warm tones for hearth's bars). Falls back to the active 2-stop gradient.
+  // Top→bottom gradient through the theme's stops (evenly spaced, or pinned
+  // with `@pos` — see gradStops). Falls back to the active 2-stop gradient.
   function bargradN(colors) {
-    const cs = (colors && colors.length) ? colors : [GRAD2[0], GRAD2[1]];
+    const cs = gradStops((colors && colors.length) ? colors : [GRAD2[0], GRAD2[1]]);
     return (c) => {
-      const a = c.chart.chartArea; if (!a) return cs[0];
+      const a = c.chart.chartArea; if (!a) return cs[0].col;
       const g = c.chart.ctx.createLinearGradient(0, a.top, 0, a.bottom);
-      cs.forEach((col, i) => g.addColorStop(cs.length === 1 ? 0 : i / (cs.length - 1), col));
+      cs.forEach((s) => g.addColorStop(s.pos, s.col));
       return g;
     };
   }
