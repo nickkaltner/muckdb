@@ -170,7 +170,12 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
 }
 
 async fn index() -> Html<&'static str> {
-    Html(include_str!("assets/index.html"))
+    // The app is a static asset except for the build version (shown in the
+    // credits card) — stamp it once and serve the cached result.
+    static PAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+        include_str!("assets/index.html").replace("__MUCKDB_VERSION__", env!("CARGO_PKG_VERSION"))
+    });
+    Html(PAGE.as_str())
 }
 
 /// Serialize the current derived state, or an error response.

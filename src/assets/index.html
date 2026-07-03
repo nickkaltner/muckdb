@@ -88,6 +88,29 @@
   #toast.err { border-color: var(--fail); color: var(--fail); }
   .zoom-chart { flex: 1; min-height: 0; padding: 16px 18px; position: relative; }
 
+  /* credits — a little video-game thank-you card behind the ? button */
+  .credits-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
+  /* `display: flex` above would defeat the hidden attribute (author styles
+     outrank the UA's [hidden] rule) — restate it explicitly. */
+  .credits-overlay[hidden] { display: none; }
+  .credits-box { position: relative; width: 340px; text-align: center; padding: 30px 26px 24px; background: var(--grad-panel), var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.6), var(--hi); overflow: hidden; animation: cr-pop .38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  @keyframes cr-pop { from { transform: scale(0.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  .credits-close { position: absolute; top: 8px; right: 8px; font: inherit; font-size: 12px; background: none; border: 0; color: var(--faint); cursor: pointer; padding: 4px 8px; }
+  .credits-close:hover { color: var(--orange); }
+  .credits-flower { width: 88px; height: 88px; margin: 0 auto 4px; animation: cr-spin 18s linear infinite; }
+  .credits-flower svg { display: block; width: 100%; height: 100%; animation: cr-bloom .9s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
+  @keyframes cr-spin { to { transform: rotate(360deg); } }
+  @keyframes cr-bloom { from { transform: scale(0); } to { transform: scale(1); } }
+  .credits-flower .heart { transform-box: fill-box; transform-origin: center; animation: cr-pulse 2.4s ease-in-out infinite; }
+  @keyframes cr-pulse { 50% { transform: scale(1.18); } }
+  .cr-spark { position: absolute; font-size: 13px; color: var(--amber); animation: cr-twinkle 1.8s ease-in-out infinite; pointer-events: none; }
+  @keyframes cr-twinkle { 0%, 100% { opacity: 0.15; transform: scale(0.7); } 50% { opacity: 1; transform: scale(1.15); } }
+  .credits-lines { display: flex; flex-direction: column; gap: 7px; margin-top: 8px; }
+  .credits-lines .cl { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; opacity: 0; animation: cr-rise .5s ease both; }
+  .credits-lines .cl.head { font-size: 10px; letter-spacing: 0.3em; color: var(--faint); text-transform: uppercase; }
+  .credits-lines .cl.name { font-size: 18px; font-weight: 700; color: var(--orange); letter-spacing: 0.14em; }
+  @keyframes cr-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); box-shadow: var(--hi); }
   .wordmark { font-weight: 700; font-size: 18px; letter-spacing: -0.5px; }
   .wordmark .db { color: var(--orange); }
@@ -475,7 +498,9 @@
     <button class="kbtn" id="kbtn" title="Jump to a database, table or session (⌘K / Ctrl-K)">⌕ jump <kbd>⌘K</kbd></button>
     <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
     <a class="host" id="self-link" href="/">localhost</a>
+    <button class="kbtn" id="credits-btn" title="Credits" aria-label="Credits">?</button>
   </header>
+  <div class="credits-overlay" id="credits-overlay" hidden></div>
 
   <nav class="tabs" id="tabs">
     <button class="tab" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
@@ -2665,6 +2690,8 @@
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
     if (ev.target.closest("[data-run]")) { runQuery(); return; }
+    if (ev.target.closest("#credits-btn")) { openCredits(); return; }
+    if (ev.target.closest(".credits-close") || ev.target.id === "credits-overlay") { closeCredits(); return; }
     if (ev.target.closest("#toc-toggle")) { toggleToc(); return; }
     if (ev.target.closest("#export-btn")) {
       if (!state.selSession) { toast("select a session to export", true); return; }
@@ -2719,7 +2746,7 @@
   document.addEventListener("keydown", (ev) => {
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
-    if (ev.key === "Escape") { closeZoom(); closePicker(); }
+    if (ev.key === "Escape") { closeZoom(); closePicker(); closeCredits(); }
     // Space toggles the selected session panel expanded/contracted. Runs even
     // with a zoom overlay up (so it closes it), but not over a picker or inputs.
     if ((ev.key === " " || ev.key === "Spacebar") && state.tab === "sessions" && state.selSession
@@ -2965,6 +2992,51 @@
       try { localStorage.removeItem("muckdb.tocw"); } catch (_) {}
     });
   })();
+  // ---- credits card (the ? button) ---------------------------------------
+  // Rebuilt on every open so the bloom/rise animations replay each time.
+  const FLOWER_SVG = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true">
+    <g>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9"/>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9" transform="rotate(60 32 32)"/>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9" transform="rotate(120 32 32)"/>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9" transform="rotate(180 32 32)"/>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9" transform="rotate(240 32 32)"/>
+      <ellipse cx="32" cy="15" rx="8" ry="12" fill="var(--orange)" opacity="0.9" transform="rotate(300 32 32)"/>
+      <circle class="heart" cx="32" cy="32" r="9" fill="var(--amber)"/>
+      <circle class="heart" cx="32" cy="32" r="4" fill="var(--on-accent)" opacity="0.55"/>
+    </g>
+  </svg>`;
+  function openCredits() {
+    const layer = $("credits-overlay");
+    if (!layer) return;
+    const line = (cls, txt, delay) => `<div class="cl ${cls}" style="animation-delay:${delay}s">${txt}</div>`;
+    // A field of twinkling stars around the edges of the card, each with its
+    // own size, phase, and tempo so the sky never repeats.
+    const SPOTS = [
+      "top:18px;left:22px", "top:14px;left:118px", "top:26px;right:78px", "top:52px;right:26px",
+      "top:96px;left:20px", "top:120px;right:22px", "bottom:96px;left:34px", "bottom:74px;right:40px",
+      "bottom:40px;left:22px", "bottom:16px;left:50px", "bottom:18px;right:44px", "bottom:52px;right:18px",
+    ];
+    const sparks = SPOTS.map((pos, i) =>
+      `<span class="cr-spark" style="${pos};font-size:${9 + (i * 5) % 8}px;animation-delay:${(i * 0.37) % 1.8}s;animation-duration:${1.5 + (i * 0.23) % 1.2}s">✦</span>`
+    ).join("");
+    layer.innerHTML = `<div class="credits-box">
+      <button class="credits-close" aria-label="Close credits">✕</button>
+      ${sparks}
+      <div class="credits-flower">${FLOWER_SVG}</div>
+      <div class="credits-lines">
+        ${line("head", "— credits —", 0.5)}
+        ${line("", "created by", 0.9)}
+        ${line("name", "NICK KALTNER", 1.2)}
+        ${line("", "muckdb v__MUCKDB_VERSION__", 1.7)}
+      </div>
+    </div>`;
+    layer.hidden = false;
+  }
+  function closeCredits() {
+    const layer = $("credits-overlay");
+    if (layer && !layer.hidden) { layer.hidden = true; layer.innerHTML = ""; }
+  }
   // Tile height grips (delegated — panels re-render). Drag resizes the tile's
   // body; double-click restores the default height.
   document.addEventListener("pointerdown", (e) => {
