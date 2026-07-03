@@ -930,12 +930,17 @@
   }
 
   // ---- tabs -------------------------------------------------------------
-  function setTab(tab) {
+  function setTab(tab, opts) {
     if (tab !== "sessions" && state.zoomPanel) closeZoom();
     state.tab = tab;
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     $("view-" + tab).classList.add("active");
+    // Compound navigations (a tab switch plus a db/session select in one user
+    // action) pass {silent:true} so only the *final* state pushes a history
+    // entry — otherwise Back lands on an intermediate URL built from stale
+    // state instead of where the user actually came from.
+    if (opts && opts.silent) return;
     syncUrl(true);
     if (!suppressSync) maybeAutoSession();
   }
@@ -1593,9 +1598,9 @@
   }
   function openPalette() {
     const items = [];
-    state.databases.forEach((d) => items.push({ hint: "db", label: basename(d.path), sub: dirname(d.path), go: () => { setTab("databases"); selectDb(d.path); } }));
-    if (state.selDb) state.tables.forEach((t) => items.push({ hint: t.is_view ? "view" : "table", label: t.name, sub: basename(state.selDb), go: () => { setTab("databases"); selectTable(t.name); } }));
-    state.sessions.forEach((s) => items.push({ hint: "sess", label: s.title || s.id, sub: s.tiles + " tiles", go: () => { setTab("sessions"); loadSession(s.id, true); } }));
+    state.databases.forEach((d) => items.push({ hint: "db", label: basename(d.path), sub: dirname(d.path), go: () => { setTab("databases", { silent: true }); selectDb(d.path); } }));
+    if (state.selDb) state.tables.forEach((t) => items.push({ hint: t.is_view ? "view" : "table", label: t.name, sub: basename(state.selDb), go: () => { setTab("databases", { silent: true }); selectTable(t.name); } }));
+    state.sessions.forEach((s) => items.push({ hint: "sess", label: s.title || s.id, sub: s.tiles + " tiles", go: () => { setTab("sessions", { silent: true }); loadSession(s.id, true); } }));
     if (!items.length) return;
     openPicker({ placeholder: "jump to a database, table or session…", foot: "↑/↓ move · Enter open · Esc close", items, onPick: (it) => it.go() });
   }
@@ -2329,7 +2334,7 @@
     const t = (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name);
     if (!t || !t.view) return;
     postActivity(name, "explore");
-    setTab("databases");
+    setTab("databases", { silent: true });
     selectDb(t.db, { table: t.view, sub: "rows" });
   }
   function sessionTile(name) { return (state.sessionData && state.sessionData.tiles || []).find((x) => x.name === name); }
@@ -2551,7 +2556,7 @@
       return;
     }
     const openDb = ev.target.closest("[data-open-db]");
-    if (openDb) { setTab("databases"); selectDb(openDb.dataset.openDb); return; }
+    if (openDb) { setTab("databases", { silent: true }); selectDb(openDb.dataset.openDb); return; }
     const dbc = ev.target.closest("[data-db]"); if (dbc) { selectDb(dbc.dataset.db); return; }
     if (ev.target.closest("[data-querymode]")) { enterQueryMode(); return; }
     const tc = ev.target.closest("[data-table]"); if (tc) { selectTable(tc.dataset.table); return; }
@@ -2565,7 +2570,7 @@
     if (ev.target.closest("[data-run]")) { runQuery(); return; }
     if (ev.target.closest("#toc-toggle")) { toggleToc(); return; }
     const toc = ev.target.closest("[data-toc]"); if (toc) { scrollToPanel(toc.dataset.toc); return; }
-    const sess = ev.target.closest("[data-session]"); if (sess) { loadSession(sess.dataset.session, true); return; }
+    const sess = ev.target.closest("[data-session]"); if (sess) { setTab("sessions", { silent: true }); loadSession(sess.dataset.session, true); return; }
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
     const ts = ev.target.closest("[data-tsql]"); if (ts) { toggleTileSql(ts.dataset.tsql); return; }
     if (ev.target.closest("[data-format]")) { const ta = $("sql-input"); if (ta) { ta.value = sqlFormat(ta.value); state.sql = ta.value; syncEditor(ta); } return; }
