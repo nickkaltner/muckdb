@@ -93,6 +93,11 @@ muckdb session rm analysis --tile temp     # or: rm analysis (whole session)
 
 # capture the dashboard (or one tile) as a PNG — lets an agent *see* the result
 muckdb session screenshot analysis --tile species --out species.png
+
+# move a dashboard between machines: a .muckdb is a zip of the session plus
+# full snapshots of every database its tiles reference (and their formats)
+muckdb session export analysis                # writes ./analysis.muckdb
+muckdb session import analysis.muckdb        # imports; name collisions get -2
 ```
 
 Re-running `post`/`tile` with the same `--name` updates that tile in place; the
@@ -142,6 +147,8 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
 | `GET /api/sessions` | session dashboards (summaries) |
 | `GET /api/session?id=ID` | one session with its tiles |
+| `GET /api/session/export?id=ID` | download a session as a `.muckdb` archive (session + db snapshots) |
+| `POST /api/session/import` | install a `.muckdb` archive (raw zip body) |
 | `GET /api/shot?session=ID&tile=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
 | `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 

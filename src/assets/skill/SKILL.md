@@ -177,6 +177,8 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
+muckdb session export <name> [--out FILE.muckdb]
+muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -197,6 +199,13 @@ muckdb session rm <name> [--tile TILE]
   persists on the tile (`trashed: true` in `muckdb ls session`) and survives
   re-posts — updating a trashed tile does not resurface it. Delete for real
   with `muckdb session rm <session> --tile <name>`.
+- **Sessions are portable.** `session export` bundles the dashboard, a full
+  snapshot of every database its tiles reference, and their column formats
+  into `<name>.muckdb` (a zip); `session import` loads one on any machine —
+  the db copies land under muckdb's data dir (`imports/<id>/`), and a name
+  collision gets a numeric suffix (`name-2`) rather than overwriting. The web
+  UI has the same pair: an **export** button on the session view and an
+  **import** button in the top header.
 - A tile is a **view** (`--view`, references a named duckdb view) or **inline
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table

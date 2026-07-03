@@ -347,6 +347,10 @@
   .toc-toggle svg { display: block; }
   .toc-toggle:hover { border-color: var(--orange-dim); color: var(--orange); }
   .toc-toggle.active { color: var(--orange); border-color: var(--orange-dim); }
+  /* Session actions (export): same look as .toc-toggle but always visible; it
+     takes over the right-push so the contents toggle sits beside it. */
+  .sess-act { display: inline-flex; margin-left: auto; }
+  .sess-act ~ .toc-toggle { margin-left: 8px; }
   .session-toc { display: none; width: 244px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 16px 6px 28px; }
   .toc-head { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); padding: 0 10px 8px; }
   .toc-item { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-left: 2px solid transparent; cursor: pointer; padding: 5px 10px; border-radius: 0 4px 4px 0; }
@@ -452,6 +456,8 @@
     <span class="wordmark">muck<span class="db">db</span></span>
     <span class="subtitle">live console</span>
     <span class="spacer"></span>
+    <button class="kbtn" id="import-btn" title="Import a .muckdb session export">⇪ import</button>
+    <input type="file" id="import-file" accept=".muckdb,.zip" hidden>
     <button class="kbtn" id="theme-btn" title="Theme">◐ theme</button>
     <button class="kbtn" id="kbtn" title="Jump to a database, table or session (⌘K / Ctrl-K)">⌕ jump <kbd>⌘K</kbd></button>
     <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
@@ -477,6 +483,7 @@
 
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
       <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span>
+        <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
         <button class="toc-toggle" id="toc-toggle" title="Toggle contents" aria-label="Toggle table of contents"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h2M2 8h2M2 12h2M6 4h8M6 8h8M6 12h8"/></svg><span>contents</span></button>
       </div>
       <div class="session-body" id="session-body">
@@ -2598,6 +2605,14 @@
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
     if (ev.target.closest("[data-run]")) { runQuery(); return; }
     if (ev.target.closest("#toc-toggle")) { toggleToc(); return; }
+    if (ev.target.closest("#export-btn")) {
+      if (!state.selSession) { toast("select a session to export", true); return; }
+      const a = document.createElement("a");
+      a.href = "/api/session/export?id=" + encodeURIComponent(state.selSession);
+      a.click();
+      return;
+    }
+    if (ev.target.closest("#import-btn")) { $("import-file").click(); return; }
     const toc = ev.target.closest("[data-toc]"); if (toc) { scrollToPanel(toc.dataset.toc); return; }
     const sess = ev.target.closest("[data-session]"); if (sess) { setTab("sessions", { silent: true }); loadSession(sess.dataset.session, true); return; }
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
@@ -2848,6 +2863,21 @@
     if (initial.sessionId) loadSession(initial.sessionId, false).then(() => { if (initial.expand) zoomTile(initial.expand); });
   } else pendingNav = initial;
   window.addEventListener("popstate", () => restoreFromNav(parseUrl()));
+  // Import a .muckdb archive picked via the header button; on success the
+  // watcher refreshes the session list and we jump to the new dashboard.
+  $("import-file").addEventListener("change", async () => {
+    const f = $("import-file").files[0];
+    $("import-file").value = "";
+    if (!f) return;
+    toast(`importing ${f.name}…`);
+    try {
+      const r = await (await fetch("/api/session/import", { method: "POST", body: f })).json();
+      if (r.error) throw new Error(r.error);
+      toast(`imported session ${r.id}`);
+      setTab("sessions", { silent: true });
+      loadSession(r.id, true);
+    } catch (e) { toast("import failed: " + ((e && e.message) || e), true); }
+  });
   // Screenshot mode is a one-off render: a live socket would only hold the
   // headless browser's virtual time open.
   if (!SHOT) connect();

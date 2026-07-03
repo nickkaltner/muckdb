@@ -57,6 +57,8 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
+muckdb session export <name> [--out FILE.muckdb]
+muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -100,6 +102,12 @@ muckdb session rm <name> [--tile TILE]
   and bars land on day boundaries — don't plot raw timestamps for per-day charts.
 - **Event markers update live**: re-post a tile with the same `--name` plus new
   `--event`/`--target` flags to add or change its markers in place.
+- **Sessions are portable**: `session export` bundles the dashboard, full
+  snapshots of every database its tiles reference, and their column formats
+  into `<name>.muckdb` (a zip); `session import` loads one on any machine (db
+  copies land under the data dir in `imports/<id>/`; a name collision gets a
+  `-2` suffix). The web UI has an **export** button on the session view and an
+  **import** button in the top header.
 - `stacked` is a stacked bar: pass multiple `--y` columns (one per series) and
   one row per `--x`; the series stack into each bar's total. Shape the view so
   each series is its own column (e.g. `sum(amount) FILTER (category = 'X')`).
