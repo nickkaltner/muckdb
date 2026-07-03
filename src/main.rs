@@ -2,6 +2,7 @@
 //! live web view of your muckdb history and databases.
 
 mod daemon;
+mod export;
 mod facade;
 mod formats;
 mod introspect;
@@ -72,7 +73,7 @@ muckdb commands:
   --display              open the web UI (starts the background daemon if needed)
   --status               report whether the daemon is running
   --stop                 stop the background daemon
-  session <subcommand>   build dashboards: create | list | post | tile | screenshot | rm
+  session <subcommand>   build dashboards: create | list | post | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
   skill <install|uninstall|path>   manage the muckdb Claude Code skill

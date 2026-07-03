@@ -88,6 +88,25 @@ fn save_registry(entries: &[Entry]) -> Result<()> {
     Ok(())
 }
 
+/// Registry entries keyed to any of these db ids (for bundling into an export).
+pub fn entries_for_db_ids(ids: &[String]) -> Result<Vec<Entry>> {
+    Ok(load_registry()?
+        .into_iter()
+        .filter(|e| ids.contains(&e.db))
+        .collect())
+}
+
+/// Merge imported entries into the registry; an imported entry replaces an
+/// existing one for the same db/table/column.
+pub fn merge_entries(new: Vec<Entry>) -> Result<()> {
+    let mut entries = load_registry()?;
+    for e in new {
+        entries.retain(|x| !(x.db == e.db && x.table == e.table && x.column == e.column));
+        entries.push(e);
+    }
+    save_registry(&entries)
+}
+
 /// Upsert (or, if `format` is empty, remove) a registry entry for db/table/column.
 fn set_entry(db_id: &str, table: Option<&str>, column: &str, format: Format) -> Result<()> {
     let mut entries = load_registry()?;

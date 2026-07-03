@@ -261,7 +261,7 @@ pub fn list() -> Result<Vec<Session>> {
     Ok(out)
 }
 
-fn save(session: &Session) -> Result<()> {
+pub fn save(session: &Session) -> Result<()> {
     let path = path_for(&session.id)?;
     let json = serde_json::to_string_pretty(session)?;
     fs::write(&path, json).with_context(|| format!("writing {path:?}"))?;
@@ -683,6 +683,35 @@ pub fn cli(args: &[String]) -> Result<i32> {
             }
             Ok(0)
         }
+        // Bundle a session + full snapshots of its databases into a portable
+        // `<id>.muckdb` zip (import on any machine with `session import`).
+        "export" => {
+            let name =
+                session_arg.context("usage: muckdb session export <name> [--out FILE.muckdb]")?;
+            let id = slug(&name);
+            let out = p.get("out").map(PathBuf::from);
+            let path = crate::export::export_session(&id, out)?;
+            let abs = path.canonicalize().unwrap_or(path);
+            let kb = fs::metadata(&abs).map(|m| m.len() / 1024).unwrap_or(0);
+            println!("exported session {id}: {} ({kb} kB)", abs.display());
+            Ok(0)
+        }
+        "import" => {
+            let file = session_arg.context("usage: muckdb session import <file.muckdb>")?;
+            let bytes = fs::read(&file).with_context(|| format!("reading {file}"))?;
+            let imported = crate::export::import_and_install(&bytes)?;
+            crate::facade::ensure_daemon()?;
+            println!(
+                "imported session {} ({} tiles, {} db{}) — http://localhost:{}/session/{}/",
+                imported.session.id,
+                imported.session.tiles.len(),
+                imported.dbs.len(),
+                if imported.dbs.len() == 1 { "" } else { "s" },
+                crate::facade::PORT,
+                imported.session.id
+            );
+            Ok(0)
+        }
         "rm" => {
             let name = session_arg.context("usage: muckdb session rm <name> [--tile T]")?;
             let id = slug(&name);
@@ -702,7 +731,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|tile|screenshot|rm> ...\n\
+                "usage: muckdb session <create|list|post|tile|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
@@ -710,6 +739,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n  \
                  screenshot <name> [--tile TILE] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
+                 export <name> [--out FILE.muckdb]  (bundle session + database snapshots into a portable zip)\n  \
+                 import <file.muckdb>               (load an exported session; dbs land in muckdb's data dir)\n  \
                  rm <name> [--tile TILE]"
             );
             Ok(2)
