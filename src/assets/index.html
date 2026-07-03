@@ -819,6 +819,10 @@
   function dirname(p) { const i = p.lastIndexOf("/"); return i <= 0 ? "" : p.slice(0, i + 1); }
   function plural(n, w) { return `${n} ${w}${n === 1 ? "" : "s"}`; }
   function fmtNum(n) { if (n === null || n === undefined) return "—"; return Number.isInteger(n) ? String(n) : (Math.round(n * 1000) / 1000).toString(); }
+  // Summary displays (stats cards, facet range readouts) cap values at three
+  // decimals before the column format applies — an unconstrained format would
+  // otherwise spill full float precision.
+  function round3(v) { return typeof v === "number" && isFinite(v) ? Math.round(v * 1000) / 1000 : v; }
   // ---- column display formats (currency/units/decimals) ------------------
   async function ensureFormats(db) {
     if (!db) return null;
@@ -1174,7 +1178,7 @@
   function renderRangeFacet(f) {
     const head = facetHead(f.name);
     if (f.min == null || f.max == null) return `<div class="facet-group">${head}<div class="range-note">no numeric range.</div></div>`;
-    const ff = (v) => fmtColNumHtml(state.selDb, f.name, state.selTable, v);
+    const ff = (v) => fmtColNumHtml(state.selDb, f.name, state.selTable, round3(v));
     if (f.max <= f.min) return `<div class="facet-group">${head}<div class="range-note">all rows = ${ff(f.min)}</div></div>`;
     const rf = rangeFilter(f.name);
     const lo = rf && rf.min != null ? rf.min : f.min, hi = rf && rf.max != null ? rf.max : f.max;
@@ -1445,8 +1449,8 @@
     });
   }
   function statCard(c, rowCount) {
-    const F = (v) => fmtColNum(state.selDb, c.name, state.selTable, v);
-    const FH = (v) => fmtColNumHtml(state.selDb, c.name, state.selTable, v);
+    const F = (v) => fmtColNum(state.selDb, c.name, state.selTable, round3(v));
+    const FH = (v) => fmtColNumHtml(state.selDb, c.name, state.selTable, round3(v));
     const meta = `<span class="stat-meta"><b>nulls</b> ${c.nulls} · <b>distinct</b> ${c.distinct} · <b>rows</b> ${rowCount}</span>`;
     let body = "";
     if (c.temporal && c.timeline && c.timeline.length) {
@@ -1873,6 +1877,20 @@
   // on macOS, while a plain-blob write after the render is reliable (the
   // focused tab is auto-granted clipboard-write). Pick per engine.
   const SAFARI = /apple/i.test(navigator.vendor || "");
+  // Clipboard payload with two flavours: the raw PNG, and an HTML <img> with
+  // the PNG inlined as a data URI — paste targets that ignore one flavour
+  // (seen on macOS) usually take the other. Accepts a Blob or a promise of
+  // one, so it works for both the Safari (promise) and Chrome (blob) paths.
+  function pngClipboardItem(blobOrPromise) {
+    const p = Promise.resolve(blobOrPromise);
+    const html = p.then(async (blob) => {
+      const bytes = new Uint8Array(await blob.arrayBuffer());
+      let bin = "";
+      for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+      return new Blob([`<img src="data:image/png;base64,${btoa(bin)}">`], { type: "text/html" });
+    });
+    return new ClipboardItem({ "image/png": p, "text/html": html });
+  }
   async function copyPanelImage(name, btn) {
     if (!state.selSession || btn.classList.contains("busy")) return;
     btn.classList.add("busy");
@@ -1892,12 +1910,12 @@
       if (SAFARI) {
         // Deadline: 6s after the render finishes the write must have settled.
         await deadline(
-          navigator.clipboard.write([new ClipboardItem({ "image/png": pngPromise })]),
+          navigator.clipboard.write([pngClipboardItem(pngPromise)]),
           pngPromise, 6000, "clipboard write timed out");
       } else {
         const blob = await deadline(pngPromise, null, 90000, "screenshot render timed out");
         await deadline(
-          navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]),
+          navigator.clipboard.write([pngClipboardItem(blob)]),
           null, 6000, "clipboard write timed out");
       }
       toast("copied panel image");
@@ -1908,8 +1926,8 @@
         // past the server's own 45s browser timeout.
         const blob = await deadline(pngPromise, null, 90000, "screenshot render timed out");
         try {
-          // Plain-blob write: what Chrome prefers (it auto-grants
-          // clipboard-write to the focused tab, so the elapsed await is fine).
+          // Retry once as a plain-PNG-only write — the multi-flavour item is
+          // the usual suspect if the first attempt was rejected.
           await deadline(
             navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]),
             null, 4000, "clipboard write timed out");
@@ -2621,8 +2639,8 @@
     const sel = box.querySelector(".rsel");
     sel.style.left = ((a - fmin) / span * 100) + "%"; sel.style.width = ((b - a) / span * 100) + "%";
     const col = box.dataset.rcol;
-    box.parentElement.querySelector("[data-rmin]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, a);
-    box.parentElement.querySelector("[data-rmax]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, b);
+    box.parentElement.querySelector("[data-rmin]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, round3(a));
+    box.parentElement.querySelector("[data-rmax]").innerHTML = fmtColNumHtml(state.selDb, col, state.selTable, round3(b));
   }
   function downloadExport(format) {
     const p = new URLSearchParams({ db: state.selDb, table: state.selTable, format });

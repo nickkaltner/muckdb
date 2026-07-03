@@ -78,7 +78,14 @@ pub async fn run() -> Result<()> {
         .fallback(get(index))
         .with_state(state);
 
-    let addr = SocketAddr::from(([0, 0, 0, 0], PORT));
+    // Loopback by default — the console exposes every database muckdb has
+    // touched, so it shouldn't be on the LAN unless deliberately opened up
+    // (MUCKDB_BIND=0.0.0.0, or any specific interface address).
+    let bind: std::net::IpAddr = std::env::var("MUCKDB_BIND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| std::net::IpAddr::from([127, 0, 0, 1]));
+    let addr = SocketAddr::from((bind, PORT));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;

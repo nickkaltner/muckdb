@@ -6,7 +6,9 @@ straight through — and muckdb quietly does two extra things:
 
 1. **Self-serves a live web view.** The first time you run it (or any time you
    run `muckdb --display`), it launches a background daemon that serves a web UI
-   on **port 11000**, advertised over **mDNS** so it's discoverable on your LAN.
+   on **port 11000**. It binds **127.0.0.1** by default (the console exposes every
+   database muckdb has touched); set `MUCKDB_BIND=0.0.0.0` on the daemon to open
+   it to your LAN, where it's advertised over **mDNS** for discovery.
 2. **Keeps a live ledger.** Every invocation is recorded, and whenever a command
    touches a database, the web view presents that database's tables — rows
    (with search, facets, sorting, pagination), per-column stats with histograms,
@@ -61,8 +63,9 @@ muckdb ls databases          # read state back as JSON (also: tables <db>,
 muckdb ls sessions           #   sessions, session <id>, history [--limit N])
 ```
 
-Then open <http://localhost:11000> (or find `muckdb` via mDNS:
-`avahi-browse _muckdb._tcp` on Linux, `dns-sd -B _muckdb._tcp` on macOS).
+Then open <http://localhost:11000>. (With `MUCKDB_BIND=0.0.0.0`, other devices
+can find `muckdb` via mDNS: `avahi-browse _muckdb._tcp` on Linux,
+`dns-sd -B _muckdb._tcp` on macOS.)
 
 ## Sessions (agent dashboards)
 
