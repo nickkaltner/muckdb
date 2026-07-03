@@ -341,6 +341,16 @@ mod tests {
     use super::*;
     use crate::session::{Chart, Session, Tile};
 
+    /// The archive/import tests need the `duckdb` CLI (same convention as the
+    /// introspect stats tests) — skip gracefully where it isn't installed.
+    fn duckdb_ok() -> bool {
+        std::process::Command::new("duckdb")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+
     fn run_sql(db: &std::path::Path, sql: &str) {
         let out = std::process::Command::new("duckdb")
             .arg(db)
@@ -402,6 +412,10 @@ mod tests {
 
     #[test]
     fn build_archive_bundles_manifest_session_and_db_snapshot() {
+        if !duckdb_ok() {
+            eprintln!("skipping build_archive_bundles_manifest_session_and_db_snapshot: no duckdb");
+            return;
+        }
         let dir = temp_dir("build");
         let db = dir.join("data.duckdb");
         run_sql(
@@ -425,6 +439,10 @@ mod tests {
 
     #[test]
     fn snapshot_is_a_working_duckdb_with_the_view() {
+        if !duckdb_ok() {
+            eprintln!("skipping snapshot_is_a_working_duckdb_with_the_view: no duckdb");
+            return;
+        }
         let dir = temp_dir("snap");
         let db = dir.join("src.duckdb");
         run_sql(
@@ -448,6 +466,10 @@ mod tests {
 
     #[test]
     fn import_round_trip_rewrites_paths_and_rekeys_formats() {
+        if !duckdb_ok() {
+            eprintln!("skipping import_round_trip_rewrites_paths_and_rekeys_formats: no duckdb");
+            return;
+        }
         let dir = temp_dir("import");
         let db = dir.join("data.duckdb");
         run_sql(
@@ -500,6 +522,10 @@ mod tests {
 
     #[test]
     fn import_refuses_newer_format() {
+        if !duckdb_ok() {
+            eprintln!("skipping import_refuses_newer_format: no duckdb");
+            return;
+        }
         let dir = temp_dir("newformat");
         let db = dir.join("data.duckdb");
         run_sql(
