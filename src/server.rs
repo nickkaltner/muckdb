@@ -67,6 +67,7 @@ pub async fn run() -> Result<()> {
                 .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024 * 1024)),
         )
         .route("/api/shot", get(api_shot))
+        .route("/api/session/rm", post(api_session_rm))
         .route("/api/forget", post(api_forget))
         .route("/api/trash", post(api_trash))
         .route("/api/activity", post(api_activity))
@@ -440,6 +441,17 @@ async fn api_session_import(body: axum::body::Bytes) -> Response {
         Ok(Ok(imported)) => Json(json!({ "ok": true, "id": imported.session.id })).into_response(),
         Ok(Err(e)) => error_json(&e),
         Err(e) => error_json(&anyhow::anyhow!("import task failed: {e}")),
+    }
+}
+
+/// Delete a session (the dashboard's armed delete button). The watcher sees
+/// the file vanish and refreshes every viewer's session list.
+async fn api_session_rm(Query(p): Query<SessionParams>) -> Response {
+    let id = session::slug(&p.id);
+    match session::remove(&id) {
+        Ok(true) => Json(json!({ "ok": true })).into_response(),
+        Ok(false) => error_json(&anyhow::anyhow!("no such session '{id}'")),
+        Err(e) => error_json(&e),
     }
 }
 

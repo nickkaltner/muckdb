@@ -268,6 +268,17 @@ pub fn save(session: &Session) -> Result<()> {
     Ok(())
 }
 
+/// Delete a session's JSON file (the CLI `rm` and the web UI's delete button).
+/// Returns whether it existed.
+pub fn remove(id: &str) -> Result<bool> {
+    let path = path_for(id)?;
+    match fs::remove_file(&path) {
+        Ok(()) => Ok(true),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(e) => Err(e).with_context(|| format!("removing {path:?}")),
+    }
+}
+
 /// Load a session or create a fresh one with this id.
 fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
     if let Some(mut s) = load(id)? {
@@ -738,8 +749,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     println!("removed tile '{tile}' from session {id}");
                 }
             } else {
-                let path = path_for(&id)?;
-                let _ = fs::remove_file(path);
+                let _ = remove(&id)?;
                 println!("removed session {id}");
             }
             Ok(0)

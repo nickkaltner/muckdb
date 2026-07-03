@@ -370,10 +370,13 @@
   .toc-toggle svg { display: block; }
   .toc-toggle:hover { border-color: var(--orange-dim); color: var(--orange); }
   .toc-toggle.active { color: var(--orange); border-color: var(--orange-dim); }
-  /* Session actions (export): same look as .toc-toggle but always visible; it
-     takes over the right-push so the contents toggle sits beside it. */
+  /* Session actions (export, delete): same look as .toc-toggle but always
+     visible; the first takes over the right-push, the rest sit beside it. */
   .sess-act { display: inline-flex; margin-left: auto; }
-  .sess-act ~ .toc-toggle { margin-left: 8px; }
+  .sess-act ~ .sess-act, .sess-act ~ .toc-toggle { margin-left: 8px; }
+  /* Armed delete: first click arms it (turns red, asks "sure?"), the second
+     within a few seconds actually deletes — no accidental single-click loss. */
+  .sess-act.arm { color: var(--fail); border-color: var(--fail); }
   .session-toc { display: none; width: var(--tocw, 244px); min-width: 170px; max-width: 600px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 16px 6px 28px; }
   /* Drag handle on the sidebar's edge — resize the contents (double-click resets). */
   .toc-resizer { display: none; flex: none; width: 6px; margin-right: -6px; cursor: col-resize; position: relative; z-index: 5; }
@@ -522,6 +525,7 @@
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
       <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span>
         <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
+        <button class="toc-toggle sess-act" id="session-rm-btn" title="Delete this session (click twice)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.8 9h6.4l.8-9M6.5 7v4M9.5 7v4"/></svg><span>delete</span></button>
         <button class="toc-toggle" id="toc-toggle" title="Toggle contents" aria-label="Toggle table of contents"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h2M2 8h2M2 12h2M6 4h8M6 8h8M6 12h8"/></svg><span>contents</span></button>
       </div>
       <div class="session-body" id="session-body">
@@ -2725,6 +2729,34 @@
       return;
     }
     if (ev.target.closest("#import-btn")) { $("import-file").click(); return; }
+    const rmBtn = ev.target.closest("#session-rm-btn");
+    if (rmBtn) {
+      if (!state.selSession) { toast("select a session to delete", true); return; }
+      // Two-step: first click arms (red "sure?"), second within 2.6s deletes.
+      if (!rmBtn.classList.contains("arm")) {
+        rmBtn.classList.add("arm");
+        rmBtn.querySelector("span").textContent = "sure?";
+        setTimeout(() => { rmBtn.classList.remove("arm"); rmBtn.querySelector("span").textContent = "delete"; }, 2600);
+        return;
+      }
+      const id = state.selSession;
+      rmBtn.classList.remove("arm");
+      rmBtn.querySelector("span").textContent = "delete";
+      fetch("/api/session/rm?id=" + encodeURIComponent(id), { method: "POST" })
+        .then((r) => r.json())
+        .then((r) => {
+          if (r.error) throw new Error(r.error);
+          toast("deleted session " + id);
+          state.selSession = null; state.sessionData = null;
+          $("panels").innerHTML = '<div class="note" style="padding:18px">session deleted.</div>';
+          renderToc([], []); renderSessionNav();
+          syncUrl(false);
+          // The watcher's push refreshes the list; open the next session then.
+          setTimeout(maybeAutoSession, 600);
+        })
+        .catch((e) => toast("delete failed: " + ((e && e.message) || e), true));
+      return;
+    }
     const toc = ev.target.closest("[data-toc]"); if (toc) { scrollToPanel(toc.dataset.toc); return; }
     const sess = ev.target.closest("[data-session]"); if (sess) { setTab("sessions", { silent: true }); loadSession(sess.dataset.session, true); return; }
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
