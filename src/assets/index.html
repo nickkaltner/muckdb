@@ -1849,14 +1849,15 @@
   // A transient bottom-centre notification — the place errors surface, so a
   // failure is never just a silent red flash.
   let toastTimer = null;
-  function toast(msg, isErr) {
+  function toast(msg, isErr, sticky) {
     let el = $("toast");
     if (!el) { el = document.createElement("div"); el.id = "toast"; document.body.appendChild(el); }
     el.textContent = msg;
     el.classList.toggle("err", !!isErr);
     el.classList.add("show");
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(() => el.classList.remove("show"), isErr ? 6000 : 2600);
+    // A sticky toast (in-progress work) stays until the next toast replaces it.
+    if (!sticky) toastTimer = setTimeout(() => el.classList.remove("show"), isErr ? 6000 : 2600);
   }
   // Reject `promise` if it hasn't settled `ms` after `after` resolves — some
   // Chrome builds (seen on macOS) never settle clipboard.write() at all, which
@@ -1866,10 +1867,16 @@
       () => new Promise((_, rej) => setTimeout(() => rej(new Error(label)), ms)));
     return Promise.race([promise, timer]);
   }
+  // Safari requires the ClipboardItem to be handed a *promise* (the user
+  // gesture is checked at hand-over, so it survives the slow render). Chrome
+  // is the opposite: its promise-backed writes have been seen hanging forever
+  // on macOS, while a plain-blob write after the render is reliable (the
+  // focused tab is auto-granted clipboard-write). Pick per engine.
+  const SAFARI = /apple/i.test(navigator.vendor || "");
   async function copyPanelImage(name, btn) {
     if (!state.selSession || btn.classList.contains("busy")) return;
     btn.classList.add("busy");
-    toast("rendering panel image…");
+    toast("rendering panel image…", false, true);
     const url = "/api/shot?" + new URLSearchParams({ session: state.selSession, tile: name });
     // One fetch shared by every attempt — the render takes seconds, and a
     // failed clipboard write must not trigger a second render.
@@ -1882,12 +1889,17 @@
       return blob;
     });
     try {
-      // Promise-based ClipboardItem first: Safari checks the user gesture when
-      // the promise is handed over, so it survives the slow render. Deadline:
-      // 6s after the render finishes the write must have settled.
-      await deadline(
-        navigator.clipboard.write([new ClipboardItem({ "image/png": pngPromise })]),
-        pngPromise, 6000, "clipboard write timed out");
+      if (SAFARI) {
+        // Deadline: 6s after the render finishes the write must have settled.
+        await deadline(
+          navigator.clipboard.write([new ClipboardItem({ "image/png": pngPromise })]),
+          pngPromise, 6000, "clipboard write timed out");
+      } else {
+        const blob = await deadline(pngPromise, null, 90000, "screenshot render timed out");
+        await deadline(
+          navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]),
+          null, 6000, "clipboard write timed out");
+      }
       toast("copied panel image");
       flashBtn(btn, "ok");
     } catch (e1) {
