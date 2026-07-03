@@ -351,7 +351,10 @@
      takes over the right-push so the contents toggle sits beside it. */
   .sess-act { display: inline-flex; margin-left: auto; }
   .sess-act ~ .toc-toggle { margin-left: 8px; }
-  .session-toc { display: none; width: 244px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 16px 6px 28px; }
+  .session-toc { display: none; width: var(--tocw, 244px); min-width: 170px; max-width: 600px; flex: none; overflow-y: auto; border-left: 1px solid var(--line); padding: 16px 6px 28px; }
+  /* Drag handle on the sidebar's edge — resize the contents (double-click resets). */
+  .toc-resizer { display: none; flex: none; width: 6px; margin-right: -6px; cursor: col-resize; position: relative; z-index: 5; }
+  .toc-resizer:hover, .toc-resizer.dragging { background: var(--orange-dim); opacity: 0.5; }
   .toc-head { font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: var(--faint); padding: 0 10px 8px; }
   .toc-item { display: flex; align-items: baseline; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; color: var(--muted); background: none; border: 0; border-left: 2px solid transparent; cursor: pointer; padding: 5px 10px; border-radius: 0 4px 4px 0; }
   .toc-item .toc-label { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -366,6 +369,7 @@
   @media (min-width: 1300px) {
     .toc-toggle { display: inline-flex; }
     #view-sessions.toc-open .session-toc { display: block; }
+    #view-sessions.toc-open .toc-resizer { display: block; }
   }
   .session-claude { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
   .session-claude:empty { display: none; }
@@ -494,6 +498,7 @@
           </div>
           <div class="panels" id="panels"></div>
         </div>
+        <div class="toc-resizer" id="toc-resizer" title="Drag to resize contents (double-click to reset)"></div>
         <aside class="session-toc" id="session-toc" aria-label="Panel contents"></aside>
       </div>
     </section>
@@ -2880,6 +2885,32 @@
       loadSession(r.id, true);
     } catch (e) { toast("import failed: " + ((e && e.message) || e), true); }
   });
+  // Contents sidebar resize: drag the handle on its edge; the width persists
+  // per browser (double-click resets to the default).
+  (function () {
+    const rz = $("toc-resizer"), view = $("view-sessions");
+    if (!rz || !view) return;
+    try { const w = parseInt(localStorage.getItem("muckdb.tocw"), 10); if (w) view.style.setProperty("--tocw", w + "px"); } catch (_) {}
+    let dragging = false;
+    rz.addEventListener("pointerdown", (e) => { dragging = true; rz.classList.add("dragging"); rz.setPointerCapture(e.pointerId); e.preventDefault(); });
+    rz.addEventListener("pointermove", (e) => {
+      if (!dragging) return;
+      const body = $("session-body").getBoundingClientRect();
+      view.style.setProperty("--tocw", clamp(Math.round(body.right - e.clientX), 170, 600) + "px");
+    });
+    const end = () => {
+      if (!dragging) return;
+      dragging = false; rz.classList.remove("dragging");
+      const w = parseInt(getComputedStyle($("session-toc")).width, 10);
+      try { localStorage.setItem("muckdb.tocw", String(w)); } catch (_) {}
+    };
+    rz.addEventListener("pointerup", end);
+    rz.addEventListener("pointercancel", end);
+    rz.addEventListener("dblclick", () => {
+      view.style.removeProperty("--tocw");
+      try { localStorage.removeItem("muckdb.tocw"); } catch (_) {}
+    });
+  })();
   // Screenshot mode is a one-off render: a live socket would only hold the
   // headless browser's virtual time open.
   if (!SHOT) connect();
