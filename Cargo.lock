@@ -561,7 +561,7 @@ dependencies = [
 
 [[package]]
 name = "muckdb"
-version = "0.1.45"
+version = "0.1.46"
 dependencies = [
  "anyhow",
  "axum",
