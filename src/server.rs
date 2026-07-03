@@ -58,6 +58,14 @@ pub async fn run() -> Result<()> {
         .route("/api/query", get(api_query))
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
+        .route("/api/session/export", get(api_session_export))
+        // Axum's default body limit is 2 MB — far too small for archives that
+        // carry full database snapshots.
+        .route(
+            "/api/session/import",
+            post(api_session_import)
+                .layer(axum::extract::DefaultBodyLimit::max(4 * 1024 * 1024 * 1024)),
+        )
         .route("/api/shot", get(api_shot))
         .route("/api/trash", post(api_trash))
         .route("/api/activity", post(api_activity))
@@ -391,6 +399,41 @@ async fn api_session(Query(p): Query<SessionParams>) -> Response {
         Ok(Some(s)) => Json(s).into_response(),
         Ok(None) => (StatusCode::OK, Json(json!({ "error": "no such session" }))).into_response(),
         Err(e) => error_json(&e),
+    }
+}
+
+/// Bundle a session into a `.muckdb` zip download (the export button).
+async fn api_session_export(Query(p): Query<SessionParams>) -> Response {
+    let id = session::slug(&p.id);
+    let result =
+        tokio::task::spawn_blocking(move || crate::export::export_session_bytes(&id)).await;
+    match result {
+        Ok(Ok((name, bytes))) => (
+            [
+                (header::CONTENT_TYPE, "application/zip".to_string()),
+                (
+                    header::CONTENT_DISPOSITION,
+                    format!("attachment; filename=\"{}.muckdb\"", safe_filename(&name)),
+                ),
+            ],
+            bytes,
+        )
+            .into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("export task failed: {e}")),
+    }
+}
+
+/// Install an uploaded `.muckdb` archive (the header import button). The
+/// session save lands in the watched sessions dir, so every viewer's session
+/// list updates on its own.
+async fn api_session_import(body: axum::body::Bytes) -> Response {
+    let result =
+        tokio::task::spawn_blocking(move || crate::export::import_and_install(&body)).await;
+    match result {
+        Ok(Ok(imported)) => Json(json!({ "ok": true, "id": imported.session.id })).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("import task failed: {e}")),
     }
 }
 
