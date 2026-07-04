@@ -332,6 +332,50 @@
   .toprow .tc { color: var(--faint); z-index: 1; }
   .toprow .tbar { position: absolute; left: 0; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent); border-radius: 4px; transition: width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
 
+  /* ---- predict subview -------------------------------------------------- */
+  .predict-view { max-width: 1100px; display: flex; flex-direction: column; gap: 16px; }
+  .pd-badges { display: flex; gap: 8px; }
+  .pd-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 3px 9px; }
+  .pd-badge.warn { color: var(--orange); border-color: var(--orange-dim); }
+  .pd-findings { display: flex; flex-direction: column; gap: 4px; }
+  .pd-finding { display: grid; grid-template-columns: 46px 1fr; align-items: center; gap: 12px; font: inherit; font-size: 12.5px; text-align: left; background: none; border: 0; color: var(--muted); cursor: pointer; padding: 5px 8px; border-radius: 5px; }
+  .pd-finding:hover { background: var(--raised); }
+  .pd-finding .pd-score { font-size: 14px; color: var(--orange); text-align: right; font-weight: 700; }
+  .pd-finding b { color: var(--fg); font-weight: 400; }
+  .pd-weak-tag { font-size: 10px; color: var(--faint); letter-spacing: 0.06em; }
+  .pd-how { color: var(--faint); }
+  .pd-sub { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin-top: 8px; padding: 0 8px; }
+  .pd-matrix { display: grid; gap: 3px; align-items: stretch; }
+  .pd-corner { font-size: 10px; color: var(--faint); display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px 6px; }
+  .pd-colhead { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10.5px; color: var(--muted); max-height: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; justify-self: center; align-self: end; }
+  .pd-rowhead { font-size: 11px; color: var(--muted); text-align: right; padding-right: 8px; align-self: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
+  .pd-cell { height: 26px; display: flex; align-items: center; justify-content: center; font-size: 9.5px; color: var(--fg); border-radius: 3px; cursor: pointer; background: var(--surface); transition: transform 0.14s cubic-bezier(0.23, 1, 0.32, 1); }
+  .pd-cell:hover { transform: scale(1.12); z-index: 1; box-shadow: 0 2px 10px rgba(0,0,0,0.4); }
+  .pd-cell.sel { outline: 2px solid var(--orange); outline-offset: 1px; }
+  .pd-cell.diag { background: var(--raised); cursor: default; }
+  .pd-cell.empty { color: var(--faint); cursor: default; }
+  .pd-cell.weak { opacity: 0.65; }
+  .pd-hint { font-size: 10.5px; color: var(--faint); }
+  .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
+  .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
+  .pd-detail-head b { color: var(--orange); font-weight: 400; }
+  .pd-detail-score { color: var(--muted); font-size: 11.5px; flex: 1; }
+  .pd-chart { height: 300px; position: relative; }
+  .pd-comp { display: flex; flex-direction: column; gap: 5px; }
+  .pd-comp-row { display: grid; grid-template-columns: minmax(80px, 170px) 1fr 46px; gap: 10px; align-items: center; font-size: 11.5px; }
+  .pd-comp-label { color: var(--muted); text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pd-comp-bar { display: flex; height: 16px; border-radius: 3px; overflow: hidden; background: var(--raised); }
+  .pd-seg { display: block; height: 100%; }
+  .pd-comp-n { color: var(--faint); font-size: 10.5px; }
+  .pd-comp-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+  .pd-key { display: inline-flex; align-items: center; gap: 6px; }
+  .pd-swatch { width: 10px; height: 10px; border-radius: 2px; }
+  .pd-legend { font-size: 10.5px; color: var(--faint); display: flex; flex-wrap: wrap; gap: 4px 14px; }
+  .pd-legend b { color: var(--muted); font-weight: 400; }
+  .pd-excluded { font-size: 11px; color: var(--faint); }
+  .pd-excluded b { color: var(--muted); font-weight: 400; }
+  @media (prefers-reduced-motion: reduce) { .pd-cell { transition: none; } .pd-cell:hover { transform: none; } }
+
   /* display-only affixes (prefix/suffix) render muted so the value stands out */
   .fmt-affix { color: var(--muted); }
   /* schema */
@@ -953,7 +997,7 @@
   // Query-string keys, named once so they don't appear as magic strings below.
   const QP = { view: "view", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", hidden: "hide", sql: "sql" };
   // The subviews a `?view=` may select (anything else falls back to rows).
-  const SUBVIEWS = ["stats", "schema"];
+  const SUBVIEWS = ["stats", "predict", "schema"];
 
   function buildPath() {
     for (const r of ROUTES) { const p = r.build(state); if (p) return p; }
@@ -1300,6 +1344,7 @@
           <span class="seg">
             <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
             <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
+            <button data-sub="predict" class="${state.subview === "predict" ? "active" : ""}">predict</button>
             <button data-sub="schema" class="${state.subview === "schema" ? "active" : ""}">schema</button>
           </span>
         </span>
@@ -1335,6 +1380,7 @@
   function reloadBody() {
     if (state.subview === "rows") loadRows();
     else if (state.subview === "stats") loadStats();
+    else if (state.subview === "predict") loadPredict();
     else loadSchema();
   }
 
@@ -1549,6 +1595,230 @@
       <span class="box-iqr" style="left:${boxL}%;width:${boxW}%"></span>
       <span class="box-med" style="left:${medL}%"></span>
     </div>`;
+  }
+
+  // ---- predict subview: which columns predict which other columns --------
+  const PREDICT_METHODS = {
+    spearman_sq: "Spearman ρ² — monotone correlation",
+    theil_u: "Theil's U — uncertainty in the target explained",
+    eta_sq: "adjusted η² — variance in the target explained",
+    binned_theil_u: "Theil's U over the predictor's deciles",
+  };
+  const EXCLUDE_LABELS = {
+    id_like: "unique per row", high_cardinality: "mostly unique values", constant: "constant",
+    all_null: "all NULL", unsupported_type: "unsupported type",
+    duplicate_name: "duplicate name", column_cap: "over the 20-column cap",
+  };
+  // Lead with the plain claim ("country determines market"), verb scaled to
+  // the score; the precise statistic follows in a muted clause.
+  function predictSentence(p) {
+    const pct = Math.round(p.score * 100);
+    const verb = p.score >= 0.99 ? "determines"
+      : p.score >= 0.7 ? "strongly predicts"
+      : "predicts";
+    const how = p.method === "theil_u" ? (pct >= 100 ? `know ${esc(p.x)}, know ${esc(p.y)}` : `narrows it down by ${pct}%`)
+      : p.method === "binned_theil_u" ? (pct >= 100 ? `know roughly where ${esc(p.x)} sits, know ${esc(p.y)}` : `its deciles narrow it down by ${pct}%`)
+      : p.method === "eta_sq" ? `accounts for ${pct}% of its variation`
+      : `they rise and fall together, ρ² ${p.score.toFixed(2)}`;
+    return `<b>${esc(p.x)}</b> ${verb} <b>${esc(p.y)}</b> <span class="pd-how">— ${how}</span>`;
+  }
+  async function loadPredict() {
+    const slot = $("result-body");
+    if (!slot) return;
+    slot.innerHTML = '<div class="note">scoring column pairs…</div>';
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    try {
+      const data = await (await fetch("/api/predict?" + params.toString())).json();
+      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      state.predictData = data;
+      renderPredict(slot, data);
+    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  function renderPredict(slot, d) {
+    const usable = d.columns.filter((c) => c.role !== "excluded");
+    const excluded = d.columns.filter((c) => c.role === "excluded");
+    const pm = {};
+    d.pairs.forEach((p) => { pm[p.x + "\u0000" + p.y] = p; });
+
+    // Low-confidence note: with only a handful of rows per predictor value, a
+    // high score can be pure coincidence (one row per group "predicts" anything).
+    const distinctOf = {};
+    d.columns.forEach((c) => { distinctOf[c.name] = c.distinct; });
+    const weakNote = (p) => {
+      const k = p.method === "binned_theil_u" ? 10 : (distinctOf[p.x] || 0);
+      const per = k ? Math.max(1, Math.round(p.n / k)) : 0;
+      return per ? `only ~${per} row${per === 1 ? "" : "s"} per ${p.x} value — could be coincidence` : "based on thin data";
+    };
+    const badges =
+      (d.sampled ? `<span class="pd-badge">sampled to ${d.sample_n.toLocaleString()} rows</span>` : "") +
+      (d.truncated ? `<span class="pd-badge warn">partial — time budget hit</span>` : "");
+
+    // Ranked findings: the scannable version of the matrix.
+    // Confident findings lead; low-confidence ones get their own section below
+    // so they're always visible but never crowd the headlines.
+    const byScore = (a, b) => b.score - a.score || (a.x + a.y).localeCompare(b.x + b.y);
+    const eligible = d.pairs.filter((p) => p.score >= 0.4);
+    const solid = eligible.filter((p) => !p.weak).sort(byScore).slice(0, 8);
+    const shaky = eligible.filter((p) => p.weak).sort(byScore).slice(0, 6);
+    const findingRow = (p) => `<button class="pd-finding" data-px="${attr(p.x)}" data-py="${attr(p.y)}"${p.weak ? ` title="${attr(weakNote(p))}"` : ""}>
+          <span class="pd-score">${p.score.toFixed(2)}</span>
+          <span class="pd-sentence">${predictSentence(p)}</span>
+        </button>`;
+    const findings = solid.length || shaky.length
+      ? solid.map(findingRow).join("")
+        + (shaky.length ? `<div class="pd-sub" title="high scores from only a handful of rows per value — could be coincidence">lower confidence</div>` + shaky.map(findingRow).join("") : "")
+      : '<div class="note">no column strongly predicts another in this table.</div>';
+
+    // The matrix: predictor rows × target columns.
+    let matrix = "";
+    if (usable.length >= 2 && d.pairs.length) {
+      const head = usable.map((c) => `<div class="pd-colhead" title="${attr(c.name)}"><span>${esc(c.name)}</span></div>`).join("");
+      const rows = usable.map((rx) => {
+        const cells = usable.map((cy) => {
+          if (rx.name === cy.name) return '<div class="pd-cell diag"></div>';
+          const p = pm[rx.name + "\u0000" + cy.name];
+          if (!p) return '<div class="pd-cell empty" title="not scored (too few rows)">·</div>';
+          const fill = Math.round(p.score * 88);
+          const t = `${p.x} → ${p.y} · ${p.score.toFixed(3)} · ${PREDICT_METHODS[p.method] || p.method} · n=${p.n}${p.weak ? ` · low confidence: ${weakNote(p)}` : ""}`;
+          return `<div class="pd-cell${p.weak ? " weak" : ""}" data-px="${attr(p.x)}" data-py="${attr(p.y)}" title="${attr(t)}"
+            style="background:color-mix(in srgb, var(--orange) ${fill}%, var(--surface))">${p.score >= 0.995 ? "1.0" : p.score.toFixed(2).slice(1)}</div>`;
+        }).join("");
+        return `<div class="pd-rowhead" title="${attr(rx.name)}">${esc(rx.name)}</div>${cells}`;
+      }).join("");
+      matrix = `<div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${usable.length}, minmax(30px, 46px))">
+        <div class="pd-corner" title="rows predict columns">x → y</div>${head}${rows}</div>
+        <div class="pd-hint">rows predict columns — click a cell for the evidence</div>`;
+    }
+
+    const legend = Object.entries(PREDICT_METHODS)
+      .map(([k, v]) => `<span><b>${esc(k)}</b> ${esc(v)}</span>`).join(" · ");
+    const skipped = excluded.length
+      ? `<div class="pd-excluded">skipped: ${excluded.map((c) => `<b>${esc(c.name)}</b> (${EXCLUDE_LABELS[c.reason] || esc(c.reason || "")})`).join(", ")}</div>`
+      : "";
+
+    slot.innerHTML = `<div class="predict-view">
+      ${badges ? `<div class="pd-badges">${badges}</div>` : ""}
+      <div class="pd-findings">${findings}</div>
+      ${matrix}
+      <div class="pd-detail" id="pd-detail" hidden></div>
+      <div class="pd-legend">${legend}</div>
+      ${skipped}
+    </div>`;
+  }
+  // Rebuild the WHERE clause the server uses (build_where) so drill-in
+  // evidence is scoped to the same filters/search as the matrix.
+  function qIdent(n) { return '"' + String(n).replace(/"/g, '""') + '"'; }
+  function qLit(v) { return "'" + String(v).replace(/'/g, "''") + "'"; }
+  function drillWhere() {
+    const conds = [];
+    const byCol = {};
+    state.filters.forEach((f) => {
+      if (f.value !== undefined) (byCol[f.column] = byCol[f.column] || []).push(f.value);
+    });
+    Object.entries(byCol).forEach(([c, vs]) => {
+      const parts = vs.map((v) => `CAST(${qIdent(c)} AS VARCHAR) = ${qLit(v)}`);
+      conds.push(parts.length > 1 ? `(${parts.join(" OR ")})` : parts[0]);
+    });
+    state.filters.forEach((f) => {
+      const p = [];
+      if (f.min != null) p.push(`${qIdent(f.column)} >= ${Number(f.min)}`);
+      if (f.max != null) p.push(`${qIdent(f.column)} <= ${Number(f.max)}`);
+      if (f.tmin != null) p.push(`${qIdent(f.column)} >= ${qLit(f.tmin)}`);
+      if (f.tmax != null) p.push(/^\d{4}-\d{2}-\d{2}$/.test(f.tmax)
+        ? `${qIdent(f.column)} < DATE ${qLit(f.tmax)} + INTERVAL 1 DAY`
+        : `${qIdent(f.column)} < ${qLit(f.tmax)}`);
+      if (p.length) conds.push(`(${p.join(" AND ")})`);
+    });
+    if (state.q.trim() && state.predictData) {
+      const needle = qLit("%" + state.q.trim() + "%");
+      const ors = state.predictData.columns.map((c) => `CAST(${qIdent(c.name)} AS VARCHAR) ILIKE ${needle}`);
+      if (ors.length) conds.push(`(${ors.join(" OR ")})`);
+    }
+    return conds.length ? conds.join(" AND ") : "";
+  }
+  let predictChart = null;
+  async function showPredictDetail(x, y) {
+    const box = $("pd-detail");
+    const d = state.predictData;
+    if (!box || !d) return;
+    const p = d.pairs.find((q) => q.x === x && q.y === y);
+    if (!p) return;
+    document.querySelectorAll(".pd-cell.sel").forEach((c) => c.classList.remove("sel"));
+    const cell = document.querySelector(`.pd-cell[data-px="${cssEsc(x)}"][data-py="${cssEsc(y)}"]`);
+    if (cell) cell.classList.add("sel");
+    if (predictChart) { try { predictChart.destroy(); } catch (_) {} predictChart = null; }
+    box.hidden = false;
+    box.innerHTML = '<div class="note">fetching evidence…</div>';
+    const roles = {}; d.columns.forEach((c) => { roles[c.name] = c.role; });
+    const tbl = qIdent(state.selTable);
+    const w = drillWhere();
+    const and = w ? ` AND ${w}` : "";
+    const qx = qIdent(x), qy = qIdent(y);
+    const head = `<div class="pd-detail-head"><b>${esc(x)}</b> → <b>${esc(y)}</b>
+      <span class="pd-detail-score">${p.score.toFixed(3)} · ${esc(PREDICT_METHODS[p.method] || p.method)} · n=${p.n}</span>
+      <button class="panel-act" id="pd-close">✕</button></div>`;
+    try {
+      if (p.method === "spearman_sq") {
+        const sql = `SELECT * FROM (SELECT ${qx} AS x, ${qy} AS y FROM ${tbl} WHERE ${qx} IS NOT NULL AND ${qy} IS NOT NULL${and}) USING SAMPLE reservoir(800 ROWS) REPEATABLE (42)`;
+        const r = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql }))).json();
+        if (r.error) throw new Error(r.error);
+        box.innerHTML = head + '<div class="pd-chart"><canvas></canvas></div>';
+        predictChart = new Chart(box.querySelector("canvas"),
+          chartConfig("scatter", { x: "x", y: ["y"], xlabel: x, ylabel: y }, r.columns, r.rows, state.selDb, state.selTable));
+      } else if (p.method === "eta_sq") {
+        const sql = `SELECT CAST(${qx} AS VARCHAR) AS category, avg(${qy}) AS avg_y FROM ${tbl} WHERE ${qx} IS NOT NULL AND ${qy} IS NOT NULL${and} GROUP BY 1 ORDER BY 2 DESC LIMIT 24`;
+        const r = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql }))).json();
+        if (r.error) throw new Error(r.error);
+        box.innerHTML = head + '<div class="pd-chart"><canvas></canvas></div>';
+        predictChart = new Chart(box.querySelector("canvas"),
+          chartConfig("bar", { x: "category", y: ["avg_y"], xlabel: x, ylabel: `avg ${y}`, bars: "solid" }, r.columns, r.rows, state.selDb, state.selTable));
+      } else {
+        // Composition of Y within each X (deciles when X is numeric).
+        const xExpr = roles[x] === "num"
+          ? `least(9, CAST(floor(percent_rank() OVER (ORDER BY ${qx}) * 10) AS INT))`
+          : `CAST(${qx} AS VARCHAR)`;
+        const sql = `WITH d AS (SELECT ${xExpr} AS xv, CAST(${qy} AS VARCHAR) AS yv, ${qx} AS rawx FROM ${tbl} WHERE ${qx} IS NOT NULL AND ${qy} IS NOT NULL${and})
+          SELECT xv, min(rawx) AS lo, max(rawx) AS hi, yv, count(*) AS c FROM d GROUP BY xv, yv ORDER BY xv, c DESC`;
+        const r = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql }))).json();
+        if (r.error) throw new Error(r.error);
+        box.innerHTML = head + compositionHtml(r.columns, r.rows, roles[x] === "num", x, y);
+      }
+      box.querySelector("#pd-close").addEventListener("click", () => {
+        box.hidden = true;
+        document.querySelectorAll(".pd-cell.sel").forEach((c) => c.classList.remove("sel"));
+        if (predictChart) { try { predictChart.destroy(); } catch (_) {} predictChart = null; }
+      });
+    } catch (e) { box.innerHTML = head + `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  // Stacked composition bars: one row per predictor value (or decile), split
+  // by the target's values. Top 12 predictor groups, top 8 target values.
+  function compositionHtml(cols, rows, binned, xname, yname) {
+    const ix = cols.indexOf("xv"), ilo = cols.indexOf("lo"), ihi = cols.indexOf("hi"), iy = cols.indexOf("yv"), ic = cols.indexOf("c");
+    const groups = new Map();
+    rows.forEach((r) => {
+      const k = String(r[ix]);
+      if (!groups.has(k)) groups.set(k, { lo: r[ilo], hi: r[ihi], total: 0, ys: [] });
+      const g = groups.get(k);
+      g.total += Number(r[ic]); g.ys.push([String(r[iy]), Number(r[ic])]);
+    });
+    const yTotals = new Map();
+    rows.forEach((r) => yTotals.set(String(r[iy]), (yTotals.get(String(r[iy])) || 0) + Number(r[ic])));
+    const topY = [...yTotals.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([v]) => v);
+    const yColor = (v) => { const i = topY.indexOf(v); return i < 0 ? "var(--faint)" : PAL[i % PAL.length]; };
+    const shown = [...groups.entries()].sort((a, b) => binned ? Number(a[0]) - Number(b[0]) : b[1].total - a[1].total).slice(0, 12);
+    const bars = shown.map(([k, g]) => {
+      const label = binned ? `${fmtNum(Number(g.lo))} – ${fmtNum(Number(g.hi))}` : k;
+      const segs = g.ys.map(([yv, c]) => {
+        const wpc = (c / g.total) * 100;
+        return `<span class="pd-seg" style="width:${wpc}%;background:${yColor(yv)}" title="${attr(`${yname} = ${yv} · ${c} rows (${Math.round(wpc)}%)`)}"></span>`;
+      }).join("");
+      return `<div class="pd-comp-row"><span class="pd-comp-label" title="${attr(label)}">${esc(label)}</span><span class="pd-comp-bar">${segs}</span><span class="pd-comp-n">${g.total}</span></div>`;
+    }).join("");
+    const legend = topY.map((v) => `<span class="pd-key"><span class="pd-swatch" style="background:${yColor(v)}"></span>${esc(v)}</span>`).join("");
+    return `<div class="pd-comp">${bars}</div><div class="pd-comp-legend">${legend}</div>
+      <div class="pd-hint">${binned ? `${esc(xname)} deciles` : esc(xname)} left — each bar shows the mix of ${esc(yname)}</div>`;
   }
 
   async function loadSchema() {
@@ -2852,6 +3122,7 @@
     const rm = ev.target.closest("[data-rmfilter]"); if (rm) { burstAt(rm); state.filters.splice(Number(rm.dataset.rmfilter), 1); afterFilterChange(); return; }
     const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
     const facet = ev.target.closest("[data-fcol]"); if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
+    const pd = ev.target.closest("[data-px]"); if (pd) { showPredictDetail(pd.dataset.px, pd.dataset.py); return; }
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
     if (ev.target.closest("[data-run]")) { runQuery(); return; }

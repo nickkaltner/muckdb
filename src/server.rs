@@ -51,6 +51,7 @@ pub async fn run() -> Result<()> {
         .route("/api/tables", get(api_tables))
         .route("/api/preview", get(api_preview))
         .route("/api/stats", get(api_stats))
+        .route("/api/predict", get(api_predict))
         .route("/api/facets", get(api_facets))
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
@@ -281,6 +282,21 @@ async fn api_stats(Query(p): Query<StatsParams>) -> Response {
     match introspect::stats(&p.db, &p.table, p.q.as_deref(), &filters) {
         Ok(stats) => Json(stats).into_response(),
         Err(e) => error_json(&e),
+    }
+}
+
+/// Pairwise prediction matrix — heavier than stats (one big duckdb script),
+/// so it runs on the blocking pool instead of a tokio worker.
+async fn api_predict(Query(p): Query<StatsParams>) -> Response {
+    let filters = parse_filters(p.filter.as_deref());
+    let result = tokio::task::spawn_blocking(move || {
+        crate::predict::predict(&p.db, &p.table, p.q.as_deref(), &filters)
+    })
+    .await;
+    match result {
+        Ok(Ok(pred)) => Json(pred).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("predict task failed: {e}")),
     }
 }
 

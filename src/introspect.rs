@@ -57,13 +57,13 @@ pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
 /// Coerce a duckdb JSON scalar to f64. DuckDB's `-json` renders DECIMAL and
 /// HUGEINT as quoted strings (to avoid precision loss), so a plain `as_f64()`
 /// misses them — fall back to parsing the string.
-fn json_f64(v: &Value) -> Option<f64> {
+pub(crate) fn json_f64(v: &Value) -> Option<f64> {
     v.as_f64()
         .or_else(|| v.as_str().and_then(|s| s.parse::<f64>().ok()))
 }
 
 /// Escape an identifier for safe interpolation inside double quotes.
-fn quote_ident(name: &str) -> String {
+pub(crate) fn quote_ident(name: &str) -> String {
     format!("\"{}\"", name.replace('"', "\"\""))
 }
 
@@ -301,7 +301,7 @@ pub struct TableStats {
 }
 
 /// The `(name, type)` of each column, in table order, via `DESCRIBE`.
-fn describe(db: &str, table: &str) -> Result<Vec<(String, String)>> {
+pub(crate) fn describe(db: &str, table: &str) -> Result<Vec<(String, String)>> {
     let rows = query_json(db, &format!("DESCRIBE {}", quote_ident(table)))?;
     Ok(rows
         .into_iter()

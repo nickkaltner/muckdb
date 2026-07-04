@@ -7,6 +7,7 @@ mod facade;
 mod formats;
 mod introspect;
 mod paths;
+mod predict;
 mod server;
 mod session;
 mod shot;
