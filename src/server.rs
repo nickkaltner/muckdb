@@ -52,6 +52,7 @@ pub async fn run() -> Result<()> {
         .route("/api/preview", get(api_preview))
         .route("/api/stats", get(api_stats))
         .route("/api/predict", get(api_predict))
+        .route("/api/junk", get(api_junk))
         .route("/api/facets", get(api_facets))
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
@@ -297,6 +298,20 @@ async fn api_predict(Query(p): Query<StatsParams>) -> Response {
         Ok(Ok(pred)) => Json(pred).into_response(),
         Ok(Err(e)) => error_json(&e),
         Err(e) => error_json(&anyhow::anyhow!("predict task failed: {e}")),
+    }
+}
+
+/// Column-health metrics for the junk-data tab (same params as /api/stats).
+async fn api_junk(Query(p): Query<StatsParams>) -> Response {
+    let filters = parse_filters(p.filter.as_deref());
+    let result = tokio::task::spawn_blocking(move || {
+        crate::predict::junk(&p.db, &p.table, p.q.as_deref(), &filters)
+    })
+    .await;
+    match result {
+        Ok(Ok(j)) => Json(j).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("junk task failed: {e}")),
     }
 }
 

@@ -674,6 +674,195 @@ fn collect_pairs(rows: &[Value], usable: &[Usable], plans: &[PairPlan]) -> Vec<P
     pairs
 }
 
+// ---- junk data: constants, all-NULLs, sparse columns, exact duplicates ----
+
+/// A column's health metrics for the junk tab. Everything is computed on the
+/// (sampled) VARCHAR-cast values — equality on strings is exactly what "these
+/// two columns hold the same data" means for junk detection.
+#[derive(Debug, Serialize)]
+pub struct JunkColumn {
+    pub name: String,
+    pub col_type: String,
+    pub non_null: i64,
+    pub distinct: i64,
+    /// The most frequent value and how many (sampled) rows hold it.
+    pub top_value: Option<String>,
+    pub top_count: i64,
+}
+
+/// Two columns whose values match on every (sampled) row.
+#[derive(Debug, Serialize)]
+pub struct JunkDuplicate {
+    pub a: String,
+    pub b: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct JunkReport {
+    pub row_count: i64,
+    pub sampled: bool,
+    pub sample_n: i64,
+    pub columns: Vec<JunkColumn>,
+    pub duplicates: Vec<JunkDuplicate>,
+}
+
+/// Anything castable to VARCHAR participates in junk analysis (wider than
+/// prediction: TIME and high-cardinality text are still junk-checkable).
+fn junk_supported(ty: &str) -> bool {
+    let t = ty.to_ascii_uppercase();
+    !(t.contains("STRUCT")
+        || t.contains("LIST")
+        || t.contains("MAP")
+        || t.contains('[')
+        || t.contains("BLOB"))
+}
+
+/// Column-health metrics + exact-duplicate detection for a table, honouring
+/// the same search/filter scoping and sampling as the predict matrix.
+pub fn junk(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Result<JunkReport> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    let cols = describe(db, table)?;
+    let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+    let where_cond = build_where(&col_names, q, filters);
+    let where_sql = where_cond
+        .as_ref()
+        .map(|w| format!(" WHERE {w}"))
+        .unwrap_or_default();
+
+    // First-occurrence, castable columns only (a view can expose duplicate
+    // names; JSON keys would collide anyway).
+    let mut seen = std::collections::HashSet::new();
+    let usable: Vec<(String, String)> = cols
+        .into_iter()
+        .filter(|(n, t)| junk_supported(t) && seen.insert(n.clone()))
+        .collect();
+
+    let count = crate::introspect::query_json(
+        db,
+        &format!(
+            "SELECT count(*) AS n FROM {}{where_sql}",
+            quote_ident(table)
+        ),
+    )?;
+    let row_count = count
+        .first()
+        .and_then(|r| r.get("n"))
+        .and_then(Value::as_i64)
+        .unwrap_or(0);
+    let sampled = row_count > SAMPLE_ROWS;
+    let sample_n = if sampled { SAMPLE_ROWS } else { row_count };
+
+    if usable.is_empty() || row_count == 0 {
+        return Ok(JunkReport {
+            row_count,
+            sampled,
+            sample_n,
+            columns: Vec::new(),
+            duplicates: Vec::new(),
+        });
+    }
+
+    // One process: VARCHAR-cast sample table, then three result sets — basic
+    // counts, top values, and pairwise equal-on-every-row counts.
+    let proj = usable
+        .iter()
+        .enumerate()
+        .map(|(i, (n, _))| format!("CAST({} AS VARCHAR) AS j{i}", quote_ident(n)))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let sample = if sampled {
+        format!(" USING SAMPLE reservoir({SAMPLE_ROWS} ROWS) REPEATABLE ({SAMPLE_SEED})")
+    } else {
+        String::new()
+    };
+    let mut script = String::from("SET threads TO 1;\n");
+    script.push_str(&format!(
+        "CREATE TEMP TABLE __mj AS SELECT * FROM (SELECT {proj} FROM {}{where_sql}){sample};\n",
+        quote_ident(table)
+    ));
+    // Exact distincts are affordable here — this runs on the ≤50k sample.
+    let counts = (0..usable.len())
+        .map(|i| format!("count(j{i}) AS nn{i}, count(DISTINCT j{i}) AS nd{i}"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    script.push_str(&format!("SELECT count(*) AS n, {counts} FROM __mj;\n"));
+    let tops = (0..usable.len())
+        .map(|i| {
+            format!(
+                "(SELECT max(c) FROM (SELECT count(*) AS c FROM __mj WHERE j{i} IS NOT NULL GROUP BY j{i})) AS tc{i}, \
+                 (SELECT j{i} FROM __mj WHERE j{i} IS NOT NULL GROUP BY j{i} ORDER BY count(*) DESC, j{i} LIMIT 1) AS tv{i}"
+            )
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    script.push_str(&format!("SELECT {tops} FROM (SELECT 1);\n"));
+    let mut dup_keys = Vec::new();
+    let dups = (0..usable.len())
+        .flat_map(|i| (i + 1..usable.len()).map(move |j| (i, j)))
+        .map(|(i, j)| {
+            dup_keys.push((i, j));
+            format!("count(*) FILTER (j{i} IS NOT DISTINCT FROM j{j}) AS eq{i}_{j}")
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
+    if !dups.is_empty() {
+        script.push_str(&format!("SELECT {dups} FROM __mj;\n"));
+    }
+
+    let (rows, _truncated) = run_script(db, &script, Duration::from_millis(BUDGET_MS))?;
+    let geti = |row: &Value, k: &str| {
+        row.get(k)
+            .and_then(|v| v.as_i64().or_else(|| json_f64(v).map(|f| f as i64)))
+            .unwrap_or(0)
+    };
+    // Result rows arrive flattened in order: counts row, tops row, dups row.
+    let counts_row = rows.first().cloned().unwrap_or(Value::Null);
+    let tops_row = rows.get(1).cloned().unwrap_or(Value::Null);
+    let dups_row = rows.get(2).cloned().unwrap_or(Value::Null);
+    let n = geti(&counts_row, "n");
+
+    let columns: Vec<JunkColumn> = usable
+        .iter()
+        .enumerate()
+        .map(|(i, (name, ty))| JunkColumn {
+            name: name.clone(),
+            col_type: ty.clone(),
+            non_null: geti(&counts_row, &format!("nn{i}")),
+            distinct: geti(&counts_row, &format!("nd{i}")),
+            top_value: tops_row
+                .get(format!("tv{i}"))
+                .and_then(Value::as_str)
+                .map(String::from),
+            top_count: geti(&tops_row, &format!("tc{i}")),
+        })
+        .collect();
+
+    let duplicates = dup_keys
+        .iter()
+        .filter(|(i, j)| {
+            // Equal on every sampled row (NULLs matching NULLs), and not two
+            // all-NULL columns pretending to agree.
+            n > 0
+                && geti(&dups_row, &format!("eq{i}_{j}")) == n
+                && (columns[*i].non_null > 0 || columns[*j].non_null > 0)
+        })
+        .map(|&(i, j)| JunkDuplicate {
+            a: columns[i].name.clone(),
+            b: columns[j].name.clone(),
+        })
+        .collect();
+
+    Ok(JunkReport {
+        row_count,
+        sampled,
+        sample_n,
+        columns,
+        duplicates,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -932,6 +1121,42 @@ mod tests {
         assert_eq!(scoped.row_count, 100);
         let grp_col = scoped.columns.iter().find(|c| c.name == "grp").unwrap();
         assert_eq!(grp_col.reason, Some("constant"), "filtered grp is constant");
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn junk_finds_constants_nulls_sparse_and_duplicates() {
+        if !duckdb_ok() {
+            eprintln!("skipping junk_finds_constants_nulls_sparse_and_duplicates: no duckdb");
+            return;
+        }
+        let db = temp_db("junk");
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT \
+               i AS id, \
+               'fixed' AS always, \
+               CAST(NULL AS VARCHAR) AS empty, \
+               CASE WHEN i < 10 THEN 'rare' ELSE NULL END AS sparse, \
+               ('g' || (i % 4)::VARCHAR) AS grp, \
+               ('g' || (i % 4)::VARCHAR) AS grp_copy, \
+               CASE WHEN i = 0 THEN 'odd' ELSE 'usual' END AS nearly \
+             FROM range(200) r(i);",
+        );
+        let j = junk(&db, "t", None, &[]).unwrap();
+        assert_eq!(j.row_count, 200);
+        let col = |n: &str| j.columns.iter().find(|c| c.name == n).unwrap();
+        assert_eq!(col("always").non_null, 200);
+        assert_eq!(col("always").top_count, 200, "constant: one value fills it");
+        assert_eq!(col("empty").non_null, 0, "all NULL");
+        assert_eq!(col("sparse").non_null, 10, "sparse: 5% filled");
+        assert_eq!(col("nearly").top_count, 199, "near-constant");
+        assert_eq!(col("nearly").top_value.as_deref(), Some("usual"));
+        assert_eq!(j.duplicates.len(), 1, "exactly one duplicate pair");
+        assert_eq!(
+            (j.duplicates[0].a.as_str(), j.duplicates[0].b.as_str()),
+            ("grp", "grp_copy")
+        );
         std::fs::remove_file(&db).ok();
     }
 

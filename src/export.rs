@@ -403,6 +403,7 @@ mod tests {
                         targets: vec![],
                         thresholds: vec![],
                         events: vec![],
+                        trend: false,
                     }),
                     caption: Some("c".into()),
                     trashed: false,

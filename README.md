@@ -11,9 +11,14 @@ straight through — and muckdb quietly does two extra things:
    it to your LAN, where it's advertised over **mDNS** for discovery.
 2. **Keeps a live ledger.** Every invocation is recorded, and whenever a command
    touches a database, the web view presents that database's tables — rows
-   (with search, facets, sorting, pagination), per-column stats with histograms,
-   schema, a SQL query editor, and CSV/JSON export — updating in real time over a
-   WebSocket. It also hosts **sessions** (see below).
+   (with search, facets, sorting, pagination), a tabbed **stats** workbench
+   (**per column** histograms; a directional **correlation** matrix scoring how
+   well each column predicts each other; **time series** overviews with smoothed
+   trendlines, a tunable distance-from-trend **outlier list**, drag-to-filter
+   range selection and a time-column picker; and **junk data** detection —
+   constants, all-NULLs, sparse columns, exact duplicates), schema, a SQL query
+   editor, and CSV/JSON export —
+   updating in real time over a WebSocket. It also hosts **sessions** (see below).
 
 It's a drop-in for the duckdb CLI, so exit codes, the interactive shell, and
 piping all behave exactly as before.
@@ -82,10 +87,11 @@ muckdb session create analysis --title "Pond analysis"
 muckdb session post analysis --name notes --title Notes \
   --md "# Findings\n\n- pH trends **down** over time"
 
-# a data panel from a duckdb view, charted as a bar
+# a data panel from a duckdb view, charted as a bar; --trend overlays a
+# smoothed trendline (single-series bar/line/area/scatter)
 muckdb mydb.db -c "CREATE VIEW by_species AS SELECT species, count(*) n FROM readings GROUP BY 1"
 muckdb session tile analysis --name species --db mydb.db --view by_species \
-  --chart bar --x species --y n --title "By species"
+  --chart bar --x species --y n --title "By species" --trend
 
 # or straight from inline SQL, as a scatter
 muckdb session tile analysis --name temp --db mydb.db \
@@ -145,6 +151,8 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/preview?db&table&limit&offset&q&filter&sort&dir` | a page of rows (filtered/sorted) |
 | `GET /api/facets?db&table&q&filter` | per-column facets (values, numeric range, date range) |
 | `GET /api/stats?db&table` | per-column stats + histograms |
+| `GET /api/predict?db&table&q&filter` | pairwise column-prediction scores (Spearman ρ², Theil's U, adjusted η²) |
+| `GET /api/junk?db&table&q&filter` | column health metrics + exact-duplicate column pairs |
 | `GET /api/schema?db&table` | column definitions |
 | `GET /api/query?db&sql` | run a read-only query |
 | `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
@@ -155,7 +163,8 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/shot?session=ID&tile=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
 | `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 
-The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`.
+The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`;
+the stats tabs deep-link too: `?view=stats&tab=correlation|timeseries|junk`.
 
 ## Development
 

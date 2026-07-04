@@ -334,6 +334,17 @@
 
   /* ---- predict subview -------------------------------------------------- */
   .predict-view { max-width: 1100px; display: flex; flex-direction: column; gap: 16px; }
+  .pd-tabs { align-self: flex-start; }
+  .pd-tab-body { display: flex; flex-direction: column; gap: 16px; }
+  .pd-ts { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+  .pd-junk { display: flex; flex-direction: column; gap: 6px; }
+  .pd-junk-row { display: grid; grid-template-columns: 118px 1fr; gap: 12px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 7px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .pd-junk-row b { color: var(--fg); font-weight: 400; }
+  .pd-junk-row code { color: var(--orange); background: var(--raised); padding: 1px 5px; border-radius: 3px; font-size: 11.5px; }
+  .pd-junk-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--faint); }
+  .pd-junk-row.bad .pd-junk-kind { color: var(--fail); }
+  .pd-junk-row.warn .pd-junk-kind { color: var(--orange); }
+  .pd-dim { color: var(--faint); }
   .pd-badges { display: flex; gap: 8px; }
   .pd-badge { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 3px 9px; }
   .pd-badge.warn { color: var(--orange); border-color: var(--orange-dim); }
@@ -356,6 +367,21 @@
   .pd-cell.empty { color: var(--faint); cursor: default; }
   .pd-cell.weak { opacity: 0.65; }
   .pd-hint { font-size: 10.5px; color: var(--faint); }
+  .pd-outbar { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
+  .pd-outbar input { width: 82px; background: var(--raised); border: 1px solid var(--line); border-radius: 5px; color: var(--fg); padding: 3px 8px; font: inherit; font-size: 12px; }
+  .pd-outbar input:focus { border-color: var(--orange-dim); outline: none; }
+  .pd-outcount { color: var(--faint); margin-left: auto; }
+  .pd-outcount.hit { color: var(--fail); }
+  .pd-outlist { display: flex; flex-direction: column; gap: 4px; }
+  .pd-out-row { display: grid; grid-template-columns: 52px 1fr; gap: 12px; align-items: center; font-size: 12.5px; color: var(--muted); padding: 5px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--surface); }
+  .pd-out-row b { color: var(--fg); font-weight: 400; }
+  .pd-out-kind { font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; }
+  .pd-out-kind, .pd-out-dev { color: var(--fail); }
+  .pd-out-dev { font-weight: 700; }
+  .pd-brushable canvas { cursor: crosshair; }
+  .pd-brushsel { position: absolute; background: color-mix(in srgb, var(--orange) 16%, transparent); border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; }
+  .pd-tscol-bar { display: flex; align-items: center; gap: 10px; }
+  .pd-tscol-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -877,6 +903,9 @@
     setChartDefaults();
     // Redraw any Chart.js charts so they pick up the new palette.
     if (state.tab === "sessions" && state.sessionData) renderPanels(state.sessionData);
+    // The stats tabs bake chart/palette colours at render time too — re-render
+    // the open one (predict data is cached, so this is instant).
+    if (state.tab === "databases" && state.subview === "stats" && statsTab !== "columns") loadStats();
   }
   function setChartDefaults() {
     if (!window.Chart) return;
@@ -995,9 +1024,11 @@
       parse: (g) => g[0] === "db" && { tab: "databases", dbId: g[1] || null, mode: g[2] === "query" ? "query" : "table", table: g[2] === "query" ? null : (g[2] || null) } },
   ];
   // Query-string keys, named once so they don't appear as magic strings below.
-  const QP = { view: "view", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", hidden: "hide", sql: "sql" };
-  // The subviews a `?view=` may select (anything else falls back to rows).
-  const SUBVIEWS = ["stats", "predict", "schema"];
+  const QP = { view: "view", tab: "tab", q: "q", sort: "sort", dir: "dir", page: "p", psize: "ps", filters: "f", hidden: "hide", sql: "sql" };
+  // The subviews a `?view=` may select (anything else falls back to rows),
+  // and the tabs a `?tab=` may open within the stats subview.
+  const SUBVIEWS = ["stats", "schema"];
+  const STATS_TABS = ["columns", "correlation", "timeseries", "junk"];
 
   function buildPath() {
     for (const r of ROUTES) { const p = r.build(state); if (p) return p; }
@@ -1007,6 +1038,7 @@
     const p = new URLSearchParams();
     if (state.mode === "table") {
       if (state.subview !== "rows") p.set(QP.view, state.subview);
+      if (state.subview === "stats" && statsTab !== "columns") p.set(QP.tab, statsTab);
       if (state.q && state.q.trim()) p.set(QP.q, state.q.trim());
       if (state.sort) { p.set(QP.sort, state.sort); if (state.dir === "desc") p.set(QP.dir, "desc"); }
       if (state.page > 0) p.set(QP.page, String(state.page + 1));
@@ -1038,6 +1070,7 @@
     try { const f = p.get(QP.filters); if (f) filters = JSON.parse(f); } catch (_) {}
     try { const h = p.get(QP.hidden); if (h) hidden = JSON.parse(h); } catch (_) {}
     nav.sub = SUBVIEWS.includes(p.get(QP.view)) ? p.get(QP.view) : "rows";
+    nav.stab = STATS_TABS.includes(p.get(QP.tab)) ? p.get(QP.tab) : "columns";
     nav.q = p.get(QP.q) || "";
     nav.sort = p.get(QP.sort) || null;
     nav.dir = p.get(QP.dir) === "desc" ? "desc" : "asc";
@@ -1190,6 +1223,9 @@
   function selectTable(name, restore) {
     state.mode = "table"; state.selTable = name;
     state.subview = restore && restore.sub ? restore.sub : "rows";
+    statsTab = restore && restore.stab ? restore.stab : "columns";
+    statsHasTime = false; // re-learned from the new table's data
+    statsTsCol = null; // each table picks its own time column afresh
     state.q = restore && restore.q ? restore.q : "";
     state.filters = restore && restore.filters ? restore.filters.slice() : [];
     state.page = restore && restore.page ? restore.page : 0;
@@ -1344,7 +1380,6 @@
           <span class="seg">
             <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
             <button data-sub="stats" class="${state.subview === "stats" ? "active" : ""}">stats</button>
-            <button data-sub="predict" class="${state.subview === "predict" ? "active" : ""}">predict</button>
             <button data-sub="schema" class="${state.subview === "schema" ? "active" : ""}">schema</button>
           </span>
         </span>
@@ -1380,7 +1415,6 @@
   function reloadBody() {
     if (state.subview === "rows") loadRows();
     else if (state.subview === "stats") loadStats();
-    else if (state.subview === "predict") loadPredict();
     else loadSchema();
   }
 
@@ -1460,23 +1494,68 @@
     });
   }
 
+  // The stats subview hosts four tabs: the per-column cards, the correlation
+  // (pair-prediction) matrix, time series (only when a date/timestamp column
+  // exists), and junk data.
+  let statsTab = "columns";
+  let statsHasTime = false; // last-known, refined after each tab's fetch
+  let statsTsCol = null; // picked time column for the time-series tab
+  function statsScaffold(slot) {
+    const tb = (id, l) => `<button data-pdtab="${id}" class="${statsTab === id ? "active" : ""}">${l}</button>`;
+    const tabs = `<span class="seg pd-tabs">${tb("columns", "per column")}${tb("correlation", "correlation")}${statsHasTime ? tb("timeseries", "time series") : ""}${tb("junk", "junk data")}</span>`;
+    const bar = slot.querySelector(".pd-tabs"), body = slot.querySelector("#stats-tab-body");
+    if (bar && body) { bar.outerHTML = tabs; return body; }
+    slot.innerHTML = `<div class="predict-view">${tabs}<div class="pd-tab-body" id="stats-tab-body"></div></div>`;
+    return slot.querySelector("#stats-tab-body");
+  }
   async function loadStats() {
     const slot = $("result-body");
     if (!slot) return;
+    destroyPdCharts();
+    let body = statsScaffold(slot);
+    if (statsTab === "columns") { await loadStatsColumns(slot, body); return; }
+    body.innerHTML = '<div class="note">scoring column pairs…</div>';
+    const d = await ensurePredict();
+    if (!d) { body.innerHTML = '<div class="note err">prediction failed.</div>'; return; }
+    if (d.error) { body.innerHTML = `<div class="note err">${esc(d.error)}</div>`; return; }
+    statsHasTime = predictTimeCols(d).length > 0;
+    if (statsTab === "timeseries" && !statsHasTime) { statsTab = "columns"; loadStats(); syncUrl(false); return; }
+    body = statsScaffold(slot); // refresh the tab bar with real hasTime
+    if (statsTab === "timeseries") renderPredictTimeseries(body, d);
+    else if (statsTab === "junk") renderPredictJunk(body, d);
+    else renderPredictCorrelation(body, d);
+  }
+  async function loadStatsColumns(slot, body) {
     // Keep the existing grid on screen during the (fast) refetch so we can morph
     // from it; only show the placeholder on the first stats render.
-    const hadGrid = slot.querySelector(".stats-grid");
-    const prev = hadGrid ? captureStatGeom(slot) : null;
-    if (!hadGrid) slot.innerHTML = '<div class="note">computing stats…</div>';
+    const hadGrid = body.querySelector(".stats-grid");
+    const prev = hadGrid ? captureStatGeom(body) : null;
+    if (!hadGrid) body.innerHTML = '<div class="note">computing stats…</div>';
     const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
     if (state.q.trim()) params.set("q", state.q.trim());
     if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
     try {
       const data = await (await fetch("/api/stats?" + params.toString())).json();
-      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
-      slot.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
-      if (prev) animateStatGeom(slot, prev);
-    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+      if (data.error) { body.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
+      statsHasTime = (data.columns || []).some((c) => c.temporal);
+      body = statsScaffold(slot); // tab bar may gain/lose the time series tab
+      body.innerHTML = `<div class="stats-grid">${(data.columns || []).map((c) => statCard(c, data.row_count)).join("")}</div>`;
+      if (prev) animateStatGeom(body, prev);
+    } catch (e) { body.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  // Fetch (and cache) the pair-prediction data for the current scope.
+  let predictCache = { key: null, data: null };
+  async function ensurePredict() {
+    const key = JSON.stringify([state.selDb, state.selTable, state.q.trim(), state.filters]);
+    if (predictCache.key === key && predictCache.data) return predictCache.data;
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    try {
+      const data = await (await fetch("/api/predict?" + params.toString())).json();
+      if (!data.error) { predictCache = { key, data }; state.predictData = data; }
+      return data;
+    } catch (e) { return { error: String(e) }; }
   }
   // Snapshot the bar geometry of the current stat cards, keyed by column, so the
   // next render can animate from these values. Histogram/timeline bars match by
@@ -1622,21 +1701,17 @@
       : `they rise and fall together, ρ² ${p.score.toFixed(2)}`;
     return `<b>${esc(p.x)}</b> ${verb} <b>${esc(p.y)}</b> <span class="pd-how">— ${how}</span>`;
   }
-  async function loadPredict() {
-    const slot = $("result-body");
-    if (!slot) return;
-    slot.innerHTML = '<div class="note">scoring column pairs…</div>';
-    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
-    if (state.q.trim()) params.set("q", state.q.trim());
-    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
-    try {
-      const data = await (await fetch("/api/predict?" + params.toString())).json();
-      if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
-      state.predictData = data;
-      renderPredict(slot, data);
-    } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  let pdCharts = [];
+  function destroyPdCharts() {
+    pdCharts.forEach((c) => { try { c.destroy(); } catch (_) {} });
+    pdCharts = [];
+    if (predictChart) { try { predictChart.destroy(); } catch (_) {} predictChart = null; }
   }
-  function renderPredict(slot, d) {
+  function predictTimeCols(d) {
+    return d.columns.filter((c) => /TIMESTAMP|DATE/i.test(c.col_type)
+      && !["all_null", "unsupported_type", "duplicate_name"].includes(c.reason || ""));
+  }
+  function renderPredictCorrelation(slot, d) {
     const usable = d.columns.filter((c) => c.role !== "excluded");
     const excluded = d.columns.filter((c) => c.role === "excluded");
     const pm = {};
@@ -1698,14 +1773,303 @@
       ? `<div class="pd-excluded">skipped: ${excluded.map((c) => `<b>${esc(c.name)}</b> (${EXCLUDE_LABELS[c.reason] || esc(c.reason || "")})`).join(", ")}</div>`
       : "";
 
-    slot.innerHTML = `<div class="predict-view">
-      ${badges ? `<div class="pd-badges">${badges}</div>` : ""}
+    slot.innerHTML = `${badges ? `<div class="pd-badges">${badges}</div>` : ""}
       <div class="pd-findings">${findings}</div>
       ${matrix}
       <div class="pd-detail" id="pd-detail" hidden></div>
       <div class="pd-legend">${legend}</div>
-      ${skipped}
-    </div>`;
+      ${skipped}`;
+  }
+  // ---- time series tab: records over time per date/timestamp column ------
+  // Locally-weighted linear regression (LOESS, tricube weights). A global
+  // polynomial fit over/undershoots at the edges — the ends of a series are
+  // exactly where the eye checks a trendline — so the trend is smoothed
+  // locally instead: each evaluation fits a weighted line to the nearest ~35%
+  // of points. x is normalised to [0, 1] so epoch-ms values don't lose
+  // precision in the weighted sums.
+  function loessFit(xs, ys) {
+    const lo = Math.min(...xs), hi = Math.max(...xs), span = (hi - lo) || 1;
+    const nx = xs.map((x) => (x - lo) / span);
+    const k = Math.max(4, Math.round(nx.length * 0.35));
+    return (x) => {
+      const z = (x - lo) / span;
+      const near = nx.map((v, i) => [Math.abs(v - z), i]).sort((a, b) => a[0] - b[0]).slice(0, k);
+      const dmax = near[near.length - 1][0] || 1;
+      let sw = 0, swx = 0, swy = 0, swxx = 0, swxy = 0;
+      near.forEach(([d, i]) => {
+        const w = Math.pow(1 - Math.pow(Math.min(1, d / dmax), 3), 3);
+        sw += w; swx += w * nx[i]; swy += w * ys[i]; swxx += w * nx[i] * nx[i]; swxy += w * nx[i] * ys[i];
+      });
+      const den = sw * swxx - swx * swx;
+      if (Math.abs(den) < 1e-12) return sw ? swy / sw : 0;
+      const b = (sw * swxy - swx * swy) / den;
+      return (swy - b * swx) / sw + b * z;
+    };
+  }
+  // A smoothed trendline dataset over [{x, y}] points. Continuous x (time or
+  // linear) samples the curve across the range; a category axis evaluates at
+  // each index and the caller maps the values back onto the labels.
+  function trendDataset(pts, continuousX) {
+    const clean = pts.filter((p) => p && isFinite(p.x) && isFinite(p.y));
+    if (clean.length < 4) return null;
+    const xs = clean.map((p) => p.x), ys = clean.map((p) => p.y);
+    const fit = loessFit(xs, ys);
+    const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
+    let data;
+    if (continuousX) {
+      const lo = Math.min(...xs), hi = Math.max(...xs), steps = 60;
+      data = Array.from({ length: steps + 1 }, (_, i) => {
+        const x = lo + ((hi - lo) * i) / steps;
+        return { x, y: fit(x) };
+      });
+    } else {
+      data = pts.map((p) => ({ x: p.x, y: fit(p.x) }));
+    }
+    return { type: "line", label: "trend", data, borderColor: hexA(fg, 0.75), borderWidth: 2,
+      pointRadius: 0, pointHoverRadius: 0, fill: false, order: -1 };
+  }
+  async function renderPredictTimeseries(body, d) {
+    const tcols = predictTimeCols(d);
+    if (!tcols.length) { body.innerHTML = '<div class="note">no time data to chart.</div>'; return; }
+    if (!tcols.some((c) => c.name === statsTsCol)) statsTsCol = tcols[0].name;
+    // With several time columns, a picker chooses which one drives the charts.
+    const picker = tcols.length > 1
+      ? `<div class="pd-tscol-bar"><span class="pd-tscol-label">time column</span><span class="seg">${tcols.map((c) =>
+          `<button data-tscol="${attr(c.name)}" class="${c.name === statsTsCol ? "active" : ""}">${esc(c.name)}</button>`).join("")}</span></div>`
+      : "";
+    const wirePicker = () => body.querySelectorAll("[data-tscol]").forEach((b) => b.addEventListener("click", () => {
+      if (b.dataset.tscol === statsTsCol) return;
+      statsTsCol = b.dataset.tscol;
+      loadStats(); // re-render via the dispatcher so old charts are destroyed
+    }));
+    body.innerHTML = picker + '<div class="note">loading time series…</div>';
+    wirePicker();
+    const w = drillWhere();
+    const tbl = qIdent(state.selTable);
+    const parts = [];
+    for (const c of tcols.filter((c) => c.name === statsTsCol)) {
+      const qx = qIdent(c.name);
+      const cond = `${qx} IS NOT NULL${w ? ` AND ${w}` : ""}`;
+      try {
+        const span = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb,
+          sql: `SELECT min(${qx})::VARCHAR AS lo, max(${qx})::VARCHAR AS hi FROM ${tbl} WHERE ${cond}` }))).json();
+        if (span.error || !span.rows || !span.rows.length) continue;
+        const lo = parseTs(span.rows[0][0]), hi = parseTs(span.rows[0][1]);
+        const days = (hi - lo) / 86400000;
+        const dateOnly = !/TIMESTAMP/i.test(c.col_type);
+        const unit = days > 1100 ? "month" : days > 130 ? "week" : (days > 3.5 || dateOnly) ? "day" : "hour";
+        const sql = `SELECT date_trunc('${unit}', ${qx})${unit === "hour" ? "" : "::DATE"}::VARCHAR AS t, count(*) AS records
+          FROM ${tbl} WHERE ${cond} GROUP BY 1 ORDER BY 1`;
+        const r = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql }))).json();
+        if (r.error || !r.rows || !r.rows.length) continue;
+        parts.push({ col: c.name, unit, cols: r.columns, rows: r.rows });
+      } catch (_) {}
+    }
+    if (!parts.length) { body.innerHTML = picker + '<div class="note">no time data to chart.</div>'; wirePicker(); return; }
+    body.innerHTML = picker + parts.map((p, i) => `<div class="pd-ts">
+        <div class="pd-detail-head"><b>records over time</b><span class="pd-detail-score">by ${esc(p.col)} · per ${p.unit}</span></div>
+        <div class="pd-chart"><canvas data-ts="${i}"></canvas></div>
+        <div class="pd-outbar" data-outbar="${i}" hidden>
+          <span>flag ${p.unit}s more than</span>
+          <input type="number" min="0" step="any" data-outdist="${i}" aria-label="outlier distance from trend">
+          <span>records from the trend as outliers</span>
+          <span class="pd-outcount" data-outcount="${i}"></span>
+        </div>
+        <div class="pd-outlist" data-outlist="${i}"></div>
+        <div class="pd-hint">bars are row counts per ${p.unit}; the line is a smoothed trend (local regression); dashed lines mark the outlier band; drag across the chart to filter to that range</div>
+      </div>`).join("");
+    wirePicker();
+    parts.forEach((p, i) => {
+      const cfg = chartConfig("bar", { x: "t", y: ["records"], xlabel: p.col, ylabel: "records", trend: true }, p.cols, p.rows, state.selDb, state.selTable);
+      const ds0 = cfg.data.datasets[0];
+      const pts = ds0.data;
+      const finite = pts.filter((pt) => pt && isFinite(pt.x) && isFinite(pt.y));
+      if (finite.length < 4) { // too few buckets for a trend — plain chart, no outlier band
+        const bare = new Chart(body.querySelector(`canvas[data-ts="${i}"]`), cfg);
+        pdCharts.push(bare);
+        wireTsBrush(bare, p);
+        return;
+      }
+      // Residual per bucket against the same LOESS curve the chart draws; the
+      // default distance is ~2 residual standard deviations, rounded to two
+      // significant figures so the input reads as a human number.
+      const fit = loessFit(finite.map((pt) => pt.x), finite.map((pt) => pt.y));
+      const resid = pts.map((pt) => (pt && isFinite(pt.x) && isFinite(pt.y)) ? pt.y - fit(pt.x) : NaN);
+      const fr = resid.filter(isFinite);
+      const sd = Math.sqrt(fr.reduce((s, r) => s + r * r, 0) / fr.length);
+      const mag = Math.pow(10, Math.floor(Math.log10(Math.max(2 * sd, 1))) - 1);
+      const d0 = Math.max(1, +((Math.round((2 * sd) / mag) * mag).toFixed(6)));
+      // Dashed band at trend ± distance (lower edge clamped at 0 — counts
+      // can't go negative), plus per-bar recolouring for anything outside it.
+      const xs = finite.map((pt) => pt.x);
+      const xlo = Math.min(...xs), xhi = Math.max(...xs), steps = 60;
+      const bandPts = (dist, sign) => Array.from({ length: steps + 1 }, (_, s) => {
+        const x = xlo + ((xhi - xlo) * s) / steps;
+        return { x, y: Math.max(0, fit(x) + sign * dist) };
+      });
+      const fg = cssVar("--fg") || "#e8eaec";
+      const mkBand = (sign) => ({ type: "line", label: "band", data: bandPts(d0, sign), borderColor: hexA(fg, 0.3),
+        borderWidth: 1, borderDash: [5, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: -1 });
+      const bandUp = mkBand(1), bandDn = mkBand(-1);
+      cfg.data.datasets.push(bandUp, bandDn);
+      let outSet = new Set();
+      const baseBg = ds0.backgroundColor;
+      const outC = cssVar("--fail") || "#e0614a";
+      ds0.backgroundColor = (ctx) => outSet.has(ctx.dataIndex)
+        ? outC
+        : (typeof baseBg === "function" ? baseBg(ctx) : baseBg);
+      const chart = new Chart(body.querySelector(`canvas[data-ts="${i}"]`), cfg);
+      pdCharts.push(chart);
+      wireTsBrush(chart, p);
+      const cnt = body.querySelector(`[data-outcount="${i}"]`);
+      const list = body.querySelector(`[data-outlist="${i}"]`);
+      const applyDist = (dist) => {
+        outSet = new Set();
+        const out = [];
+        pts.forEach((pt, j) => {
+          if (!isFinite(resid[j]) || Math.abs(resid[j]) <= dist) return;
+          outSet.add(j);
+          out.push({ j, dev: resid[j], y: pt.y });
+        });
+        bandUp.data = bandPts(dist, 1); bandDn.data = bandPts(dist, -1);
+        chart.update();
+        cnt.textContent = out.length ? `${out.length} outlier${out.length === 1 ? "" : "s"}` : "no outliers";
+        cnt.classList.toggle("hit", out.length > 0);
+        out.sort((a, b) => Math.abs(b.dev) - Math.abs(a.dev));
+        const MAXR = 20;
+        list.innerHTML = out.slice(0, MAXR).map((o) => {
+          const above = o.dev > 0;
+          return `<div class="pd-out-row ${above ? "above" : "below"}"><span class="pd-out-kind">${above ? "spike" : "dip"}</span>` +
+            `<span><b>${esc(String(p.rows[o.j][0]))}</b> — ${Math.round(o.y).toLocaleString()} records vs ~${Math.round(o.y - o.dev).toLocaleString()} on the trend ` +
+            `(<span class="pd-out-dev">${above ? "+" : "−"}${Math.round(Math.abs(o.dev)).toLocaleString()}</span>)</span></div>`;
+        }).join("") + (out.length > MAXR ? `<div class="pd-hint">…and ${out.length - MAXR} more — raise the distance to focus on the biggest.</div>` : "");
+      };
+      const bar = body.querySelector(`[data-outbar="${i}"]`);
+      const inp = body.querySelector(`input[data-outdist="${i}"]`);
+      bar.hidden = false;
+      inp.value = d0;
+      inp.addEventListener("input", () => {
+        const v = parseFloat(inp.value);
+        if (isFinite(v) && v >= 0) applyDist(v);
+      });
+      applyDist(d0);
+    });
+  }
+  // Drag horizontally across a time-series chart to filter the whole view to
+  // that range — same day-granularity time filter the facet histogram brush
+  // sets, so the facets, rows and every stats tab re-scope together.
+  function wireTsBrush(chart, p) {
+    const wrap = chart.canvas.parentElement;
+    wrap.classList.add("pd-brushable");
+    const sel = document.createElement("div");
+    sel.className = "pd-brushsel"; sel.hidden = true;
+    wrap.appendChild(sel);
+    const px = (ev) => {
+      const r = chart.canvas.getBoundingClientRect();
+      return clamp(ev.clientX - r.left, chart.chartArea.left, chart.chartArea.right);
+    };
+    const draw = (a, b) => {
+      sel.hidden = false;
+      sel.style.left = Math.min(a, b) + "px";
+      sel.style.width = Math.abs(b - a) + "px";
+      sel.style.top = chart.chartArea.top + "px";
+      sel.style.height = (chart.chartArea.bottom - chart.chartArea.top) + "px";
+    };
+    // A week/month bucket covers many days — a filter on it must reach the
+    // bucket's end, not stop at its first day.
+    const bucketEndDay = (startStr, tz) => {
+      const t = parseTs(String(startStr));
+      if (p.unit === "week") return new Date(t + 6 * 86400000).toISOString().slice(0, 10);
+      if (p.unit === "month") {
+        const dt = new Date(t);
+        return new Date(Date.UTC(dt.getUTCFullYear(), dt.getUTCMonth() + 1, 0)).toISOString().slice(0, 10);
+      }
+      return zoneDay(String(startStr), tz);
+    };
+    wrap.addEventListener("mousedown", (ev) => {
+      if (ev.button !== 0) return;
+      ev.preventDefault();
+      const x0 = px(ev);
+      let x1 = x0;
+      draw(x0, x1);
+      const move = (e) => { x1 = px(e); draw(x0, x1); };
+      const up = () => {
+        document.removeEventListener("mousemove", move);
+        document.removeEventListener("mouseup", up);
+        sel.hidden = true;
+        if (Math.abs(x1 - x0) < 5) return; // a click, not a drag
+        const v0 = chart.scales.x.getValueForPixel(Math.min(x0, x1));
+        const v1 = chart.scales.x.getValueForPixel(Math.max(x0, x1));
+        // Snap each end to its nearest bucket and filter on those calendar days.
+        const xs = chart.data.datasets[0].data;
+        if (!xs.length) return;
+        const nearest = (v) => xs.reduce((bi, pt, j) => Math.abs(pt.x - v) < Math.abs(xs[bi].x - v) ? j : bi, 0);
+        const jLo = nearest(v0), jHi = nearest(v1);
+        const tz = facetTz(p.col) || "utc";
+        const dayLo = zoneDay(String(p.rows[jLo][0]), tz);
+        const dayHi = bucketEndDay(p.rows[jHi][0], tz);
+        const f = state.facets.find((x) => x.name === p.col) || {};
+        setTRange(p.col, dayLo, dayHi, f.min || dayLo, f.max || dayHi);
+      };
+      document.addEventListener("mousemove", move);
+      document.addEventListener("mouseup", up);
+    });
+  }
+  // ---- junk data tab: constants, all-NULLs, sparse columns, duplicates ----
+  async function renderPredictJunk(body, d) {
+    body.innerHTML = '<div class="note">checking for junk…</div>';
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    let j;
+    try { j = await (await fetch("/api/junk?" + params.toString())).json(); }
+    catch (e) { body.innerHTML = `<div class="note err">${esc(String(e))}</div>`; return; }
+    if (j.error) { body.innerHTML = `<div class="note err">${esc(j.error)}</div>`; return; }
+    const n = j.sample_n || j.row_count;
+    const findings = [];
+    j.columns.forEach((c) => {
+      const filled = n ? c.non_null / n : 0;
+      const topShare = c.non_null ? c.top_count / c.non_null : 0;
+      if (c.non_null === 0) {
+        findings.push({ kind: "all null", cls: "bad", html: `<b>${esc(c.name)}</b> is entirely NULL` });
+        return;
+      }
+      if (c.top_count === c.non_null) {
+        findings.push({ kind: "constant", cls: "bad", html: `<b>${esc(c.name)}</b> is always <code>${esc(String(c.top_value ?? ""))}</code>${filled < 1 ? " (where present)" : ""}` });
+      } else if (topShare >= 0.95) {
+        findings.push({ kind: "near-constant", cls: "warn", html: `<b>${esc(c.name)}</b> is <code>${esc(String(c.top_value ?? ""))}</code> in ${Math.round(topShare * 100)}% of rows` });
+      }
+      if (filled <= 0.1) {
+        findings.push({ kind: "sparse", cls: "warn", html: `<b>${esc(c.name)}</b> has a value in only ${Math.max(1, Math.round(filled * 100))}% of rows` });
+      }
+    });
+    const seenDup = new Set();
+    j.duplicates.forEach((p) => {
+      seenDup.add([p.a, p.b].sort().join(" → "));
+      findings.push({ kind: "duplicate", cls: "bad", html: `<b>${esc(p.a)}</b> and <b>${esc(p.b)}</b> are identical on every row` });
+    });
+    // Interchangeable pairs from the correlation matrix: different values but
+    // each determines the other (e.g. a code column and its label column).
+    (d.pairs || []).forEach((p) => {
+      if (p.method !== "theil_u" || p.score < 0.995 || p.weak) return;
+      const back = (d.pairs || []).find((q) => q.x === p.y && q.y === p.x && q.method === "theil_u" && q.score >= 0.995);
+      const key = [p.x, p.y].sort().join(" → ");
+      if (!back || seenDup.has(key)) return;
+      seenDup.add(key);
+      findings.push({ kind: "interchangeable", cls: "warn", html: `<b>${esc(p.x)}</b> and <b>${esc(p.y)}</b> carry the same information — each determines the other` });
+    });
+    const list = findings.length
+      ? findings.map((f) => `<div class="pd-junk-row ${f.cls}"><span class="pd-junk-kind">${f.kind}</span><span>${f.html}</span></div>`).join("")
+      : '<div class="note">no junk detected — every column carries real information.</div>';
+    const rowsHtml = j.columns.map((c) => {
+      const filled = n ? c.non_null / n : 0;
+      const share = c.non_null ? c.top_count / c.non_null : 0;
+      const top = c.top_value == null ? "—" : `${esc(String(c.top_value).slice(0, 40))} <span class="pd-dim">(${Math.round(share * 100)}%)</span>`;
+      return `<tr><td>${esc(c.name)}</td><td class="pd-dim">${esc(c.col_type)}</td><td>${Math.round(filled * 100)}%</td><td>${c.distinct}</td><td>${top}</td></tr>`;
+    }).join("");
+    const table = `<div class="preview-wrap"><table class="preview"><thead><tr><th>column</th><th>type</th><th>filled</th><th>distinct</th><th>top value (share)</th></tr></thead><tbody>${rowsHtml}</tbody></table></div>`;
+    const badge = j.sampled ? `<div class="pd-badges"><span class="pd-badge">sampled to ${j.sample_n.toLocaleString()} rows</span></div>` : "";
+    body.innerHTML = `${badge}<div class="pd-junk">${list}</div>${table}`;
   }
   // Rebuild the WHERE clause the server uses (build_where) so drill-in
   // evidence is scoped to the same filters/search as the matrix.
@@ -2764,7 +3128,10 @@
       const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX, false, minUnit))); if (anno) o.plugins.muckAnno = anno;
       if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
       o.plugins.legend.display = false; // one series — the title already names it
-      return { type: "scatter", data: { datasets: [{ label: ys[0], data: rows.map((r) => ({ x: xv(r), y: +r[yi] })), backgroundColor: hexA(PAL[0], 0.7), pointRadius: 2.5, pointHoverRadius: 4 }] }, options: o };
+      const pts = rows.map((r) => ({ x: xv(r), y: +r[yi] }));
+      const sets = [{ label: ys[0], data: pts, backgroundColor: hexA(PAL[0], 0.7), borderWidth: 0, pointRadius: 2.5, pointHoverRadius: 4 }];
+      if (spec.trend) { const t = trendDataset(pts, true); if (t) sets.push(t); }
+      return { type: "scatter", data: { datasets: sets }, options: o };
     }
     const stacked = kind === "stacked";
     const type = kind === "line" || kind === "area" ? "line" : "bar";
@@ -2810,6 +3177,17 @@
         borderRadius: type !== "bar" ? 0 : (stacked ? (i === ys.length - 1 ? barRadius : 0) : barRadius), borderSkipped: false, maxBarThickness: 120,
         barPercentage: 0.96, categoryPercentage: 0.9 };
     });
+    // Optional fitted trendline over the first series (single-series charts).
+    if (spec.trend && single) {
+      const pts = timeX
+        ? datasets[0].data
+        : datasets[0].data.map((y, i) => ({ x: i, y: +y }));
+      const t = trendDataset(pts, timeX);
+      if (t) {
+        if (!timeX) t.data = t.data.map((p) => p.y); // category axis: align by index
+        datasets.push(t);
+      }
+    }
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar"))); if (anno) o.plugins.muckAnno = anno;
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
@@ -3123,6 +3501,7 @@
     const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
     const facet = ev.target.closest("[data-fcol]"); if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
     const pd = ev.target.closest("[data-px]"); if (pd) { showPredictDetail(pd.dataset.px, pd.dataset.py); return; }
+    const pdt = ev.target.closest("[data-pdtab]"); if (pdt) { statsTab = pdt.dataset.pdtab; loadStats(); syncUrl(true); return; }
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
     const ex = ev.target.closest("[data-export]"); if (ex) { downloadExport(ex.dataset.export); return; }
     if (ev.target.closest("[data-run]")) { runQuery(); return; }

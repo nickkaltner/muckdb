@@ -51,6 +51,9 @@ pub struct Chart {
     /// Vertical event lines at an x-position (timestamp or category).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Marker>,
+    /// Overlay a smoothed trendline (LOESS; single-series bar/line/area/scatter).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub trend: bool,
 }
 
 /// One panel in a session.
@@ -641,6 +644,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     targets: parse_markers(&p.get_all("target")),
                     thresholds: parse_markers(&p.get_all("threshold")),
                     events: parse_markers(&p.get_all("event")),
+                    trend: p.get("trend").is_some(),
                 }),
                 caption: p.get("caption").map(str::to_string),
                 trashed: false,
@@ -762,7 +766,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
-                 [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n  \
+                 [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \
+                 [--trend]  (overlay a smoothed trendline; single-series bar/line/area/scatter)\n  \
                  screenshot <name> [--tile TILE] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
                  export <name> [--out FILE.muckdb]  (bundle session + database snapshots into a portable zip)\n  \
                  import <file.muckdb>               (load an exported session; dbs land in muckdb's data dir)\n  \

@@ -6,7 +6,8 @@ UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run wit
 
 - records every invocation in a live **ledger**,
 - lets you browse any database it has touched (rows, search, facets, sorting,
-  stats with histograms, schema, a SQL query editor, CSV/JSON export), and
+  stats with histograms — plus correlation, time-series and junk-data tabs,
+  schema, a SQL query editor, CSV/JSON export), and
 - hosts **sessions**: named dashboards of panels you build from the CLI to
   present results to the human.
 
@@ -55,7 +56,7 @@ muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
-        [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']
+        [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
@@ -117,6 +118,9 @@ muckdb session rm <name> [--tile TILE]
   the best way to flag an important moment — a deploy, incident, or campaign. Add
   one to essentially every time series. Each is `VALUE` or `VALUE|label`, e.g.
   `--threshold '30|max'`.
+- **Trendline — `--trend`** overlays a smoothed trendline (locally-weighted
+  regression) on a single-series `bar`/`line`/`area`/`scatter` tile — add it by
+  default to records/metric-over-time charts. Ignored on stacked/multi-series tiles.
 
 ## Column display formats — set them, always
 
@@ -214,7 +218,7 @@ button on every panel in the web UI.
   you think they say before telling the human it's done.
 - **Give the human the link.** `http://localhost:11000/session/<id>/` — deep-links
   to a specific table/view/query also work, e.g.
-  `/db/<id>/<table>/?view=stats`.
+  `/db/<id>/<table>/?view=stats` (stats tabs: `&tab=correlation|timeseries|junk`).
 - Queries the daemon runs (introspection, tiles, the editor) are **read-only**.
 
 ## Where state lives
