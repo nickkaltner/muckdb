@@ -871,6 +871,14 @@
       grad2: ["#5fc8e8", "#085e8e"],
       bargrad: ["#dff4fc", "#2ba5d8", "#0a4a70"],
       chart: ["#0e7fc0", "#0f8f7a", "#5a55c9", "#b8437f", "#52708a", "#0a97ac", "#5e8f3e", "#8a6fd0"],
+      // Categorical ramp: 20 shades of one cool blue (hue fixed at 207 — no
+      // warm/violet swings). Neighbours differ by lightness band; each cycle
+      // of five steps toward gray (vivid → steel → slate) so all 20 stay
+      // distinct without ever leaving the blue family.
+      cat: ["#0e7fc0", "#479ce1", "#103c60", "#217eca", "#7bb8ea",
+        "#27567c", "#5c99cc", "#1b3b55", "#387bb2", "#8bb6da",
+        "#36546d", "#6f98b8", "#253a4b", "#4d799d", "#98b5cd",
+        "#415362", "#7e96a9", "#2d3943", "#5e788d", "#a3b4c2"],
     },
     hearth: {
       label: "hearth", flat: true, vars: {
@@ -2900,6 +2908,10 @@
   const CAT_CURATED = 4;
   let CAT_N = CAT_CURATED;
   function catColors(n) {
+    // A theme with a designed categorical ramp (`cat`) uses it outright —
+    // e.g. glacier's 20 shades of blue — before any curated/generated fallback.
+    const tc = (THEMES[state.theme] || {}).cat;
+    if (tc && n <= tc.length) return tc.slice(0, n);
     if (n <= CAT_N) return PAL.slice(0, n);
     const cs = getComputedStyle(document.documentElement);
     const accent = cs.getPropertyValue("--orange").trim() || PAL[0];
