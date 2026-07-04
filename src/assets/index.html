@@ -309,8 +309,13 @@
   .box-cap { position: absolute; top: 50%; width: 1px; height: 9px; background: var(--muted); transform: translateY(-50%); }
   .box-iqr { position: absolute; top: 50%; height: 12px; background: color-mix(in srgb, var(--orange) 30%, transparent); border: 1px solid var(--orange-dim); border-radius: 2px; transform: translateY(-50%); transition: left 0.42s cubic-bezier(0.22, 0.61, 0.36, 1), width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   .box-med { position: absolute; top: 50%; width: 2px; height: 12px; background: var(--orange); transform: translateY(-50%); transition: left 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
-  .stat-nums { display: flex; gap: 14px; font-size: 11px; color: var(--muted); margin-top: 8px; }
-  .stat-nums b { color: var(--fg); font-weight: 400; }
+  /* Label over value so a formatted value ("$275.46 USD") never wraps mid-number;
+     min/avg/max align left/centre/right to echo the histogram axis above. */
+  .stat-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .stat-nums span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .stat-nums span:nth-child(2) { text-align: center; }
+  .stat-nums span:nth-child(3) { text-align: right; }
+  .stat-nums b { display: block; color: var(--fg); font-weight: 400; }
   .toplist { display: flex; flex-direction: column; gap: 4px; }
   .toprow { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 8px; font: inherit; font-size: 12px; text-align: left; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 3px 4px; border-radius: 4px; position: relative; }
   .toprow:hover { background: var(--raised); }
@@ -2928,7 +2933,9 @@
 
   // ---- websocket --------------------------------------------------------
   function updateCounts() { $("sl-counts").textContent = `${plural(state.history.length, "command")} · ${plural(state.databases.length, "database")}`; }
-  function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = text; }
+  // The bottom bar shows the build version while connected (the green dot
+  // already says "live"); the titlebar indicator keeps the state word.
+  function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = live ? "v__MUCKDB_VERSION__" : text; }
   function apply(s) {
     state.history = s.history || [];
     state.sessions = s.sessions || [];

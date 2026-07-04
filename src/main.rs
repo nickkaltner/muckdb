@@ -44,6 +44,8 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         }
         // muckdb's own help (duckdb's help, rebranded, with muckdb commands on top).
         Some("--help" | "-help" | "-h" | "help") => help(),
+        // muckdb's version, then the underlying duckdb's version line.
+        Some("--version" | "-version") => version(),
         // Session dashboards: `muckdb session <create|list|post|tile|rm> ...`
         Some("session") => session::cli(&args[1..]),
         // Install the bundled Claude skill: `muckdb skill install`.
@@ -80,6 +82,7 @@ muckdb commands:
   --display              open the web UI (starts the background daemon if needed)
   --status               report whether the daemon is running
   --stop                 stop the background daemon
+  --version              print muckdb's version, then duckdb's
   session <subcommand>   build dashboards: create | list | post | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
@@ -115,6 +118,20 @@ Anything else is passed straight through to duckdb:
         Err(_) => {
             println!("(duckdb not found on PATH — install it to see its options here.)");
         }
+    }
+    Ok(0)
+}
+
+/// `muckdb --version` — muckdb's own version first, then the duckdb CLI's
+/// version line so the passthrough engine's build is visible too.
+fn version() -> anyhow::Result<i32> {
+    println!("muckdb v{}", env!("CARGO_PKG_VERSION"));
+    match std::process::Command::new("duckdb")
+        .arg("-version")
+        .output()
+    {
+        Ok(out) => print!("duckdb {}", String::from_utf8_lossy(&out.stdout)),
+        Err(_) => println!("duckdb not found on PATH"),
     }
     Ok(0)
 }
