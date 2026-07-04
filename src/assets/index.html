@@ -380,8 +380,12 @@
   .pd-out-dev { font-weight: 700; }
   .pd-brushable canvas { cursor: crosshair; }
   .pd-brushsel { position: absolute; background: color-mix(in srgb, var(--orange) 16%, transparent); border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; }
-  .pd-tscol-bar { display: flex; align-items: center; gap: 10px; }
+  .pd-tscol-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
   .pd-tscol-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
+  .pd-tscol-label:not(:first-child) { margin-left: 12px; }
+  .pd-tssel { border: 1px solid var(--line); border-radius: 5px; color: var(--fg); padding: 4px 28px 4px 9px; font: inherit; font-size: 12px; cursor: pointer; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-color: var(--raised); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
+  .pd-tssel:hover { border-color: var(--orange-dim); }
+  .pd-tssel:focus { border-color: var(--orange-dim); outline: none; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -1276,6 +1280,7 @@
     statsTab = restore && restore.stab ? restore.stab : "columns";
     statsHasTime = false; // re-learned from the new table's data
     statsTsCol = null; // each table picks its own time column afresh
+    statsTsAgg = "count"; statsTsMetricCol = null;
     state.q = restore && restore.q ? restore.q : "";
     state.filters = restore && restore.filters ? restore.filters.slice() : [];
     state.page = restore && restore.page ? restore.page : 0;
@@ -1557,6 +1562,8 @@
   let statsTab = "columns";
   let statsHasTime = false; // last-known, refined after each tab's fetch
   let statsTsCol = null; // picked time column for the time-series tab
+  let statsTsAgg = "count"; // time-series metric: count | avg | min | max | sum
+  let statsTsMetricCol = null; // numeric column the non-count aggregate applies to
   function statsScaffold(slot) {
     const tb = (id, l) => `<button data-pdtab="${id}" class="${statsTab === id ? "active" : ""}">${l}</button>`;
     const tabs = `<span class="seg pd-tabs">${tb("columns", "per column")}${tb("correlation", "correlation")}${statsHasTime ? tb("timeseries", "time series") : ""}${tb("junk", "junk data")}</span>`;
@@ -1889,20 +1896,54 @@
     const tcols = predictTimeCols(d);
     if (!tcols.length) { body.innerHTML = '<div class="note">no time data to chart.</div>'; return; }
     if (!tcols.some((c) => c.name === statsTsCol)) statsTsCol = tcols[0].name;
-    // With several time columns, a picker chooses which one drives the charts.
-    const picker = tcols.length > 1
-      ? `<div class="pd-tscol-bar"><span class="pd-tscol-label">time column</span><span class="seg">${tcols.map((c) =>
-          `<button data-tscol="${attr(c.name)}" class="${c.name === statsTsCol ? "active" : ""}">${esc(c.name)}</button>`).join("")}</span></div>`
+    // Metric: row count per bucket by default, or avg/min/max/sum of any
+    // numeric column.
+    const numCols = d.columns.filter((c) => /INT|DECIMAL|FLOAT|DOUBLE|REAL|NUMERIC/i.test(c.col_type)
+      && !["all_null", "unsupported_type", "duplicate_name"].includes(c.reason || ""));
+    if (statsTsAgg !== "count" && !numCols.some((c) => c.name === statsTsMetricCol)) {
+      statsTsMetricCol = numCols.length ? numCols[0].name : null;
+      if (!statsTsMetricCol) statsTsAgg = "count";
+    }
+    const isCount = statsTsAgg === "count";
+    const mcol = statsTsMetricCol;
+    const metricLabel = isCount ? "records" : `${statsTsAgg} ${mcol}`;
+    // Format a metric value for the outlier list: counts stay integers, other
+    // metrics go through the column's display format (currency, units, …).
+    const fv = (v) => isCount ? Math.round(v).toLocaleString()
+      : String(fmtColNum(state.selDb, mcol, state.selTable, round3(v)));
+    // Pickers: aggregate + column (only when numeric columns exist), and the
+    // time column when the table has several.
+    const metricPick = numCols.length
+      ? `<span class="pd-tscol-label">metric</span><span class="seg">${["count", "avg", "min", "max", "sum"].map((a) =>
+          `<button data-tsagg="${a}" class="${statsTsAgg === a ? "active" : ""}">${a}</button>`).join("")}</span>` +
+        `<select class="pd-tssel" data-tsmcol${isCount ? " hidden" : ""} aria-label="metric column">${numCols.map((c) =>
+          `<option value="${attr(c.name)}"${c.name === mcol ? " selected" : ""}>${esc(c.name)}</option>`).join("")}</select>`
       : "";
-    const wirePicker = () => body.querySelectorAll("[data-tscol]").forEach((b) => b.addEventListener("click", () => {
-      if (b.dataset.tscol === statsTsCol) return;
-      statsTsCol = b.dataset.tscol;
-      loadStats(); // re-render via the dispatcher so old charts are destroyed
-    }));
+    const timePick = tcols.length > 1
+      ? `<span class="pd-tscol-label">time column</span><span class="seg">${tcols.map((c) =>
+          `<button data-tscol="${attr(c.name)}" class="${c.name === statsTsCol ? "active" : ""}">${esc(c.name)}</button>`).join("")}</span>`
+      : "";
+    const picker = metricPick || timePick ? `<div class="pd-tscol-bar">${metricPick}${timePick}</div>` : "";
+    const wirePicker = () => {
+      body.querySelectorAll("[data-tscol]").forEach((b) => b.addEventListener("click", () => {
+        if (b.dataset.tscol === statsTsCol) return;
+        statsTsCol = b.dataset.tscol;
+        loadStats(); // re-render via the dispatcher so old charts are destroyed
+      }));
+      body.querySelectorAll("[data-tsagg]").forEach((b) => b.addEventListener("click", () => {
+        if (b.dataset.tsagg === statsTsAgg) return;
+        statsTsAgg = b.dataset.tsagg;
+        loadStats();
+      }));
+      const sel = body.querySelector("[data-tsmcol]");
+      if (sel) sel.addEventListener("change", () => { statsTsMetricCol = sel.value; loadStats(); });
+    };
     body.innerHTML = picker + '<div class="note">loading time series…</div>';
     wirePicker();
     const w = drillWhere();
     const tbl = qIdent(state.selTable);
+    const ycol = isCount ? "records" : mcol;
+    const expr = isCount ? "count(*)" : `${statsTsAgg}(${qIdent(mcol)})`;
     const parts = [];
     for (const c of tcols.filter((c) => c.name === statsTsCol)) {
       const qx = qIdent(c.name);
@@ -1915,7 +1956,7 @@
         const days = (hi - lo) / 86400000;
         const dateOnly = !/TIMESTAMP/i.test(c.col_type);
         const unit = days > 1100 ? "month" : days > 130 ? "week" : (days > 3.5 || dateOnly) ? "day" : "hour";
-        const sql = `SELECT date_trunc('${unit}', ${qx})${unit === "hour" ? "" : "::DATE"}::VARCHAR AS t, count(*) AS records
+        const sql = `SELECT date_trunc('${unit}', ${qx})${unit === "hour" ? "" : "::DATE"}::VARCHAR AS t, ${expr} AS ${qIdent(ycol)}
           FROM ${tbl} WHERE ${cond} GROUP BY 1 ORDER BY 1`;
         const r = await (await fetch("/api/query?" + new URLSearchParams({ db: state.selDb, sql }))).json();
         if (r.error || !r.rows || !r.rows.length) continue;
@@ -1924,20 +1965,20 @@
     }
     if (!parts.length) { body.innerHTML = picker + '<div class="note">no time data to chart.</div>'; wirePicker(); return; }
     body.innerHTML = picker + parts.map((p, i) => `<div class="pd-ts">
-        <div class="pd-detail-head"><b>records over time</b><span class="pd-detail-score">by ${esc(p.col)} · per ${p.unit}</span></div>
+        <div class="pd-detail-head"><b>${esc(metricLabel)} over time</b><span class="pd-detail-score">by ${esc(p.col)} · per ${p.unit}</span></div>
         <div class="pd-chart"><canvas data-ts="${i}"></canvas></div>
         <div class="pd-outbar" data-outbar="${i}" hidden>
-          <span>flag ${p.unit}s more than</span>
+          <span>flag ${p.unit}s where ${esc(metricLabel)} ${isCount ? "is" : "strays"} more than</span>
           <input type="number" min="0" step="any" data-outdist="${i}" aria-label="outlier distance from trend">
-          <span>records from the trend as outliers</span>
+          <span>from the trend</span>
           <span class="pd-outcount" data-outcount="${i}"></span>
         </div>
         <div class="pd-outlist" data-outlist="${i}"></div>
-        <div class="pd-hint">bars are row counts per ${p.unit}; the line is a smoothed trend (local regression); dashed lines mark the outlier band; drag across the chart to filter to that range</div>
+        <div class="pd-hint">bars are ${isCount ? "row counts" : esc(metricLabel)} per ${p.unit}; the line is a smoothed trend (local regression); dashed lines mark the outlier band; drag across the chart to filter to that range</div>
       </div>`).join("");
     wirePicker();
     parts.forEach((p, i) => {
-      const cfg = chartConfig("bar", { x: "t", y: ["records"], xlabel: p.col, ylabel: "records", trend: true }, p.cols, p.rows, state.selDb, state.selTable);
+      const cfg = chartConfig("bar", { x: "t", y: [ycol], xlabel: p.col, ylabel: metricLabel, trend: true }, p.cols, p.rows, state.selDb, state.selTable);
       const ds0 = cfg.data.datasets[0];
       const pts = ds0.data;
       const finite = pts.filter((pt) => pt && isFinite(pt.x) && isFinite(pt.y));
@@ -1954,15 +1995,21 @@
       const resid = pts.map((pt) => (pt && isFinite(pt.x) && isFinite(pt.y)) ? pt.y - fit(pt.x) : NaN);
       const fr = resid.filter(isFinite);
       const sd = Math.sqrt(fr.reduce((s, r) => s + r * r, 0) / fr.length);
-      const mag = Math.pow(10, Math.floor(Math.log10(Math.max(2 * sd, 1))) - 1);
-      const d0 = Math.max(1, +((Math.round((2 * sd) / mag) * mag).toFixed(6)));
-      // Dashed band at trend ± distance (lower edge clamped at 0 — counts
-      // can't go negative), plus per-bar recolouring for anything outside it.
+      const two = 2 * sd;
+      let d0 = 1;
+      if (isFinite(two) && two > 0) {
+        const mag = Math.pow(10, Math.floor(Math.log10(two)) - 1);
+        d0 = +((Math.round(two / mag) * mag).toFixed(8));
+        if (isCount) d0 = Math.max(1, d0); // counts are integers — a sub-1 band is noise
+      }
+      // Dashed band at trend ± distance (lower edge clamped at 0 for counts —
+      // they can't go negative), plus per-bar recolouring outside it.
       const xs = finite.map((pt) => pt.x);
       const xlo = Math.min(...xs), xhi = Math.max(...xs), steps = 60;
       const bandPts = (dist, sign) => Array.from({ length: steps + 1 }, (_, s) => {
         const x = xlo + ((xhi - xlo) * s) / steps;
-        return { x, y: Math.max(0, fit(x) + sign * dist) };
+        const y = fit(x) + sign * dist;
+        return { x, y: isCount ? Math.max(0, y) : y };
       });
       const fg = cssVar("--fg") || "#e8eaec";
       const mkBand = (sign) => ({ type: "line", label: "band", data: bandPts(d0, sign), borderColor: hexA(fg, 0.3),
@@ -1997,8 +2044,8 @@
         list.innerHTML = out.slice(0, MAXR).map((o) => {
           const above = o.dev > 0;
           return `<div class="pd-out-row ${above ? "above" : "below"}"><span class="pd-out-kind">${above ? "spike" : "dip"}</span>` +
-            `<span><b>${esc(String(p.rows[o.j][0]))}</b> — ${Math.round(o.y).toLocaleString()} records vs ~${Math.round(o.y - o.dev).toLocaleString()} on the trend ` +
-            `(<span class="pd-out-dev">${above ? "+" : "−"}${Math.round(Math.abs(o.dev)).toLocaleString()}</span>)</span></div>`;
+            `<span><b>${esc(String(p.rows[o.j][0]))}</b> — ${esc(fv(o.y))}${isCount ? " records" : ""} vs ~${esc(fv(o.y - o.dev))} on the trend ` +
+            `(<span class="pd-out-dev">${above ? "+" : "−"}${esc(fv(Math.abs(o.dev)))}</span>)</span></div>`;
         }).join("") + (out.length > MAXR ? `<div class="pd-hint">…and ${out.length - MAXR} more — raise the distance to focus on the biggest.</div>` : "");
       };
       const bar = body.querySelector(`[data-outbar="${i}"]`);
@@ -3129,6 +3176,45 @@
     ctx.textAlign = align === "right" ? "right" : "left"; ctx.textBaseline = "middle";
     ctx.fillText(text, x, top + boxH / 2);
   }
+  // Trend lines draw themselves in — a one-time left→right reveal that starts
+  // after the bars have landed, easing out over ~0.9s. Purpose: the trend is
+  // the chart's conclusion, so it arrives last and the eye follows it. Skipped
+  // in screenshot mode and for prefers-reduced-motion viewers.
+  const trendReveal = {
+    id: "trendReveal",
+    _skip() {
+      return SHOT || (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
+    },
+    _progress(chart) {
+      const DELAY = 350, DUR = 900;
+      if (!chart.$trendT0) chart.$trendT0 = performance.now();
+      const t = (performance.now() - chart.$trendT0 - DELAY) / DUR;
+      return t >= 1 ? 1 : t <= 0 ? 0 : 1 - Math.pow(1 - t, 3); // ease-out cubic
+    },
+    beforeDatasetDraw(chart, args) {
+      const ds = chart.data.datasets[args.index];
+      if (!ds || ds.label !== "trend" || this._skip()) return;
+      const p = this._progress(chart);
+      if (p >= 1) return;
+      const a = chart.chartArea, ctx = chart.ctx;
+      ctx.save();
+      ctx.beginPath();
+      ctx.rect(a.left, a.top, (a.right - a.left) * p, a.bottom - a.top);
+      ctx.clip();
+      args.$trendClipped = true;
+    },
+    afterDatasetDraw(chart, args) {
+      if (!args.$trendClipped) return;
+      chart.ctx.restore();
+      // Keep redrawing until the reveal completes (rAF-paced, one line only).
+      if (!chart.$trendRaf) {
+        chart.$trendRaf = requestAnimationFrame(() => {
+          chart.$trendRaf = null;
+          try { chart.draw(); } catch (_) {} // chart may have been destroyed
+        });
+      }
+    },
+  };
   const muckAnnoPlugin = {
     id: "muckAnno",
     afterDatasetsDraw(chart, _args, opts) {
@@ -3866,6 +3952,7 @@
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
+    try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }
   }
