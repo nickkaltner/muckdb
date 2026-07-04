@@ -215,7 +215,9 @@
   @keyframes eye-blink { 0% { transform: scaleY(0.1); opacity: 0.35; } 55% { transform: scaleY(1.2); } 100% { transform: scaleY(1); opacity: 1; } }
   .facet-val { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 8px; width: 100%; text-align: left; font: inherit; font-size: 12px; background: none; border: 0; color: var(--fg); cursor: pointer; padding: 4px 6px; border-radius: 4px; position: relative; }
   .facet-val:hover { background: var(--raised); }
-  .facet-val .box { width: 13px; height: 13px; border: 1px solid var(--line); border-radius: 3px; z-index: 1; }
+  .facet-val .box { width: 13px; height: 13px; border: 1px solid var(--line); border-radius: 3px; z-index: 1; transition: border-color 0.12s, background 0.12s; }
+  /* Hovering the row previews the check: the box it would tick lights up. */
+  .facet-val:hover .box { border-color: var(--orange); background: color-mix(in srgb, var(--orange) 22%, transparent); }
   .facet-val.on .box { background: var(--orange); border-color: var(--orange); }
   .facet-val .fv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .facet-val.on .fv { color: var(--orange); }
@@ -278,6 +280,13 @@
   table.preview thead th .ind { color: var(--fg); margin-left: 4px; }
   table.preview tbody tr:hover { background: var(--raised); }
   table.preview td.null { color: var(--faint); }
+  /* Hover "+" on categorical cells: adds a filter on that column+value. Sits
+     inline right after the text; space is reserved (visibility, not display)
+     so columns don't shift on hover. Stays visible as "−" while active. */
+  .cellf { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 7px; vertical-align: middle; padding: 0; font: inherit; font-size: 13px; line-height: 1; color: var(--orange); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
+  @media (hover: hover) and (pointer: fine) { table.preview td:hover .cellf { visibility: visible; } }
+  .cellf.on { visibility: visible; color: var(--fg); border-color: var(--orange-dim); }
+  .cellf:hover { border-color: var(--orange); }
   .pager { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
   .pager button { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 12px; cursor: pointer; }
   .pager button:hover:not(:disabled) { border-color: var(--orange-dim); }
@@ -428,6 +437,7 @@
      buttons so wide elements don't visibly shear. */
   .kbtn, .tab, .combo, .navchip, .seg button, .pager button, .panel-act, .facet-clear, .runbtn, .fchip, .facet-val, .toprow, .toc-item { transition: transform 0.14s cubic-bezier(0.23, 1, 0.32, 1); }
   .kbtn:active, .tab:active, .combo:active, .navchip:active, .seg button:active, .pager button:active:not(:disabled), .panel-act:active, .facet-clear:active, .runbtn:active, .fchip:active { transform: scale(0.97); }
+  .cellf:active { transform: scale(0.9); }
   .facet-val:active, .toprow:active, .toc-item:active { transform: scale(0.985); }
   .panel.wide { grid-column: 1 / -1; }
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
@@ -1355,7 +1365,10 @@
         return `<th class="sortable" data-sortcol="${attr(c)}">${esc(c)}${ind}</th>`;
       }).join("");
       const au = autoEpochUnits(allCols, rows, state.selDb, state.selTable);
-      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i])).join("") + "</tr>").join("");
+      // Columns with a values facet are categorical — their cells get the
+      // hover "+" filter affordance.
+      const cat = new Set(state.facets.filter((f) => f.kind !== "range" && f.kind !== "time").map((f) => f.name));
+      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i], cat.has(allCols[i]))).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       // Uniform-width labels keep the native select compact so its chevron sits
       // right next to the value (the aria-label + pagination context carry meaning).
@@ -1369,17 +1382,27 @@
       maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function cell(v, col, table, db, autoEpoch) {
+  function cell(v, col, table, db, autoEpoch, filterable) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
-    if (f && (f.tz || f.epoch) && String(v).trim() !== "") return `<td>${applyFmtHtml(f, v)}</td>`;
-    if (f && String(v).trim() !== "" && isFinite(Number(v))) return `<td>${applyFmtHtml(f, Number(v))}</td>`;
+    let inner;
+    if (f && (f.tz || f.epoch) && String(v).trim() !== "") inner = applyFmtHtml(f, v);
+    else if (f && String(v).trim() !== "" && isFinite(Number(v))) inner = applyFmtHtml(f, Number(v));
     // Auto-detected epoch column (no explicit format): show the timestamp the
     // number means, pinned to UTC like the charts. `muckdb format --tz/--epoch`
     // takes over the moment one is set.
-    if (!f && autoEpoch && String(v).trim() !== "") return `<td>${applyFmtHtml({ epoch: autoEpoch, tz: "utc" }, v)}</td>`;
-    return `<td>${esc(String(v))}</td>`;
+    else if (!f && autoEpoch && String(v).trim() !== "") inner = applyFmtHtml({ epoch: autoEpoch, tz: "utc" }, v);
+    else inner = esc(String(v));
+    // Categorical columns (ones with a values facet) get a hover "+" that adds
+    // a filter on this column+value; it stays visible as "−" while the filter
+    // is on. Shares the [data-fcol] click path with the facet buttons.
+    if (filterable) {
+      const on = hasFilter(col, String(v));
+      const t = on ? `Remove filter ${col} = ${String(v)}` : `Filter ${col} = ${String(v)}`;
+      inner += `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
+    }
+    return `<td>${inner}</td>`;
   }
   // Per-column auto-epoch units for a rowset (chart detection, reused) — so
   // row/query/tile tables render 1782345600000 as a timestamp, not 13 digits.
