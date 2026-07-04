@@ -767,11 +767,12 @@
       chart: ["#ff5a6e", "#4bb8a8", "#ffb07a", "#c98fd0", "#8aa6e0", "#e0a85a", "#6fc4b8", "#d07a9a"],
       // Categorical ramp: 10 steps out of the bar gradient (grad2 here —
       // peach-coral → deep crimson), then the same 10 desaturated toward
-      // rosewood — 20 colours that stay in the crimson family.
-      cat: ["#ff9a7a", "#f88e73", "#f1826d", "#ea7766", "#e36b60",
-        "#dc5f59", "#d55353", "#ce484c", "#c73c46", "#c0303f",
-        "#d4b0a5", "#cda89f", "#c69f98", "#bf9791", "#b88e8a",
-        "#b18684", "#ab7d7d", "#a27375", "#9a696c", "#915f64"],
+      // rosewood. Each half is interleaved (1-6-2-7-…) so neighbouring
+      // categories sit half the ramp apart.
+      cat: ["#ff9a7a", "#dc5f59", "#f88e73", "#d55353", "#f1826d",
+        "#ce484c", "#ea7766", "#c73c46", "#e36b60", "#c0303f",
+        "#d4b0a5", "#b18684", "#cda89f", "#ab7d7d", "#c69f98",
+        "#a27375", "#bf9791", "#9a696c", "#b88e8a", "#915f64"],
     },
     arctic: {
       label: "arctic", vars: {
@@ -840,15 +841,15 @@
         "#d9b356", // brass
         "#c9a3d9", // mauve
       ],
-      // Categorical ramp: 10 greens walking the bar gradient's hue path with
-      // perceptually even lightness steps (lime → deep leaf, no pale-cream
-      // end, ~6% lightness per step so neighbours stay distinct), then 10
-      // golds slid down-spectrum (mid gold → deep olive) — the yellow run
-      // starts at mid-lightness so colour 11 can't be mistaken for colour 1.
-      cat: ["#e0f797", "#d1f37c", "#bfee62", "#abe949", "#94e330",
-        "#7cd520", "#64b81e", "#509c1c", "#3d8019", "#2d6515",
-        "#d3c873", "#cbc262", "#c3bc51", "#bab542", "#a5a43d",
-        "#919238", "#7c7e32", "#686b2c", "#555926", "#42471f"],
+      // Categorical ramp: 10 greens walking the bar gradient's hue path (lime
+      // → deep leaf, no pale-cream end), then 10 golds slid down-spectrum
+      // (mid gold → deep olive) so colour 11 can't be mistaken for colour 1.
+      // Each half is interleaved (1-6-2-7-…) so neighbouring categories sit
+      // half the ramp apart in lightness.
+      cat: ["#e0f797", "#7cd520", "#d1f37c", "#64b81e", "#bfee62",
+        "#509c1c", "#abe949", "#3d8019", "#94e330", "#2d6515",
+        "#d3c873", "#919238", "#cbc262", "#7c7e32", "#c3bc51",
+        "#686b2c", "#bab542", "#555926", "#a5a43d", "#42471f"],
     },
     paper: {
       label: "paper", light: true, vars: {
@@ -889,11 +890,12 @@
       chart: ["#0e7fc0", "#0f8f7a", "#5a55c9", "#b8437f", "#52708a", "#0a97ac", "#5e8f3e", "#8a6fd0"],
       // Categorical ramp: 10 steps sampled straight out of the bar gradient
       // (deep → pale, stopping short of the near-white end), then the same 10
-      // desaturated toward slate — 20 colours that read as one glacial ramp.
-      cat: ["#0d537a", "#13638d", "#19739f", "#1f84b2", "#2594c4",
-        "#2ba4d7", "#49b2de", "#69c0e4", "#89ceeb", "#a9dcf1",
-        "#314957", "#3b5765", "#456474", "#4f7282", "#597f90",
-        "#638d9f", "#799eae", "#91b0bc", "#a9c1cb", "#c0d2da"],
+      // desaturated toward slate. Each half is interleaved (1-6-2-7-…) so
+      // neighbouring categories sit half the ramp apart in lightness.
+      cat: ["#0d537a", "#2ba4d7", "#13638d", "#49b2de", "#19739f",
+        "#69c0e4", "#1f84b2", "#89ceeb", "#2594c4", "#a9dcf1",
+        "#314957", "#638d9f", "#3b5765", "#799eae", "#456474",
+        "#91b0bc", "#4f7282", "#a9c1cb", "#597f90", "#c0d2da"],
     },
     hearth: {
       label: "hearth", flat: true, vars: {
