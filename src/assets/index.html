@@ -517,6 +517,9 @@
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
   .panel-title { font-size: 13px; color: var(--fg); }
   .panel-name { font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--faint); }
+  .tile-filter { width: 240px; background: var(--raised); border: 1px solid var(--line); border-radius: 5px; color: var(--fg); padding: 2px 8px; font: inherit; font-size: 11px; }
+  .tile-filter:focus { border-color: var(--orange-dim); outline: none; }
+  .tile-filter::placeholder { color: var(--faint); }
   .panel-actions { margin-left: auto; display: flex; gap: 8px; }
   .panel-act { font: inherit; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; cursor: pointer; }
   .panel-act:hover { border-color: var(--orange-dim); color: var(--orange); }
@@ -683,7 +686,7 @@
     page: 0, total: 0,
     pageMode: "auto", pageSize: 25,
     sql: "",
-    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, zoomPanel: null,
+    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, tileFilter: {}, zoomPanel: null,
     tocOpen: true,      // session table-of-contents visible (wide screens only)
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
@@ -2393,7 +2396,7 @@
       const cols = data.columns || [], rows = data.rows || [];
       const kind = (t.chart && t.chart.kind) || "table";
       await ensureFormats(t.db);
-      if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null); return; }
+      if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -2717,6 +2720,11 @@
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
+    // Table tiles get a text filter beside the title (skipped in screenshots —
+    // an empty input is just noise in a PNG).
+    const filt = kind === "table" && !SHOT
+      ? `<input class="tile-filter" type="text" data-tfilter="${attr(t.name)}" value="${attr(state.tileFilter[t.name] || "")}" placeholder="filter…" aria-label="filter rows">`
+      : "";
     const shrunk = !!state.tableShrunk[t.name];
     const contractBtn = kind === "table"
       ? `<button class="panel-act icon${shrunk ? " active" : ""}" data-contract="${attr(t.name)}" title="${shrunk ? "Show all rows" : "Shrink to fewer rows"}" aria-label="Resize rows">${shrunk ? SVG_EXPAND_ROWS : SVG_CONTRACT}</button>`
@@ -2725,7 +2733,7 @@
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     return `<div class="panel" data-tile="${attr(t.name)}">
-      <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>
+      <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions">${sqlBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${gripHtml(t.name)}</div>`;
   }
@@ -2764,7 +2772,7 @@
     const kind = (t.chart && t.chart.kind) || "table";
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
-    if (kind === "table") { slot.style.height = "auto"; slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, state.tableShrunk[t.name]); applyTileHeight(t.name); return; }
+    if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     applyTileHeight(t.name);
@@ -2775,13 +2783,29 @@
   // centre = contract / expand).
   const SVG_CONTRACT = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l4 3 4-3M4 13l4-3 4 3"/></svg>';
   const SVG_EXPAND_ROWS = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4-3 4 3M4 10l4 3 4-3"/></svg>';
-  function miniTable(cols, rows, db, table, shrunk) {
+  // Table tiles keep their fetched rowset here so the title-bar filter can
+  // re-render locally (substring match across all columns) without refetching.
+  let tileData = {};
+  function renderTileTable(name) {
+    const slot = document.querySelector(`[data-tile="${cssEsc(name)}"] .panel-chart`);
+    const d = tileData[name];
+    if (!slot || !d) return;
+    const q = (state.tileFilter[name] || "").trim().toLowerCase();
+    const rows = q ? d.rows.filter((r) => r.some((v) => String(v ?? "").toLowerCase().includes(q))) : d.rows;
+    slot.style.height = "auto";
+    slot.innerHTML = rows.length
+      ? miniTable(d.cols, rows, d.db, d.table, state.tableShrunk[name], TILE_TABLE_ROWS, !!q)
+      : `<div class="note" style="padding:6px 12px">no rows match “${esc(q)}”.</div>`;
+    applyTileHeight(name);
+  }
+  const TILE_TABLE_ROWS = 20;
+  function miniTable(cols, rows, db, table, shrunk, limit, filtered) {
     const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
-    const shown = rows.slice(0, 100);
+    const shown = rows.slice(0, limit || 100);
     const au = autoEpochUnits(cols, shown, db, table);
     const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i], false, r, cols)).join("") + "</tr>").join("");
     const more = rows.length > shown.length
-      ? `<div class="note" style="padding:6px 12px">+${rows.length - shown.length} more rows — use explore to see them all.</div>` : "";
+      ? `<div class="note" style="padding:6px 12px">+${rows.length - shown.length} more ${filtered ? "matches — narrow the filter" : "rows — filter, or explore to see them all"}.</div>` : "";
     return `<div class="preview-wrap${shrunk ? " shrunk" : ""}"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
   }
   // The active chart palette — set by applyTheme().
@@ -3594,6 +3618,10 @@
       searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); syncUrl(false); }, 250);
     } else if (ev.target.classList.contains("rng")) { liveRange(ev.target); }
     else if (ev.target.id === "sql-input") { state.sql = ev.target.value; syncEditor(ev.target); }
+    else if (ev.target.classList.contains("tile-filter")) {
+      state.tileFilter[ev.target.dataset.tfilter] = ev.target.value;
+      renderTileTable(ev.target.dataset.tfilter);
+    }
   });
 
   // Keep the highlight layer aligned while scrolling; autoformat on blur.

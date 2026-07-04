@@ -111,6 +111,8 @@ muckdb session import analysis.muckdb        # imports; name collisions get -2
 
 Re-running `post`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table`.
+Table tiles show the first 20 rows and carry a filter box in their title bar —
+typing narrows the rows to those containing the text in any column.
 Each data tile has an **explore** button that opens the view in the faceted
 table explorer, and every panel has a **copy-image** button that puts a PNG of
 the rendered panel on the clipboard, plus an **✕** that hides it into a *trash*
