@@ -220,7 +220,7 @@
   .facet-val .fv { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; z-index: 1; }
   .facet-val.on .fv { color: var(--orange); }
   .facet-val .fc { color: var(--faint); z-index: 1; }
-  .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: color-mix(in srgb, var(--orange) 14%, transparent); border-radius: 4px; }
+  .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: color-mix(in srgb, var(--orange) 14%, transparent); border-radius: 4px; transition: width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
 
   .range-readout { font-size: 12px; color: var(--fg); margin: 2px 2px 8px; }
   .range-readout .rsep { color: var(--faint); }
@@ -290,7 +290,7 @@
   /* While seeding the morph's start values, freeze transitions so committing the
      start state doesn't itself animate (see animateStatGeom). */
   .stats-grid.seeding .stat-card, .stats-grid.seeding .bar, .stats-grid.seeding .tbar,
-  .stats-grid.seeding .box-iqr, .stats-grid.seeding .box-med { transition: none !important; }
+  .stats-grid.seeding .box-iqr, .stats-grid.seeding .box-med, .stats-grid.seeding .stat-nums { transition: none !important; }
   .stat-card { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; overflow: hidden; transition: height 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   .stat-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
   .stat-name { font-size: 13px; color: var(--fg); }
@@ -311,7 +311,7 @@
   .box-med { position: absolute; top: 50%; width: 2px; height: 12px; background: var(--orange); transform: translateY(-50%); transition: left 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
   /* Label over value so a formatted value ("$275.46 USD") never wraps mid-number;
      min/avg/max align left/centre/right to echo the histogram axis above. */
-  .stat-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 8px; }
+  .stat-nums { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 12px; font-size: 11px; color: var(--muted); margin-top: 8px; transition: opacity 0.22s ease, filter 0.22s ease; }
   .stat-nums span { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .stat-nums span:nth-child(2) { text-align: center; }
   .stat-nums span:nth-child(3) { text-align: right; }
@@ -416,6 +416,19 @@
   .panel-grip:hover, .panel-grip.dragging { opacity: 1; }
   body.shot .panel-grip { display: none !important; }
   .panel.sel { box-shadow: inset 3px 0 0 0 var(--orange), var(--hi); }
+  /* Motion (experimental): panels print in with a small stagger on navigation
+     (rhymes with the ledger's print-in); a re-posted tile pulses its frame so
+     a live update is visible. Neither runs in screenshot mode. */
+  .panels.enter .panel { animation: panel-in 0.3s cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
+  @keyframes panel-in { from { opacity: 0; transform: translateY(8px); } }
+  .panel.updated { animation: tile-pulse 1.8s ease-out; }
+  @keyframes tile-pulse { 0%, 35% { box-shadow: 0 0 0 1px var(--orange), 0 0 22px color-mix(in srgb, var(--orange) 35%, transparent); } }
+  body.shot .panels .panel { animation: none !important; }
+  /* Press feedback: pressable elements dip on :active — rows dip less than
+     buttons so wide elements don't visibly shear. */
+  .kbtn, .tab, .combo, .navchip, .seg button, .pager button, .panel-act, .facet-clear, .runbtn, .fchip, .facet-val, .toprow, .toc-item { transition: transform 0.14s cubic-bezier(0.23, 1, 0.32, 1); }
+  .kbtn:active, .tab:active, .combo:active, .navchip:active, .seg button:active, .pager button:active:not(:disabled), .panel-act:active, .facet-clear:active, .runbtn:active, .fchip:active { transform: scale(0.97); }
+  .facet-val:active, .toprow:active, .toc-item:active { transform: scale(0.985); }
   .panel.wide { grid-column: 1 / -1; }
   .panel-bar { display: flex; align-items: center; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--line-soft); }
   .panel-title { font-size: 13px; color: var(--fg); }
@@ -492,7 +505,9 @@
   }
   @media (prefers-reduced-motion: reduce) { .entry.fresh { animation: none; } .conn.live .cursor { animation: none; }
     .hist .bar, .toprow .tbar, .box-iqr, .box-med, .stat-card, .facet-col .fc-name, .facet-col .fc-name::after { transition: none; }
-    .facet-col .eye.blink svg { animation: none; } }
+    .facet-col .eye.blink svg { animation: none; }
+    .panels.enter .panel, .panel.updated { animation: none; }
+    .stat-nums, .facet-val .fbar { transition: none; } }
 </style>
 </head>
 <body>
@@ -1155,6 +1170,13 @@
   function renderFacets() {
     const body = $("facet-body");
     if (!body) return;
+    // Capture current bar widths (keyed by column+value) so the rebuilt bars
+    // morph to their new proportions like the stats-view bars do, not snap.
+    const prevBars = {};
+    body.querySelectorAll(".facet-val").forEach((b) => {
+      const bar = b.querySelector(".fbar");
+      if (bar) prevBars[b.dataset.fcol + "\u0000" + b.dataset.fval] = bar.style.width;
+    });
     const groups = state.facets.map((f) => {
       if (f.kind === "range") return renderRangeFacet(f);
       if (f.kind === "time") return renderTimeFacet(f);
@@ -1162,6 +1184,15 @@
     }).join("");
     const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
     body.innerHTML = clear + (state.facets.length ? groups : '<div class="note">No columns to facet.</div>');
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Seed the previous widths, commit, then restore so CSS tweens between them.
+    const pend = [];
+    body.querySelectorAll(".facet-val").forEach((b) => {
+      const bar = b.querySelector(".fbar"); if (!bar) return;
+      const old = prevBars[b.dataset.fcol + "\u0000" + b.dataset.fval];
+      if (old != null && old !== bar.style.width) { pend.push([bar, bar.style.width]); bar.style.width = old; }
+    });
+    if (pend.length) { void body.offsetWidth; pend.forEach(([bar, w]) => { bar.style.width = w; }); }
   }
   // Eye toggle in each facet header: open eye = column shown in the rows table,
   // slashed eye = hidden. Clicking it removes/restores that column from the table.
@@ -1425,6 +1456,10 @@
         if (iqr) { seed(iqr, "left", p.box.iqrLeft); seed(iqr, "width", p.box.iqrW); }
         if (med) seed(med, "left", p.box.medLeft);
       }
+      // Soften the number row while it swaps to the new values — the brief
+      // blur bridges old and new text so it reads as one change, not a flicker.
+      const nums = card.querySelector(".stat-nums");
+      if (nums) { seed(nums, "opacity", "0.3"); seed(nums, "filter", "blur(2px)"); }
     });
     // Card height FLIP: measure each card's natural new height (bars are already
     // seeded to old values, but they sit in fixed-height boxes so don't affect
@@ -1728,6 +1763,31 @@
     syncUrl(!!push);
   }
   let viewPostedFor = null; // session id whose open has been counted this visit
+  // Motion (experimental): remember what was on screen so a re-render can tell
+  // navigation (stagger the panels in) from a live update (pulse changed tiles).
+  let lastPanelsSession = null, lastTileSigs = {};
+  function animatePanels(tiles) {
+    const box = $("panels");
+    const sigs = {};
+    tiles.forEach((t) => { sigs[t.name] = JSON.stringify(t); });
+    const isNav = state.selSession !== lastPanelsSession;
+    box.classList.toggle("enter", isNav && !SHOT);
+    if (isNav && !SHOT) {
+      [...box.querySelectorAll(".panel")].forEach((p, i) => p.style.setProperty("--i", String(Math.min(i, 8))));
+      setTimeout(() => box.classList.remove("enter"), 900);
+    } else if (!SHOT) {
+      tiles.filter((t) => lastTileSigs[t.name] !== sigs[t.name]).forEach((t) => {
+        const p = box.querySelector(`.panel[data-tile="${cssEsc(t.name)}"]`);
+        if (!p) return;
+        p.classList.add("updated");
+        p.addEventListener("animationend", function ae(e) {
+          if (e.target !== p) return;
+          p.classList.remove("updated"); p.removeEventListener("animationend", ae);
+        });
+      });
+    }
+    lastPanelsSession = state.selSession; lastTileSigs = sigs;
+  }
   function renderPanels(s) {
     destroyCharts();
     renderSessionHead(s);
@@ -1748,7 +1808,7 @@
       : trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
       : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
     renderToc(tiles, trashed);
-    tiles.forEach((t) => { if (t.type === "markdown") applyTileHeight(t.name); });
+    animatePanels(tiles);
     state.panelSel = -1;
     const loads = tiles.map((t) => {
       if (t.type !== "view") return null;
@@ -1962,7 +2022,8 @@
   }
   function panelHtml(t) {
     if (t.type === "markdown") {
-      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div>${gripHtml(t.name)}</div>`;
+      // Markdown panels size to their prose — no resize grip (data tiles keep it).
+      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
