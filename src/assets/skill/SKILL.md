@@ -311,7 +311,8 @@ muckdb <db> -c "COMMENT ON COLUMN sales.amount IS 'muckdb:{\"prefix\":\"\$\",\"s
 
 The registry overrides the comment. Flags: `--currency CODE`, `--prefix`,
 `--suffix`, `--decimals N`, `--thousands`, `--percent`, `--tz Z`, `--epoch U`,
-`--clear`. A registry entry keyed by column name (no `--table`) is the easy win —
+`--link URL`, `--link-title T`, `--clear`. A registry entry keyed by column name
+(no `--table`) is the easy win —
 it formats that column everywhere it appears, including the derived columns your
 chart views produce. When you do scope with `--table`, use the name a tile
 actually queries (the **view** name you post, not the base table under it).
@@ -338,6 +339,42 @@ detected automatically, so the flag is mostly for odd names or overrides.
 Time axes are granularity-aware on their own: a `DATE` (or midnight-truncated)
 column never shows hour ticks, first-of-month data ticks by month, hour ticks
 render `HH:mm` with a bold date label at each day boundary.
+
+### Links: `--link` and `--link-title` — turn a column into a hyperlink
+
+Point a column at an external system (an admin portal, a dashboard, a ticket
+tracker) and its cells become clickable links in the rows view, query results
+and session `table` tiles. Both flags are **templates** sharing one
+substitution system:
+
+```sh
+# Inject BOTH a company uuid and a user uuid from the same row into the URL:
+muckdb format app.db user_uuid \
+  --link 'https://admin.example.com/companies/{company_uuid}/users/{value}' \
+  --link-title 'user {value}'
+
+# Search link built from another column, explicitly percent-encoded in a title:
+muckdb format app.db order_id \
+  --link 'https://tickets.example.com/search?q={customer_name}' \
+  --link-title 'tickets for {customer_name}'
+```
+
+- `{value}` is this column's value; `{any_column}` pulls **any other column of
+  the same row** into the URL or the title.
+- **Encoding rules**: inside `--link` every substitution is percent-encoded by
+  default; append `:raw` (e.g. `{path_fragment:raw}`) to inject verbatim when a
+  column already holds URL-ready text. Inside `--link-title` substitutions are
+  verbatim by default; append `:url` to percent-encode. Both modifiers work in
+  both templates.
+- A `{name}` that matches no column stays as literal text; NULL values
+  substitute as empty strings.
+- `--link-title` is optional — without it the link text is the column's
+  (formatted) value, so it composes with the numeric flags: `--currency USD
+  --link ...` renders a clickable `$1,234.56 USD`.
+- Comment form (travels with the db):
+  `muckdb:{"link":"https://…/{value}","link_title":"open {name}"}`.
+- The schema tab's format column shows the link template, so a human can see
+  where a column points.
 
 ## Inspecting state (read it back as JSON)
 

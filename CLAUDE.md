@@ -133,7 +133,7 @@ Attach a unit/currency/decimal format to a column so facets, charts, stats and
 tables render it nicely (e.g. `$4,343.33 USD`):
 
 ```
-muckdb format <db> <column> [--table T] [--currency USD | --prefix $ --suffix ' USD' --decimals N --thousands --percent] [--tz local|utc|Area/City] [--epoch s|ms|us] [--clear]
+muckdb format <db> <column> [--table T] [--currency USD | --prefix $ --suffix ' USD' --decimals N --thousands --percent] [--tz local|utc|Area/City] [--epoch s|ms|us] [--link URL] [--link-title T] [--clear]
 muckdb format list [<db>]
 ```
 
@@ -154,6 +154,31 @@ s|ms|us` marks a numeric column as an epoch so it displays and charts as time
 Time axes are granularity-aware: DATE or midnight-truncated columns never show
 hour ticks, first-of-month data ticks monthly, and hourly axes get a bold date
 label at each day boundary.
+
+**Links — `--link` / `--link-title`.** Turn a column's cells into hyperlinks
+(rendered in the rows view, query results and session `table` tiles; visible in
+the schema tab's format column). Both flags take a **template** with the same
+substitution system:
+
+```sh
+muckdb format app.db user_uuid \
+  --link 'https://admin.example.com/companies/{company_uuid}/users/{value}' \
+  --link-title 'user {value}'
+```
+
+- `{value}` — this column's value; `{any_column}` — the value of **any other
+  column in the same row** (e.g. inject a company uuid *and* a user uuid into
+  one URL, as above).
+- **Encoding**: in `--link` every substitution is percent-encoded by default —
+  append `:raw` (`{path:raw}`) to inject verbatim (a column that already holds
+  a path/query fragment). In `--link-title` substitutions are verbatim by
+  default — append `:url` (`{q:url}`) to percent-encode. Both modifiers work
+  in both templates.
+- A `{name}` matching no column is left as literal text; NULLs substitute as
+  empty strings. `--link-title` is optional — the link text defaults to the
+  column's (formatted) value, so `--currency USD --link ...` shows a clickable
+  `$1,234.56 USD`.
+- As a column comment: `muckdb:{"link":"https://…/{value}","link_title":"open {name}"}`.
 
 ## Inspecting state (read it back as JSON)
 

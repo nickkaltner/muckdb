@@ -404,6 +404,10 @@
 
   /* display-only affixes (prefix/suffix) render muted so the value stands out */
   .fmt-affix { color: var(--muted); }
+  .cell-link { color: var(--orange); text-decoration: none; }
+  .cell-link:hover { text-decoration: underline; }
+  .cell-link .fmt-affix { color: var(--orange-dim); }
+  .fmt-link-tpl { color: var(--muted); }
   /* schema */
   table.schema { border-collapse: collapse; width: 100%; max-width: 860px; font-size: 12px; }
   table.schema td.fmt-col .fmt-eg { color: var(--fg); }
@@ -988,6 +992,24 @@
     const f = colFmt(db, col, table);
     return f ? applyFmtHtml(f, v) : esc(fmtNum(typeof v === "number" ? v : Number(v)));
   }
+  // Expand a link template: {value} is this column's value, {other_col} any
+  // other column in the same row. `urlCtx` sets the default encoding (URLs
+  // percent-encode, titles don't); {name:url} / {name:raw} override per token.
+  // A token that names no column is left as literal text.
+  function linkSubst(tpl, v, row, cols, urlCtx) {
+    return String(tpl).replace(/\{([^{}:]+)(?::(url|raw))?\}/g, (m, name, mod) => {
+      let val;
+      if (name === "value") val = v;
+      else {
+        const i = cols ? cols.indexOf(name) : -1;
+        if (i < 0 || !row) return m;
+        val = row[i];
+      }
+      if (val === null || val === undefined) val = "";
+      const s = typeof val === "object" ? JSON.stringify(val) : String(val);
+      return (mod ? mod === "url" : urlCtx) ? encodeURIComponent(s) : s;
+    });
+  }
   function fmtDMY(iso) { if (!iso) return "…"; const m = String(iso).slice(0, 10).split("-"); return m.length === 3 ? `${m[2]}/${m[1]}/${m[0]}` : iso; }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
@@ -1448,7 +1470,7 @@
       // Columns with a values facet are categorical — their cells get the
       // hover "+" filter affordance.
       const cat = new Set(state.facets.filter((f) => f.kind !== "range" && f.kind !== "time").map((f) => f.name));
-      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i], cat.has(allCols[i]))).join("") + "</tr>").join("");
+      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i], cat.has(allCols[i]), r, allCols)).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       // Uniform-width labels keep the native select compact so its chevron sits
       // right next to the value (the aria-label + pagination context carry meaning).
@@ -1462,7 +1484,7 @@
       maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function cell(v, col, table, db, autoEpoch, filterable) {
+  function cell(v, col, table, db, autoEpoch, filterable, row, allCols) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
     if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
@@ -1474,6 +1496,13 @@
     // takes over the moment one is set.
     else if (!f && autoEpoch && String(v).trim() !== "") inner = applyFmtHtml({ epoch: autoEpoch, tz: "utc" }, v);
     else inner = esc(String(v));
+    // Link format: wrap the (formatted) value in an anchor built from the URL
+    // and title templates, with row values substituted in.
+    if (f && f.link) {
+      const url = linkSubst(f.link, v, row, allCols, true);
+      const title = f.link_title ? esc(linkSubst(f.link_title, v, row, allCols, false)) : inner;
+      inner = `<a class="cell-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
+    }
     // Categorical columns (ones with a values facet) get a hover "+" that adds
     // a filter on this column+value; it stays visible as "−" while the filter
     // is on. Shares the [data-fcol] click path with the facet buttons.
@@ -2204,10 +2233,14 @@
         if (f.group) bits.push("grouped");
         if (f.tz) bits.push(`tz ${esc(f.tz)}`);
         if (f.epoch) bits.push(`epoch ${esc(f.epoch)}`);
+        if (f.link) bits.push(`link → <span class="fmt-link-tpl" title="${attr(f.link)}">${esc(f.link.length > 64 ? f.link.slice(0, 63) + "…" : f.link)}</span>`);
+        if (f.link_title) bits.push(`title ${esc(f.link_title)}`);
         // Example value: an epoch/tz format needs a timestamp, not 1234.5.
         const eg = f.epoch ? (f.epoch === "s" ? 1735689600 : f.epoch === "us" ? 1735689600e6 : 1735689600e3)
           : f.tz ? "2025-01-01 00:00:00" : 1234.5;
-        return `<span class="fmt-eg">${applyFmtHtml(f, eg)}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
+        const egHtml = (f.link && !(f.prefix || f.suffix || f.decimals != null || f.group || f.tz || f.epoch))
+          ? '<span class="cell-link">value ↗</span>' : applyFmtHtml(f, eg);
+        return `<span class="fmt-eg">${egHtml}</span><span class="fmt-spec">${bits.join(" · ")}</span>`;
       };
       const rows = cols.map((c) => `<tr><td>${esc(c.name)}</td><td><span class="ty">${esc(c.col_type)}</span></td><td>${c.nullable ? "" : "not null"}</td><td>${c.key ? `<span class="pk">${esc(c.key)}</span>` : ""}</td><td>${c.default ? esc(c.default) : ""}</td><td class="fmt-col">${fmtCell(c.name)}</td></tr>`).join("");
       let defn;
@@ -2252,7 +2285,7 @@
       if (!rows.length) { slot.innerHTML = '<div class="note">Query returned no rows.</div>'; return; }
       const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
       const au = autoEpochUnits(cols, rows, state.selDb, null);
-      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb, au[i])).join("") + "</tr>").join("");
+      const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb, au[i], false, r, cols)).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -2746,7 +2779,7 @@
     const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
     const shown = rows.slice(0, 100);
     const au = autoEpochUnits(cols, shown, db, table);
-    const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i])).join("") + "</tr>").join("");
+    const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i], false, r, cols)).join("") + "</tr>").join("");
     const more = rows.length > shown.length
       ? `<div class="note" style="padding:6px 12px">+${rows.length - shown.length} more rows — use explore to see them all.</div>` : "";
     return `<div class="preview-wrap${shrunk ? " shrunk" : ""}"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
@@ -3670,9 +3703,20 @@
   // The bottom bar shows the build version while connected (the green dot
   // already says "live"); the titlebar indicator keeps the state word.
   function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = live ? "v__MUCKDB_VERSION__" : text; }
+  let formatsRev = null; // last-seen fingerprint of the format registry
   function apply(s) {
     state.history = s.history || [];
     state.sessions = s.sessions || [];
+    // A changed format registry invalidates every cached format map so the
+    // open view (and any session tiles) re-render with the new formats.
+    if (s.formats_rev !== undefined) {
+      if (formatsRev !== null && s.formats_rev !== formatsRev) {
+        state.formats = {};
+        if (state.tab === "sessions" && state.selSession) loadSession(state.selSession, false);
+        scheduleRefresh();
+      }
+      formatsRev = s.formats_rev;
+    }
     renderLedger();
     renderSessionNav();
     maybeRefreshSession();
@@ -3715,6 +3759,11 @@
   }
   async function refreshOpenView() {
     if (!state.selDb || state.mode !== "table") return;
+    // Refetch this db's formats before repainting — a command may have added
+    // a format (via the registry OR a COMMENT ON COLUMN), and cells/facets
+    // read formats synchronously from the cache.
+    delete state.formats[state.selDb];
+    await ensureFormats(state.selDb);
     try {
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(state.selDb))).json();
       if (!data.error) {

@@ -127,6 +127,10 @@ fn snapshot_json() -> Option<String> {
         "history": state.history,
         "databases": state.databases,
         "sessions": sessions,
+        // Fingerprint of the column-format registry: a `muckdb format` write
+        // lands in the watched data dir, and this field is what makes the
+        // snapshot differ so the change is actually broadcast.
+        "formats_rev": crate::formats::registry_rev(),
     }))
     .ok()
 }

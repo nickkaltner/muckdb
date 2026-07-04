@@ -124,6 +124,45 @@ browser binary. The image auto-fits the rendered content height.
 **Try it:** `./demo.sh` seeds sample data (sales, a regular sensor series, and an
 irregular event stream) and builds a demo dashboard, then prints the URL.
 
+## Column formats (units, timezones, links)
+
+Attach a display format to a column and it applies everywhere that column
+appears — tables, facets, stats, charts, session tiles. Formats live in a
+muckdb-side registry (works on read-only databases) or in a DuckDB column
+comment (`COMMENT ON COLUMN t.c IS 'muckdb:{"prefix":"$","decimals":2}'`),
+with the registry winning. The schema view shows each column's format.
+
+```sh
+muckdb format mydb.db revenue --currency USD        # → $1,234.56 USD
+muckdb format mydb.db latency --suffix ' ms' --decimals 0
+muckdb format mydb.db created_at --tz Australia/Brisbane   # or local / utc
+muckdb format mydb.db ts_ms --epoch ms              # numeric epoch → timestamp
+muckdb format mydb.db revenue --clear
+muckdb format list [mydb.db]
+```
+
+### Link columns
+
+`--link` turns a column's cells into hyperlinks (rows view, query results,
+session `table` tiles). The URL and the optional `--link-title` are
+**templates**: `{value}` is this column's value and `{any_column}` pulls any
+other column of the same row — so one URL can carry, say, a company uuid *and*
+a user uuid:
+
+```sh
+muckdb format app.db user_uuid \
+  --link 'https://admin.example.com/companies/{company_uuid}/users/{value}' \
+  --link-title 'user {value}'
+```
+
+Substitutions in the URL are percent-encoded by default (`{name:raw}` injects
+verbatim); in the title they're verbatim by default (`{name:url}`
+percent-encodes). A `{name}` matching no column is left as literal text, and
+NULLs substitute as empty strings. Without `--link-title` the link text is the
+column's formatted value, so `--currency USD --link …` renders a clickable
+`$1,234.56 USD`. Comment form:
+`muckdb:{"link":"https://…/{value}","link_title":"open {name}"}`.
+
 ## How it works
 
 - **CLI role** (the default): muckdb ensures the daemon is running, appends a

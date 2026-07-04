@@ -37,6 +37,16 @@ pub struct Format {
     /// The stored value is a numeric epoch in this unit: "s" | "ms" | "us".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub epoch: Option<String>,
+    /// Render the cell as a hyperlink to this URL template. Templates
+    /// substitute `{value}` (this column's value) and `{column_name}` (any
+    /// other column in the same row). In the URL substitutions are
+    /// percent-encoded by default; `{name:raw}` injects verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+    /// The link's text, as a template with the same substitutions (verbatim by
+    /// default; `{name:url}` percent-encodes). Defaults to the formatted value.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub link_title: Option<String>,
 }
 
 fn is_false(b: &bool) -> bool {
@@ -51,6 +61,8 @@ impl Format {
             && !self.group
             && self.tz.is_none()
             && self.epoch.is_none()
+            && self.link.is_none()
+            && self.link_title.is_none()
     }
 }
 
@@ -86,6 +98,23 @@ fn save_registry(entries: &[Entry]) -> Result<()> {
     fs::write(&path, serde_json::to_string_pretty(entries)?)
         .with_context(|| format!("writing {path:?}"))?;
     Ok(())
+}
+
+/// A fingerprint of the format registry file, folded into the daemon's state
+/// snapshot — so a `muckdb format` write changes the snapshot and the watcher
+/// broadcasts it, refreshing every open browser. Masked to 53 bits so the
+/// value survives JSON→JavaScript number round-tripping exactly.
+pub fn registry_rev() -> u64 {
+    use std::hash::{Hash, Hasher};
+    let Ok(path) = registry_path() else { return 0 };
+    match fs::read(&path) {
+        Ok(bytes) => {
+            let mut h = std::collections::hash_map::DefaultHasher::new();
+            bytes.hash(&mut h);
+            h.finish() & ((1 << 53) - 1)
+        }
+        Err(_) => 0,
+    }
 }
 
 /// Registry entries keyed to any of these db ids (for bundling into an export).
@@ -237,6 +266,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 }
                 fmt.epoch = Some(u);
             }
+            "--link" => fmt.link = Some(next()),
+            "--link-title" => fmt.link_title = Some(next()),
             "--currency" => {
                 let code = next().to_uppercase();
                 fmt.prefix = Some(currency_symbol(&code));
@@ -313,6 +344,13 @@ fn usage() -> Result<i32> {
          or an IANA name (e.g. Australia/Brisbane); naive\n                      \
          timestamps are read as UTC. Applies to charts too.\n  \
          --epoch U           the column is a numeric epoch: s, ms or us\n  \
+         --link URL          render the cell as a link. The URL is a template:\n                      \
+         {{value}} is this column's value, {{other_col}} any\n                      \
+         other column in the same row — percent-encoded by\n                      \
+         default, {{name:raw}} to inject verbatim.\n  \
+         --link-title T      the link's text, same substitutions (verbatim by\n                      \
+         default, {{name:url}} to percent-encode). Defaults\n                      \
+         to the formatted value.\n  \
          --clear             remove the format for this column"
     );
     Ok(2)
@@ -359,6 +397,20 @@ mod tests {
         assert_eq!(f.tz.as_deref(), Some("local"));
         assert_eq!(f.epoch.as_deref(), Some("ms"));
         assert!(!f.is_empty()); // tz/epoch alone make the format non-empty
+    }
+
+    #[test]
+    fn parse_comment_reads_link_templates() {
+        let f = parse_comment(
+            "muckdb:{\"link\":\"https://x.test/u/{value}?c={company_id}\",\"link_title\":\"open {name}\"}",
+        )
+        .unwrap();
+        assert_eq!(
+            f.link.as_deref(),
+            Some("https://x.test/u/{value}?c={company_id}")
+        );
+        assert_eq!(f.link_title.as_deref(), Some("open {name}"));
+        assert!(!f.is_empty()); // a link alone makes the format non-empty
     }
 
     #[test]
