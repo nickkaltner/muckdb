@@ -412,6 +412,7 @@
   .cell-link:hover { text-decoration: underline; }
   .cell-json { font: inherit; font-size: 12px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; cursor: pointer; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
   .cell-json:hover { border-color: var(--orange-dim); color: var(--fg); }
+  .cell-json .cell-el-sel { color: var(--orange); font-weight: 700; }
   .json-box { max-width: 720px; height: auto; max-height: 82vh; margin: auto; }
   .json-body { overflow: auto; }
   .json-pre { margin: 0; padding: 14px 18px; overflow: auto; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
@@ -1357,9 +1358,13 @@
   }
   function renderValuesFacet(f) {
     const max = Math.max(1, ...f.values.map((v) => v.count));
+    // Display values through the column's format ("100.0" → "100 Gbps");
+    // the raw value stays in data-fval so filtering is untouched.
+    const fmt = colFmt(state.selDb, f.name, state.selTable);
     const vals = f.values.map((v) => {
       const on = hasFilter(f.name, v.value) ? " on" : "";
-      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}"><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv" title="${attr(v.value)}">${esc(v.value)}</span><span class="fc">${v.count}</span></button>`;
+      const disp = fmt ? applyFmtHtml(fmt, v.value) : esc(v.value);
+      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}"><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv" title="${attr(v.value)}">${disp}</span><span class="fc">${v.count}</span></button>`;
     }).join("");
     return `<div class="facet-group">${facetHead(f.name)}${vals}</div>`;
   }
@@ -1408,8 +1413,13 @@
   function filterChipsHtml() {
     return state.filters.map((f, i) => {
       let label;
-      if (f.value !== undefined) label = `<span class="col">${esc(f.column)}</span> = ${esc(f.value)}`;
-      else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tlo || f.tmin)}→${fmtDMY(f.thi || f.tmax)}`;
+      if (f.value !== undefined) {
+        // Containment filters read "∋" (the array holds the value); values go
+        // through the column's display format like the facet they came from.
+        const fmt = colFmt(state.selDb, f.column, state.selTable);
+        const disp = fmt ? applyFmtHtml(fmt, f.value) : esc(f.value);
+        label = `<span class="col">${esc(f.column)}</span> ${f.contains ? "∋" : "="} ${disp}`;
+      } else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tlo || f.tmin)}→${fmtDMY(f.thi || f.tmax)}`;
       else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
       return `<button class="fchip" data-rmfilter="${i}" aria-label="remove filter — ${esc(f.column)}">${label}<span class="x">✕</span></button>`;
     }).join("");
@@ -1533,19 +1543,31 @@
     if (typeof v === "object") {
       const s = JSON.stringify(v);
       const scalars = Array.isArray(v) && v.every((x) => typeof x !== "object" || x === null);
-      let disp = s;
+      let label;
       if (scalars) {
         // Inline, the affix wraps the whole list once — "1, 10, 100 Gbps" —
         // rather than repeating after every element (the overlay does that),
-        // and only the first 3 elements show; "…" marks more behind the click.
+        // and only 3 elements show; "…" marks more behind the click. Elements
+        // matched by an active containment filter are always among the three
+        // and render highlighted, so a filtered chip reads "1, 2.5, 100, …".
         const bare = f ? Object.assign({}, f, { prefix: undefined, suffix: undefined }) : null;
-        disp = ((f && f.prefix) || "")
-          + v.slice(0, 3).map((x) => x === null ? "NULL" : String(bare ? applyFmt(bare, x) : x)).join(", ")
-          + (v.length > 3 ? ", …" : "")
-          + ((f && f.suffix) || "");
+        const fmtEl = (x) => x === null ? "NULL" : String(bare ? applyFmt(bare, x) : x);
+        const selVals = (db === state.selDb && table === state.selTable)
+          ? state.filters.filter((ft) => ft.column === col && ft.contains && ft.value !== undefined).map((ft) => ft.value)
+          : [];
+        const isSel = (x) => x !== null && selVals.some((sv) => String(x) === sv || Number(x) === Number(sv));
+        const idxs = v.map((_, i) => i);
+        const selIdx = idxs.filter((i) => isSel(v[i]));
+        const shown = [...selIdx.slice(0, 3), ...idxs.filter((i) => !isSel(v[i])).slice(0, Math.max(0, 3 - selIdx.length))]
+          .sort((a, b) => a - b);
+        label = esc((f && f.prefix) || "")
+          + shown.map((i) => isSel(v[i]) ? `<span class="cell-el-sel">${esc(fmtEl(v[i]))}</span>` : esc(fmtEl(v[i]))).join(", ")
+          + (shown.length < v.length ? ", …" : "")
+          + esc((f && f.suffix) || "");
+      } else {
+        label = esc(s.length > 64 ? s.slice(0, 61) + "…" : s);
       }
-      const short = disp.length > 64 ? disp.slice(0, 61) + "…" : disp;
-      return `<td><button class="cell-json" data-json="${attr(s)}" data-jdb="${attr(db || "")}" data-jtable="${attr(table || "")}" data-jcol="${attr(col || "")}" title="view full value">${esc(short)}</button></td>`;
+      return `<td><button class="cell-json" data-json="${attr(s)}" data-jdb="${attr(db || "")}" data-jtable="${attr(table || "")}" data-jcol="${attr(col || "")}" title="view full value">${label}</button></td>`;
     }
     let inner;
     if (f && (f.tz || f.epoch) && String(v).trim() !== "") inner = applyFmtHtml(f, v);
@@ -1746,7 +1768,8 @@
         <div class="stat-nums"><span><b>min</b> ${FH(c.min)}</span><span><b>avg</b> ${FH(c.avg)}</span><span><b>max</b> ${FH(c.max)}</span></div>`;
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
-      body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
+      const tf = colFmt(state.selDb, c.name, state.selTable);
+      body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${tf ? applyFmtHtml(tf, t.value) : esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
     } else { body = '<div class="note">no distribution available.</div>'; }
     return `<div class="stat-card" data-col="${attr(c.name)}"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
   }
