@@ -81,11 +81,13 @@ fn escape_literal(value: &str) -> String {
     value.replace('\'', "''")
 }
 
-/// True if a duckdb type name denotes a numeric column.
+/// True if a duckdb type name denotes a numeric column. Nested types are
+/// never numeric — `DOUBLE[]` contains "DOUBLE" but avg()/min()/histograms
+/// don't apply to a list.
 pub fn is_numeric(col_type: &str) -> bool {
     let t = col_type.to_ascii_uppercase();
-    if t.contains("INTERVAL") {
-        return false; // contains "INT" but isn't a number
+    if t.contains("INTERVAL") || is_nested_type(&t) {
+        return false; // INTERVAL contains "INT" but isn't a number
     }
     const NEEDLES: &[&str] = &[
         "INT", "DEC", "DOUBLE", "FLOAT", "REAL", "NUMERIC", "HUGEINT",
@@ -108,6 +110,11 @@ pub struct Filter {
     pub tmin: Option<String>,
     #[serde(default)]
     pub tmax: Option<String>,
+    /// Containment match for list columns: the row's array must contain
+    /// `value` (as text) rather than equal it — so a `10.0` facet matches
+    /// `[1, 10]`, `[10]` and `[10, 400]` alike.
+    #[serde(default)]
+    pub contains: bool,
 }
 
 impl Filter {
@@ -119,10 +126,11 @@ impl Filter {
     }
 }
 
-/// True if a duckdb type name denotes a date/time column.
+/// True if a duckdb type name denotes a date/time column (a `DATE[]` list is
+/// not — date functions don't apply to it).
 pub fn is_temporal(col_type: &str) -> bool {
     let t = col_type.to_ascii_uppercase();
-    t.contains("DATE") || t.contains("TIME")
+    !is_nested_type(&t) && (t.contains("DATE") || t.contains("TIME"))
 }
 
 /// Build a SQL `WHERE` body (without the `WHERE` keyword) from a free-text
@@ -136,24 +144,37 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
 
     // Value filters: group by column — values within a column combine with OR
     // (the value is any of the chosen ones), and columns combine with AND.
-    let mut by_col: Vec<(String, Vec<String>)> = Vec::new();
+    // Containment filters (list columns) group the same way but test whether
+    // the row's array holds the value instead of equalling it.
+    let mut by_col: Vec<(String, bool, Vec<String>)> = Vec::new();
     for f in filters {
         if let Some(v) = &f.value {
-            match by_col.iter_mut().find(|(c, _)| *c == f.column) {
-                Some((_, vals)) => vals.push(v.clone()),
-                None => by_col.push((f.column.clone(), vec![v.clone()])),
+            match by_col
+                .iter_mut()
+                .find(|(c, k, _)| *c == f.column && *k == f.contains)
+            {
+                Some((_, _, vals)) => vals.push(v.clone()),
+                None => by_col.push((f.column.clone(), f.contains, vec![v.clone()])),
             }
         }
     }
-    for (col, vals) in &by_col {
+    for (col, contains, vals) in &by_col {
         let ors: Vec<String> = vals
             .iter()
             .map(|v| {
-                format!(
-                    "CAST({} AS VARCHAR) = '{}'",
-                    quote_ident(col),
-                    escape_literal(v)
-                )
+                if *contains {
+                    format!(
+                        "list_contains(CAST({} AS VARCHAR[]), '{}')",
+                        quote_ident(col),
+                        escape_literal(v)
+                    )
+                } else {
+                    format!(
+                        "CAST({} AS VARCHAR) = '{}'",
+                        quote_ident(col),
+                        escape_literal(v)
+                    )
+                }
             })
             .collect();
         clauses.push(if ors.len() == 1 {
@@ -361,6 +382,34 @@ fn is_nested_type(t: &str) -> bool {
     t.contains("STRUCT") || t.contains("MAP(") || t.contains("UNION") || t.contains("[]")
 }
 
+/// A list of scalars (`DOUBLE[]`, `VARCHAR[]`) — facetable by element. Lists
+/// of structs or lists of lists are not.
+fn is_scalar_list_type(t: &str) -> bool {
+    let t = t.trim();
+    t.ends_with("[]") && !is_nested_type(t[..t.len() - 2].trim_end())
+}
+
+/// A value filter on a scalar-list column can only sensibly mean containment.
+/// Older clients and saved links may omit the `contains` flag — infer it from
+/// the schema so equality against a list (never true) can't slip through.
+pub(crate) fn normalize_contains(cols: &[(String, String)], filters: &[Filter]) -> Vec<Filter> {
+    filters
+        .iter()
+        .cloned()
+        .map(|mut f| {
+            if f.value.is_some()
+                && !f.contains
+                && cols
+                    .iter()
+                    .any(|(n, t)| *n == f.column && is_scalar_list_type(t))
+            {
+                f.contains = true;
+            }
+            f
+        })
+        .collect()
+}
+
 /// A SELECT projection over (name, type) columns with nested types made
 /// JSON-safe via `to_json(col) AS col`.
 fn json_safe_projection(cols: &[(String, String)]) -> String {
@@ -400,7 +449,8 @@ pub fn preview(
     let columns: Vec<String> = described.iter().map(|(n, _)| n.clone()).collect();
     let tbl = quote_ident(table);
 
-    let where_sql = build_where(&columns, q, filters)
+    let filters = normalize_contains(&described, filters);
+    let where_sql = build_where(&columns, q, &filters)
         .map(|w| format!(" WHERE {w}"))
         .unwrap_or_default();
 
@@ -455,9 +505,11 @@ pub fn export(
     if !Path::new(db).exists() {
         bail!("database file does not exist: {db}");
     }
-    let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
+    let described = describe(db, table)?;
+    let columns: Vec<String> = described.iter().map(|(n, _)| n.clone()).collect();
+    let filters = normalize_contains(&described, filters);
     // Search still runs across every column; only the projection drops hidden ones.
-    let where_sql = build_where(&columns, q, filters)
+    let where_sql = build_where(&columns, q, &filters)
         .map(|w| format!(" WHERE {w}"))
         .unwrap_or_default();
     // Columns whose facet eye is closed are excluded from the export. If that
@@ -627,12 +679,20 @@ pub struct TimeBin {
     pub count: i64,
 }
 
+fn is_false(b: &bool) -> bool {
+    !*b
+}
+
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ColumnFacet {
     Values {
         name: String,
         values: Vec<TopValue>,
+        /// True for a list column faceted by element — selecting a value
+        /// filters with containment (Filter.contains) rather than equality.
+        #[serde(skip_serializing_if = "is_false")]
+        list: bool,
     },
     Range {
         name: String,
@@ -670,6 +730,7 @@ pub fn facets(
     let cols = describe(db, table)?;
     let all_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
     let tbl = quote_ident(table);
+    let filters = normalize_contains(&cols, filters);
 
     let mut out = Vec::new();
     for (name, ty) in &cols {
@@ -754,6 +815,34 @@ pub fn facets(
                 min,
                 max,
             });
+        } else if is_scalar_list_type(ty) {
+            // A list column facets by ELEMENT: each distinct element with the
+            // number of rows whose array contains it (list_distinct dedupes
+            // within a row so a row counts once per element). Selecting one
+            // filters by containment — the 10.0 facet matches [1, 10], [10]
+            // and [10, 400] alike.
+            let rows = query_json(
+                db,
+                &format!(
+                    "SELECT CAST(u AS VARCHAR) AS v, count(*) AS c \
+                     FROM (SELECT unnest(list_distinct({qc})) AS u FROM {tbl}{where_sql}) \
+                     WHERE u IS NOT NULL GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
+                ),
+            )?;
+            let values = rows
+                .into_iter()
+                .filter_map(|r| {
+                    Some(TopValue {
+                        value: r.get("v").and_then(Value::as_str)?.to_string(),
+                        count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+                    })
+                })
+                .collect();
+            out.push(ColumnFacet::Values {
+                name: name.clone(),
+                values,
+                list: true,
+            });
         } else {
             let rows = query_json(
                 db,
@@ -774,6 +863,7 @@ pub fn facets(
             out.push(ColumnFacet::Values {
                 name: name.clone(),
                 values,
+                list: false,
             });
         }
     }
@@ -802,7 +892,8 @@ pub fn stats(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Resu
     // is the leading clause for `FROM tbl`; `and_sql` appends to helper queries
     // that already carry their own `WHERE col IS NOT NULL`.
     let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
-    let where_cond = build_where(&col_names, q, filters);
+    let filters = normalize_contains(&cols, filters);
+    let where_cond = build_where(&col_names, q, &filters);
     let where_sql = where_cond
         .as_ref()
         .map(|w| format!(" WHERE {w}"))
@@ -1025,6 +1116,7 @@ mod tests {
             max: None,
             tmin: None,
             tmax: None,
+            contains: false,
         }
     }
     /// A numeric range filter.
@@ -1036,6 +1128,7 @@ mod tests {
             max,
             tmin: None,
             tmax: None,
+            contains: false,
         }
     }
     /// A temporal range filter.
@@ -1047,6 +1140,7 @@ mod tests {
             max: None,
             tmin: tmin.map(str::to_string),
             tmax: tmax.map(str::to_string),
+            contains: false,
         }
     }
 
@@ -1073,6 +1167,96 @@ mod tests {
         ] {
             assert!(!is_numeric(t), "{t} should not be numeric");
         }
+    }
+
+    #[test]
+    fn nested_types_are_not_numeric_or_temporal() {
+        // DOUBLE[] contains "DOUBLE" and DATE[] contains "DATE", but list /
+        // struct / map columns can't take avg()/histograms/date_trunc — they
+        // must classify as plain "other" (stats then falls back to top values).
+        for t in [
+            "DOUBLE[]",
+            "INTEGER[]",
+            "DECIMAL(10,2)[]",
+            "STRUCT(a DOUBLE, b INTEGER)",
+            "MAP(VARCHAR, BIGINT)",
+            "STRUCT(speed INTEGER, \"zone\" VARCHAR)[]",
+            "UNION(n INTEGER, s VARCHAR)",
+        ] {
+            assert!(!is_numeric(t), "{t} should not be numeric");
+            assert!(is_nested_type(t), "{t} should be nested");
+        }
+        for t in [
+            "DATE[]",
+            "TIMESTAMP[]",
+            "STRUCT(d DATE)",
+            "MAP(DATE, VARCHAR)",
+        ] {
+            assert!(!is_temporal(t), "{t} should not be temporal");
+        }
+        // The plain forms keep their classification.
+        assert!(is_numeric("DOUBLE") && !is_nested_type("DOUBLE"));
+        assert!(is_temporal("DATE") && is_temporal("TIMESTAMP WITH TIME ZONE"));
+    }
+
+    #[test]
+    fn build_where_contains_filters_use_list_containment() {
+        let cols = vec!["port_gbps".to_string(), "zone".to_string()];
+        let mut f = vf("port_gbps", "10.0");
+        f.contains = true;
+        assert_eq!(
+            build_where(&cols, None, &[f.clone()]).unwrap(),
+            "list_contains(CAST(\"port_gbps\" AS VARCHAR[]), '10.0')"
+        );
+        // Two elements on one column OR together; an exact filter on another
+        // column still ANDs alongside.
+        let mut f2 = vf("port_gbps", "400.0");
+        f2.contains = true;
+        let w = build_where(&cols, None, &[f, f2, vf("zone", "red")]).unwrap();
+        assert_eq!(
+            w,
+            "(list_contains(CAST(\"port_gbps\" AS VARCHAR[]), '10.0') OR \
+             list_contains(CAST(\"port_gbps\" AS VARCHAR[]), '400.0')) AND \
+             CAST(\"zone\" AS VARCHAR) = 'red'"
+        );
+    }
+
+    #[test]
+    fn normalize_contains_infers_containment_from_schema() {
+        // The shape an old link carries: a plain value filter on a list column.
+        let cols = vec![
+            ("port_gbps".to_string(), "DOUBLE[]".to_string()),
+            ("country".to_string(), "VARCHAR".to_string()),
+        ];
+        let out = normalize_contains(&cols, &[vf("port_gbps", "10.0"), vf("country", "Japan")]);
+        assert!(
+            out[0].contains,
+            "list-column filter must become containment"
+        );
+        assert!(!out[1].contains, "plain column filter stays equality");
+    }
+
+    #[test]
+    fn scalar_list_types_are_detected() {
+        assert!(is_scalar_list_type("DOUBLE[]"));
+        assert!(is_scalar_list_type("VARCHAR[]"));
+        assert!(!is_scalar_list_type("STRUCT(a INTEGER)[]"));
+        assert!(!is_scalar_list_type("INTEGER[][]"));
+        assert!(!is_scalar_list_type("DOUBLE"));
+        assert!(!is_scalar_list_type("MAP(VARCHAR, INTEGER)"));
+    }
+
+    #[test]
+    fn json_safe_projection_wraps_only_nested_columns() {
+        let cols = vec![
+            ("id".to_string(), "BIGINT".to_string()),
+            ("nums".to_string(), "DOUBLE[]".to_string()),
+            ("st".to_string(), "STRUCT(k VARCHAR)".to_string()),
+        ];
+        assert_eq!(
+            json_safe_projection(&cols),
+            "\"id\", to_json(\"nums\") AS \"nums\", to_json(\"st\") AS \"st\""
+        );
     }
 
     #[test]
@@ -1296,6 +1480,128 @@ mod tests {
     }
     fn col<'a>(s: &'a TableStats, name: &str) -> &'a ColumnStat {
         s.columns.iter().find(|c| c.name == name).expect("column")
+    }
+
+    /// A table with list / struct / map columns beside plain ones — the shape
+    /// that used to break stats (avg on DOUBLE[]) and the -json row parse.
+    fn make_nested_db(tag: &str) -> String {
+        let db = temp_db(tag);
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, \
+             [i * 1.0, i + 1.0] AS nums, \
+             {'k': 'v' || i::VARCHAR, 'n': i} AS st, \
+             MAP {'red': i, 'blue': i + 1} AS mp, \
+             [DATE '2026-01-01'] AS dts, \
+             ('g' || (i % 3)::VARCHAR) AS grp \
+             FROM range(10) g(i);",
+        );
+        db
+    }
+
+    #[test]
+    fn stats_handles_nested_columns() {
+        if !duckdb_ok() {
+            eprintln!("skipping stats_handles_nested_columns: no duckdb");
+            return;
+        }
+        let db = make_nested_db("nested_stats");
+        let s = stats(&db, "t", None, &[]).expect("stats must not fail on nested columns");
+        assert_eq!(s.row_count, 10);
+        for name in ["nums", "st", "mp", "dts"] {
+            let c = col(&s, name);
+            assert!(!c.numeric, "{name} must not be numeric");
+            assert!(!c.temporal, "{name} must not be temporal");
+            assert!(c.avg.is_none(), "{name} must not carry numeric stats");
+            assert!(!c.top.is_empty(), "{name} should still report top values");
+        }
+        // Plain columns keep full treatment alongside.
+        assert!(col(&s, "id").numeric);
+        assert!(col(&s, "id").avg.is_some());
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn preview_serializes_nested_values_as_json() {
+        if !duckdb_ok() {
+            eprintln!("skipping preview_serializes_nested_values_as_json: no duckdb");
+            return;
+        }
+        let db = make_nested_db("nested_preview");
+        let p = preview(&db, "t", 5, 0, None, &[], Some("id"), Some("asc"))
+            .expect("preview must not fail on nested columns");
+        assert_eq!(p.total, 10);
+        let idx = |n: &str| p.columns.iter().position(|c| c == n).expect("column");
+        let row = &p.rows[0];
+        // Without the to_json() wrap these come back in duckdb literal syntax
+        // ({red=0, blue=1}) and the whole payload fails to parse.
+        assert!(row[idx("nums")].is_array(), "nums must be a JSON array");
+        assert!(row[idx("st")].is_object(), "st must be a JSON object");
+        assert!(row[idx("mp")].is_object(), "mp must be a JSON object");
+        assert_eq!(row[idx("mp")].get("red").and_then(Value::as_i64), Some(0));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn list_columns_facet_by_element_and_filter_by_containment() {
+        if !duckdb_ok() {
+            eprintln!(
+                "skipping list_columns_facet_by_element_and_filter_by_containment: no duckdb"
+            );
+            return;
+        }
+        let db = make_nested_db("list_facet");
+        // nums for row i is [i, i+1] — the element "1.0" appears in rows 0 and 1.
+        let fs = facets(&db, "t", None, &[]).expect("facets must not fail on nested columns");
+        let nums = fs
+            .iter()
+            .find_map(|f| match f {
+                ColumnFacet::Values { name, values, list } if name == "nums" => {
+                    Some((values.clone(), *list))
+                }
+                _ => None,
+            })
+            .expect("nums must get a values facet");
+        assert!(nums.1, "nums facet must be flagged as a list facet");
+        let one = nums
+            .0
+            .iter()
+            .find(|v| v.value == "1.0")
+            .expect("element 1.0");
+        assert_eq!(one.count, 2, "rows [0,1] and [1,2] both contain 1.0");
+
+        // Selecting the element filters rows by containment, not equality.
+        let mut f = vf("nums", "1.0");
+        f.contains = true;
+        let p = preview(&db, "t", 10, 0, None, &[f], Some("id"), Some("asc")).unwrap();
+        assert_eq!(p.total, 2);
+        let idx = |n: &str| p.columns.iter().position(|c| c == n).unwrap();
+        assert_eq!(p.rows[0][idx("id")].as_i64(), Some(0));
+        assert_eq!(p.rows[1][idx("id")].as_i64(), Some(1));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn query_rewraps_nested_result_columns() {
+        if !duckdb_ok() {
+            eprintln!("skipping query_rewraps_nested_result_columns: no duckdb");
+            return;
+        }
+        let db = make_nested_db("nested_query");
+        // Trailing semicolon exercises the DESCRIBE pre-pass trimming.
+        let r = query(&db, "SELECT id, st, mp FROM t WHERE id = 3;")
+            .expect("query must not fail on nested columns");
+        assert_eq!(r.row_count, 1);
+        let idx = |n: &str| r.columns.iter().position(|c| c == n).expect("column");
+        assert!(r.rows[0][idx("st")].is_object());
+        assert_eq!(
+            r.rows[0][idx("mp")].get("blue").and_then(Value::as_i64),
+            Some(4)
+        );
+        // A query with no nested columns runs untouched.
+        let plain = query(&db, "SELECT count(*) AS n FROM t").unwrap();
+        assert_eq!(plain.rows[0][0].as_i64(), Some(10));
+        std::fs::remove_file(&db).ok();
     }
 
     #[test]

@@ -156,7 +156,8 @@ pub fn predict(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Re
     }
     let cols = describe(db, table)?;
     let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
-    let where_cond = build_where(&col_names, q, filters);
+    let filters = crate::introspect::normalize_contains(&cols, filters);
+    let where_cond = build_where(&col_names, q, &filters);
 
     let (row_count, profiles) = profile(db, table, &cols, where_cond.as_deref())?;
     let mut columns = assign_roles(&profiles, row_count);
@@ -725,7 +726,8 @@ pub fn junk(db: &str, table: &str, q: Option<&str>, filters: &[Filter]) -> Resul
     }
     let cols = describe(db, table)?;
     let col_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
-    let where_cond = build_where(&col_names, q, filters);
+    let filters = crate::introspect::normalize_contains(&cols, filters);
+    let where_cond = build_where(&col_names, q, &filters);
     let where_sql = where_cond
         .as_ref()
         .map(|w| format!(" WHERE {w}"))
@@ -1116,6 +1118,7 @@ mod tests {
             max: None,
             tmin: None,
             tmax: None,
+            contains: false,
         };
         let scoped = predict(&db, "t", None, std::slice::from_ref(&f)).unwrap();
         assert_eq!(scoped.row_count, 100);

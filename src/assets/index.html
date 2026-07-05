@@ -1925,6 +1925,7 @@
     // Metric: row count per bucket by default, or avg/min/max/sum of any
     // numeric column.
     const numCols = d.columns.filter((c) => /INT|DECIMAL|FLOAT|DOUBLE|REAL|NUMERIC/i.test(c.col_type)
+      && !/\[\]|STRUCT|MAP\(|UNION/i.test(c.col_type) // DOUBLE[] isn't avg()-able
       && !["all_null", "unsupported_type", "duplicate_name"].includes(c.reason || ""));
     if (statsTsAgg !== "count" && !numCols.some((c) => c.name === statsTsMetricCol)) {
       statsTsMetricCol = numCols.length ? numCols[0].name : null;
@@ -2209,10 +2210,15 @@
     const conds = [];
     const byCol = {};
     state.filters.forEach((f) => {
-      if (f.value !== undefined) (byCol[f.column] = byCol[f.column] || []).push(f.value);
+      if (f.value === undefined) return;
+      const key = JSON.stringify([f.column, !!f.contains]); // containment groups apart
+      (byCol[key] = byCol[key] || []).push(f.value);
     });
-    Object.entries(byCol).forEach(([c, vs]) => {
-      const parts = vs.map((v) => `CAST(${qIdent(c)} AS VARCHAR) = ${qLit(v)}`);
+    Object.entries(byCol).forEach(([key, vs]) => {
+      const [c, contains] = JSON.parse(key);
+      const parts = vs.map((v) => contains
+        ? `list_contains(CAST(${qIdent(c)} AS VARCHAR[]), ${qLit(v)})`
+        : `CAST(${qIdent(c)} AS VARCHAR) = ${qLit(v)}`);
       conds.push(parts.length > 1 ? `(${parts.join(" OR ")})` : parts[0]);
     });
     state.filters.forEach((f) => {
@@ -3555,7 +3561,15 @@
   // ---- mutations --------------------------------------------------------
   function toggleFilter(column, value) {
     const i = state.filters.findIndex((f) => f.column === column && f.value === value);
-    if (i >= 0) state.filters.splice(i, 1); else state.filters.push({ column, value });
+    if (i >= 0) state.filters.splice(i, 1);
+    else {
+      // A list facet filters by containment: the row's array must hold the
+      // value (the 10.0 facet matches [1, 10], [10] and [10, 400] alike).
+      const fac = state.facets.find((f) => f.name === column);
+      const flt = { column, value };
+      if (fac && fac.list) flt.contains = true;
+      state.filters.push(flt);
+    }
     afterFilterChange();
   }
   // Show/hide a column in the rows table via its facet eye. Filtering/faceting on
@@ -3917,7 +3931,14 @@
   // already says "live"); the titlebar indicator keeps the state word.
   function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = live ? "v__MUCKDB_VERSION__" : text; }
   let formatsRev = null; // last-seen fingerprint of the format registry
+  let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
+    // A different boot stamp means the daemon restarted (usually an upgrade) —
+    // this page's JS may be stale against the new server, so reload it.
+    if (s.boot !== undefined) {
+      if (bootSeen !== null && s.boot !== bootSeen) { location.reload(); return; }
+      bootSeen = s.boot;
+    }
     state.history = s.history || [];
     state.sessions = s.sessions || [];
     // A changed format registry invalidates every cached format map so the

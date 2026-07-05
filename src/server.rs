@@ -131,8 +131,24 @@ fn snapshot_json() -> Option<String> {
         // lands in the watched data dir, and this field is what makes the
         // snapshot differ so the change is actually broadcast.
         "formats_rev": crate::formats::registry_rev(),
+        // This daemon instance's boot stamp. A page that reconnects and sees a
+        // different value is running JS from a previous build — it reloads
+        // itself so open tabs can never go stale across an upgrade/restart.
+        "boot": boot_stamp(),
     }))
     .ok()
+}
+
+/// Millisecond timestamp captured once per daemon process — pages compare it
+/// across reconnects to detect that the daemon (and its baked-in UI) changed.
+fn boot_stamp() -> u64 {
+    static BOOT: std::sync::LazyLock<u64> = std::sync::LazyLock::new(|| {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as u64)
+            .unwrap_or(0)
+    });
+    *BOOT
 }
 
 /// Watch the history store and session files; broadcast fresh state on changes.
