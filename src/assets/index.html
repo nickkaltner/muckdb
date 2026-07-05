@@ -364,7 +364,10 @@
   .pd-cell:hover { transform: scale(1.12); z-index: 1; box-shadow: 0 2px 10px rgba(0,0,0,0.4); }
   .pd-cell.sel { outline: 2px solid var(--orange); outline-offset: 1px; }
   .pd-cell.diag { background: var(--raised); cursor: default; }
-  .pd-cell.empty { color: var(--faint); cursor: default; }
+  /* Beat the global .empty empty-state style (dashed box + 20px padding),
+     which would otherwise blow these grid cells out of their 26px rows. */
+  .pd-cell.empty { color: var(--faint); cursor: default; border: 0; padding: 0; border-radius: 3px; font-family: inherit; font-size: inherit; line-height: inherit; }
+  .hm .pd-cell.empty { border: 1px dashed var(--line-soft); }
   .pd-cell.weak { opacity: 0.65; }
   .pd-hint { font-size: 10.5px; color: var(--faint); }
   .pd-outbar { display: flex; align-items: center; gap: 7px; font-size: 12px; color: var(--muted); flex-wrap: wrap; }
@@ -386,6 +389,12 @@
   .pd-tssel { border: 1px solid var(--line); border-radius: 5px; color: var(--fg); padding: 4px 28px 4px 9px; font: inherit; font-size: 12px; cursor: pointer; -webkit-appearance: none; -moz-appearance: none; appearance: none; background-color: var(--raised); background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 10 10' fill='none' stroke='%23888' stroke-width='1.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M2 3.5 5 6.5 8 3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; }
   .pd-tssel:hover { border-color: var(--orange-dim); }
   .pd-tssel:focus { border-color: var(--orange-dim); outline: none; }
+  /* Heatmap tiles reuse the pd-matrix grid; cells are informational, not clickable. */
+  .hm { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
+  .hm .pd-cell { cursor: default; }
+  .hm .pd-cell:hover { transform: none; box-shadow: none; }
+  .hm-legend { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--faint); }
+  .hm-grad { flex: 0 0 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--orange) 8%, var(--surface)), color-mix(in srgb, var(--orange) 92%, var(--surface))); border: 1px solid var(--line-soft); }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -2567,6 +2576,7 @@
       const kind = (t.chart && t.chart.kind) || "table";
       await ensureFormats(t.db);
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
+      if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -2943,6 +2953,7 @@
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
+    if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     applyTileHeight(t.name);
@@ -2967,6 +2978,44 @@
       ? miniTable(d.cols, rows, d.db, d.table, state.tableShrunk[name], TILE_TABLE_ROWS, !!q)
       : `<div class="note" style="padding:6px 12px">no rows match “${esc(q)}”.</div>`;
     applyTileHeight(name);
+  }
+  // A heatmap tile: two categorical axes (--x across, first --y down) and a
+  // value column (--value, else the first remaining column) filling the cells.
+  // Same construction as the stats correlation matrix; axes keep the order the
+  // rows arrive in (shape the view's ORDER BY to control it).
+  function heatmapHtml(cols, rows, spec, db, table) {
+    const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
+    const yi = Math.max(0, cols.indexOf((spec.y && spec.y[0]) || cols[1]));
+    const vname = spec.value && cols.includes(spec.value)
+      ? spec.value
+      : cols.find((c, i) => i !== xi && i !== yi);
+    const vi = cols.indexOf(vname);
+    if (vi < 0) return '<div class="note">heatmap needs a value column (--value).</div>';
+    const xs = [], ys = [], seen = {};
+    const cell = {};
+    rows.forEach((r) => {
+      const x = String(r[xi]), y = String(r[yi]);
+      if (!seen["x" + x]) { seen["x" + x] = 1; xs.push(x); }
+      if (!seen["y" + y]) { seen["y" + y] = 1; ys.push(y); }
+      const v = Number(r[vi]);
+      if (isFinite(v)) cell[JSON.stringify([y, x])] = v;
+    });
+    const vals = Object.values(cell);
+    if (!vals.length) return '<div class="note">no numeric values to map.</div>';
+    const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
+    const f = colFmt(db, vname, table);
+    const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
+    const head = `<div class="pd-corner"></div>` + xs.map((x) => `<div class="pd-colhead" title="${attr(x)}">${esc(x)}</div>`).join("");
+    const body = ys.map((y) => `<div class="pd-rowhead" title="${attr(y)}">${esc(y)}</div>` + xs.map((x) => {
+      const v = cell[JSON.stringify([y, x])];
+      if (v === undefined) return `<div class="pd-cell empty hm-cell"></div>`;
+      const t = (v - lo) / span;
+      const fill = Math.round(8 + t * 84);
+      // --no-values: colour only; the hover title still carries the figure.
+      return `<div class="pd-cell hm-cell" style="background: color-mix(in srgb, var(--orange) ${fill}%, var(--surface))" title="${attr(`${y} × ${x} — ${fv(v)}`)}">${spec.no_values ? "" : esc(fv(v))}</div>`;
+    }).join("")).join("");
+    const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad"></span><span>${esc(fv(hi))}</span></div>`;
+    return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
   }
   const TILE_TABLE_ROWS = 20;
   function miniTable(cols, rows, db, table, shrunk, limit, filtered) {

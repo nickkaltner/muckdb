@@ -27,12 +27,20 @@ pub struct Marker {
 /// How a data tile should be charted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
-    /// bar | stacked | line | area | scatter | pie | table
+    /// bar | stacked | line | area | scatter | pie | table | heatmap
     pub kind: String,
     #[serde(default)]
     pub x: Option<String>,
     #[serde(default)]
     pub y: Vec<String>,
+    /// Heatmap cell value column (`--value`); with `--x` and the first `--y`
+    /// giving the two axes, one row per x×y pair.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub value: Option<String>,
+    /// Heatmap: colour cells only, without printing the value in each
+    /// (`--no-values`); hover still reveals the exact figure.
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub no_values: bool,
     /// Optional axis titles. When unset the chart shows no axis label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xlabel: Option<String>,
@@ -509,6 +517,12 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     for y in &chart.y {
         check("--y", y)?;
     }
+    if let Some(v) = &chart.value {
+        check("--value", v)?;
+    }
+    if chart.kind == "heatmap" && (chart.x.is_none() || chart.y.is_empty()) {
+        bail!("--chart heatmap needs --x and --y (the two axes; --value for the cell value)");
+    }
     Ok(())
 }
 
@@ -637,6 +651,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 chart: Box::new(Chart {
                     kind: p.get("chart").unwrap_or("table").to_string(),
                     x: p.get("x").map(str::to_string),
+                    value: p.get("value").map(str::to_string),
+                    no_values: p.get("no-values").is_some(),
                     xlabel: p.get("xlabel").map(str::to_string),
                     ylabel: p.get("ylabel").map(str::to_string),
                     bars: p.get("bars").map(str::to_string),
@@ -763,7 +779,9 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "usage: muckdb session <create|list|post|tile|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
+                 [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \
@@ -804,6 +822,31 @@ mod tests {
         assert_eq!(slug("Pond Analysis"), "pond-analysis");
         assert_eq!(slug("  Q2 / 2026 report!! "), "q2-2026-report");
         assert_eq!(slug("already-good"), "already-good");
+    }
+
+    #[test]
+    fn heatmap_chart_serde_roundtrips_value_column() {
+        let c = Chart {
+            kind: "heatmap".into(),
+            x: Some("port_speed".into()),
+            y: vec!["country".into()],
+            value: Some("sites".into()),
+            no_values: false,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        assert!(json.contains("\"value\":\"sites\""));
+        let back: Chart = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.value.as_deref(), Some("sites"));
+        // Older sessions without the field still load.
+        let old: Chart = serde_json::from_str("{\"kind\":\"bar\",\"y\":[]}").unwrap();
+        assert!(old.value.is_none());
     }
 
     #[test]

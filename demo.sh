@@ -75,6 +75,15 @@ CREATE OR REPLACE VIEW events_per_hour   AS SELECT date_trunc('hour', ts) AS hou
 -- the time axis: a DATE must sit on its own day, not skew by the viewer's tz.)
 CREATE OR REPLACE VIEW sales_per_day     AS SELECT sold_on AS day, count(*) AS orders, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY 1;
 CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
+-- Two categorical axes + a value — the shape a heatmap wants (one row per
+-- weekday × hour pair). Axis order follows row order, hence the ORDER BY.
+CREATE OR REPLACE VIEW events_heat AS
+  SELECT lpad(hour(ts)::VARCHAR, 2, '0') AS hour,
+         dayname(ts) AS weekday,
+         count(*) AS events
+  FROM events
+  GROUP BY hour(ts), dayname(ts), isodow(ts)
+  ORDER BY isodow(ts), hour(ts);
 
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
@@ -176,6 +185,10 @@ MD
   --db "$DB" --view events_points --chart scatter --x ts --y value \
   --caption "Every event as a point — clusters show where activity bunched up." >/dev/null
 
+"$MUCKDB" session tile "$SESSION" --name heat --title "Activity by weekday × hour" \
+  --db "$DB" --view events_heat --chart heatmap --x hour --y weekday --value events \
+  --caption "A heatmap crosses two categoricals and shades cells by a value — the midday hump shows as a bright column, quieter days as dim rows." >/dev/null
+
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
 
@@ -188,6 +201,7 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Sensors**         | line + event & target markers  | a clean series with annotations          |
 | **Top products**    | table (fills, no scroll)       | small result set read in full            |
 | **Each event**      | scatter                        | raw points show where activity bunched   |
+| **Activity heat**   | heatmap (weekday × hour)       | two categoricals × a value → density at a glance |
 
 Every figure here is backed by a **view** you can open (hit **explore**),
 re-sort, filter, and export — nothing is take-my-word-for-it." >/dev/null

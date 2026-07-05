@@ -182,7 +182,9 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
+        [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -219,7 +221,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -246,6 +248,14 @@ muckdb session rm <name> [--tile TILE]
     plot several `--y` columns to compare measures on one time axis. Prefer it over
     bars when the x is continuous time and you care about the *shape* of the change.
   - **`scatter`** when you want every raw point (density/clusters), not an aggregate.
+  - **`heatmap`** to cross two categorical columns and shade each cell by a
+    value column — the densest way to show a metric over every (x, y)
+    combination (e.g. sites per country x port speed). Pass `--x`, `--y` and
+    `--value`; shape the view with one row per pair (`GROUP BY x, y`) and
+    control axis order with ORDER BY (axes follow row order of appearance).
+    Cell values render through the value column's display format; pass
+    `--no-values` to colour cells only (hover still shows the exact figure) —
+    better for large grids where the numbers would be noise.
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid

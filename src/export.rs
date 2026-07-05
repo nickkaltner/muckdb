@@ -397,6 +397,8 @@ mod tests {
                         kind: "bar".into(),
                         x: Some("k".into()),
                         y: vec!["n".into()],
+                        value: None,
+                        no_values: false,
                         xlabel: None,
                         ylabel: None,
                         bars: None,

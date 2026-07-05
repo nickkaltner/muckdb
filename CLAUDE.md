@@ -54,7 +54,9 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
+        [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -79,7 +81,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -90,7 +92,12 @@ muckdb session rm <name> [--tile TILE]
   panel; `area` (and stacked areas with multiple `--y`) show volume and how parts
   evolve over time; `line` is the go-to for **temporal data** (carries trend,
   seasonality, and multiple series on one time axis — prefer it over bars when x is
-  continuous time and the *shape* matters); `scatter` shows every raw point.
+  continuous time and the *shape* matters); `scatter` shows every raw point;
+  `heatmap` crosses two categorical columns and shades each cell by a value
+  column — the densest way to show a metric over every (x, y) combination
+  (e.g. sites per country x port speed). Shape the view with one row per pair
+  (`GROUP BY x, y`) and control axis order with ORDER BY (axes follow row
+  order of appearance).
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

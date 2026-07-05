@@ -111,7 +111,10 @@ muckdb session import analysis.muckdb        # imports; name collisions get -2
 ```
 
 Re-running `post`/`tile` with the same `--name` updates that tile in place; the
-dashboard updates live. Charts: `bar | line | area | scatter | pie | table`.
+dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
+heatmap` (a heatmap takes two categorical axes — `--x` and `--y` — plus a
+`--value` column, one row per pair, and shades each cell by value —
+`--no-values` colours cells without printing the figures).
 Table tiles show the first 20 rows and carry a filter box in their title bar —
 typing narrows the rows to those containing the text in any column.
 Each data tile has an **explore** button that opens the view in the faceted
