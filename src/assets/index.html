@@ -356,7 +356,10 @@
   .pd-weak-tag { font-size: 10px; color: var(--faint); letter-spacing: 0.06em; }
   .pd-how { color: var(--faint); }
   .pd-sub { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); margin-top: 8px; padding: 0 8px; }
-  .pd-matrix { display: grid; gap: 3px; align-items: stretch; }
+  /* Wide matrices scroll horizontally on narrow panels instead of clipping;
+     row labels stay pinned so scrolled cells keep their context. */
+  .pd-matrix { display: grid; gap: 3px; align-items: stretch; overflow-x: auto; padding-bottom: 4px; }
+  .pd-rowhead, .pd-corner { position: sticky; left: 0; background: var(--surface); z-index: 1; }
   .pd-corner { font-size: 10px; color: var(--faint); display: flex; align-items: flex-end; justify-content: flex-end; padding: 2px 6px; }
   .pd-colhead { writing-mode: vertical-rl; transform: rotate(180deg); font-size: 10.5px; color: var(--muted); max-height: 110px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 2px 0; justify-self: center; align-self: end; }
   .pd-rowhead { font-size: 11px; color: var(--muted); text-align: right; padding-right: 8px; align-self: center; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 160px; }
@@ -395,6 +398,16 @@
   .hm .pd-cell:hover { transform: none; box-shadow: none; }
   .hm-legend { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--faint); }
   .hm-grad { flex: 0 0 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--orange) 8%, var(--surface)), color-mix(in srgb, var(--orange) 92%, var(--surface))); border: 1px solid var(--line-soft); }
+  /* Box-plot tiles: one horizontal box-and-whisker per row on a shared scale. */
+  .bx { display: flex; flex-direction: column; gap: 10px; padding: 8px 4px; }
+  .bx-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; align-items: center; }
+  .bx-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .bx-label { font-size: 12.5px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bx-desc { font-size: 11px; color: var(--faint); line-height: 1.35; }
+  .bx-plot { position: relative; height: 18px; }
+  .bx-med-val { font-size: 11.5px; color: var(--muted); text-align: right; }
+  .bx-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; }
+  .bx-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 3px; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -2577,6 +2590,7 @@
       await ensureFormats(t.db);
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -2912,10 +2926,13 @@
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
+    // Heatmap and box tiles size to their grid/rows — a height grip makes no
+    // sense on them (markdown panels already skip it too).
+    const grip = kind === "heatmap" || kind === "box" ? "" : gripHtml(t.name);
     return `<div class="panel" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions">${sqlBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
-      <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${gripHtml(t.name)}</div>`;
+      <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
   let tileHeights = {};
@@ -2953,7 +2970,8 @@
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
-    if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
+    if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     applyTileHeight(t.name);
@@ -3016,6 +3034,47 @@
     }).join("")).join("");
     const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad"></span><span>${esc(fv(hi))}</span></div>`;
     return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
+  }
+  // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
+  // SHARED scale so boxes compare directly. --x names each box; --y is five
+  // columns in order min,q1,median,q3,max (aggregated in the view); --desc
+  // optionally names a note column shown under each label.
+  function boxTileHtml(cols, rows, spec, db, table) {
+    const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
+    const yidx = (spec.y || []).map((c) => cols.indexOf(c));
+    if (yidx.length !== 5 || yidx.some((i) => i < 0)) {
+      return '<div class="note">box plots need --y with five columns: min,q1,median,q3,max.</div>';
+    }
+    const di = spec.desc ? cols.indexOf(spec.desc) : -1;
+    const boxes = rows.map((r) => ({
+      label: String(r[xi]),
+      desc: di >= 0 && r[di] != null ? String(r[di]) : "",
+      v: yidx.map((i) => Number(r[i])),
+    })).filter((b) => b.v.every(isFinite));
+    if (!boxes.length) return '<div class="note">no numeric box data.</div>';
+    const lo = Math.min(...boxes.map((b) => b.v[0]));
+    const hi = Math.max(...boxes.map((b) => b.v[4]));
+    const span = hi - lo || 1;
+    const f = colFmt(db, spec.y[2], table) || colFmt(db, spec.y[0], table);
+    const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
+    const pct = (v) => ((v - lo) / span) * 100;
+    const rowsHtml = boxes.map((b) => {
+      const [mn, q1, med, q3, mx] = b.v;
+      const wl = pct(mn), wr = pct(mx), bl = pct(q1), bw = Math.max(0.5, pct(q3) - pct(q1)), ml = pct(med);
+      const title = `${b.label} — min ${fv(mn)} · q1 ${fv(q1)} · median ${fv(med)} · q3 ${fv(q3)} · max ${fv(mx)}`;
+      return `<div class="bx-row">
+        <div class="bx-head"><span class="bx-label" title="${attr(b.label)}">${esc(b.label)}</span>${b.desc ? `<span class="bx-desc">${esc(b.desc)}</span>` : ""}</div>
+        <div class="bx-plot" title="${attr(title)}">
+          <span class="box-whisk" style="left:${wl}%;right:${100 - wr}%"></span>
+          <span class="box-cap" style="left:${wl}%"></span><span class="box-cap" style="left:${wr}%"></span>
+          <span class="box-iqr" style="left:${bl}%;width:${bw}%"></span>
+          <span class="box-med" style="left:${ml}%"></span>
+        </div>
+        <span class="bx-med-val">${esc(fv(med))}</span>
+      </div>`;
+    }).join("");
+    const axis = `<div class="bx-axis"><span></span><div class="bx-axis-line"><span>${esc(fv(lo))}</span><span>${esc(fv(hi))}</span></div><span></span></div>`;
+    return `<div class="bx">${rowsHtml}${axis}</div>`;
   }
   const TILE_TABLE_ROWS = 20;
   function miniTable(cols, rows, db, table, shrunk, limit, filtered) {

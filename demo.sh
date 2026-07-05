@@ -21,19 +21,29 @@ echo "muckdb demo → seeding $DB"
 # Three flavours of data: categorical sales, a regular hourly sensor series, and
 # an irregular event stream whose density varies a lot per hour and per day.
 "$MUCKDB" "$DB" -c "
--- Categorical + numeric facts for bars / pies / faceted search.
+-- Categorical + numeric facts for bars / pies / faceted search. Amounts are
+-- deliberately skewed (exponential tails, different scale per category) so
+-- distributions differ: Hardware is big-ticket with a long tail, Services
+-- cheap and tight — box plots and histograms have real shape to show.
 CREATE OR REPLACE TABLE sales AS
+WITH base AS (
+  SELECT i,
+    ['Northland','Eastvale','Southport','Westend','Brightmoor','Cedar Hills',
+     'Fairview','Glenwood','Harborline','Ironside','Junewood','Kingsford',
+     'Lakeshore','Mistvale'][1 + (i % 14)::BIGINT]                             AS region,
+    ['Widget','Gadget','Gizmo','Sprocket','Cog'][1 + (hash(i*7)  % 5)::BIGINT] AS product,
+    ['Hardware','Software','Services'][1 + (hash(i*13) % 3)::BIGINT]           AS category
+  FROM range(600) g(i))
 SELECT
-  i AS id,
-  ['Northland','Eastvale','Southport','Westend','Brightmoor','Cedar Hills',
-   'Fairview','Glenwood','Harborline','Ironside','Junewood','Kingsford',
-   'Lakeshore','Mistvale'][1 + (i % 14)::BIGINT]                                  AS region,
-  ['Widget','Gadget','Gizmo','Sprocket','Cog'][1 + (hash(i*7)  % 5)::BIGINT]      AS product,
-  ['Hardware','Software','Services'][1 + (hash(i*13) % 3)::BIGINT]                AS category,
-  round(20 + (hash(i*3) % 480) + random()*50, 2)                           AS amount,
+  i AS id, region, product, category,
+  round(CASE category
+    WHEN 'Hardware' THEN 180 + 140 * (-ln(random()))   -- big-ticket, long tail
+    WHEN 'Software' THEN  60 +  35 * (-ln(random()))   -- mid-priced, moderate tail
+    ELSE                  18 +  10 * (-ln(random()))   -- cheap and tight
+  END, 2)                                                                   AS amount,
   1 + (hash(i*5) % 9)                                                       AS qty,
   (DATE '2026-05-01' + (i % 30)::INTEGER)                                   AS sold_on
-FROM range(600) g(i);
+FROM base;
 
 -- A clean, regular hourly time series (30 days) — daily + weekly cycles.
 CREATE OR REPLACE TABLE sensors AS
@@ -75,15 +85,29 @@ CREATE OR REPLACE VIEW events_per_hour   AS SELECT date_trunc('hour', ts) AS hou
 -- the time axis: a DATE must sit on its own day, not skew by the viewer's tz.)
 CREATE OR REPLACE VIEW sales_per_day     AS SELECT sold_on AS day, count(*) AS orders, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY 1;
 CREATE OR REPLACE VIEW events_points     AS SELECT ts, value, kind FROM events;
+-- One row per box — the shape a box plot wants: label, min/q1/median/q3/max
+-- (aggregated here, not in the chart), and a note shown under each label.
+CREATE OR REPLACE VIEW amount_spread AS
+  SELECT category,
+         round(min(amount), 2)                    AS lo,
+         round(quantile_cont(amount, 0.25), 2)    AS q1,
+         round(median(amount), 2)                 AS med,
+         round(quantile_cont(amount, 0.75), 2)    AS q3,
+         round(max(amount), 2)                    AS hi,
+         count(*)::VARCHAR || ' orders'           AS note
+  FROM sales GROUP BY 1 ORDER BY med DESC;
 -- Two categorical axes + a value — the shape a heatmap wants (one row per
--- weekday × hour pair). Axis order follows row order, hence the ORDER BY.
+-- weekday × hour pair). Axis order follows row order, so build the FULL grid
+-- (cross join + left join): sparse data can't scramble the axes, and a silent
+-- hour is an honest 0 rather than a missing cell.
 CREATE OR REPLACE VIEW events_heat AS
-  SELECT lpad(hour(ts)::VARCHAR, 2, '0') AS hour,
-         dayname(ts) AS weekday,
-         count(*) AS events
-  FROM events
-  GROUP BY hour(ts), dayname(ts), isodow(ts)
-  ORDER BY isodow(ts), hour(ts);
+  WITH hours AS (SELECT lpad(h::VARCHAR, 2, '0') AS hour, h FROM range(24) t(h)),
+       days  AS (SELECT dayname(DATE '2026-05-04' + d::INTEGER) AS weekday, d FROM range(7) t(d))
+  SELECT hours.hour, days.weekday, count(e.ts) AS events
+  FROM hours CROSS JOIN days
+  LEFT JOIN events e ON hour(e.ts) = hours.h AND isodow(e.ts) = days.d + 1
+  GROUP BY hours.hour, hours.h, days.weekday, days.d
+  ORDER BY days.d, hours.h;
 
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
@@ -98,6 +122,8 @@ COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 "$MUCKDB" format "$DB" hardware --currency USD >/dev/null
 "$MUCKDB" format "$DB" software --currency USD >/dev/null
 "$MUCKDB" format "$DB" services --currency USD >/dev/null
+# The box-plot view's five quantile columns — same money format as amount.
+for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/dev/null; done
 "$MUCKDB" format "$DB" temp_c   --suffix '°C' --decimals 1 >/dev/null
 "$MUCKDB" format "$DB" humidity --suffix '%'  --decimals 0 >/dev/null
 
@@ -110,8 +136,8 @@ A quick tour of what muckdb can do, all driven from the command line.
 
 - 📊 **Bars / stacked bars / pies** from aggregated duckdb views (\`sales\`)
 - 🌡️ A **regular** hourly time series (\`sensors\`)
-- ⚡ An **irregular** event stream (\`events\`) — notice how the points per time
-  period vary a lot
+- ⚡ An **irregular** event stream (\`events\`) — notice how the points per time period vary a lot
+- 🔥 A **heatmap** (weekday × hour density) and 📦 **box plots** comparing whole distributions on one scale, each box with its own note
 
 ## What's in this database
 
@@ -185,6 +211,10 @@ MD
   --db "$DB" --view events_points --chart scatter --x ts --y value \
   --caption "Every event as a point — clusters show where activity bunched up." >/dev/null
 
+"$MUCKDB" session tile "$SESSION" --name spread --title "Order value spread by category" \
+  --db "$DB" --view amount_spread --chart box --x category --y lo,q1,med,q3,hi --desc note \
+  --caption "Box-and-whisker per category on one shared scale — the box is the middle 50%, the notch the median; whiskers reach min/max." >/dev/null
+
 "$MUCKDB" session tile "$SESSION" --name heat --title "Activity by weekday × hour" \
   --db "$DB" --view events_heat --chart heatmap --x hour --y weekday --value events \
   --caption "A heatmap crosses two categoricals and shades cells by a value — the midday hump shows as a bright column, quieter days as dim rows." >/dev/null
@@ -202,6 +232,7 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Top products**    | table (fills, no scroll)       | small result set read in full            |
 | **Each event**      | scatter                        | raw points show where activity bunched   |
 | **Activity heat**   | heatmap (weekday × hour)       | two categoricals × a value → density at a glance |
+| **Value spread**    | box plots on a shared scale    | compare whole distributions, each with a note |
 
 Every figure here is backed by a **view** you can open (hit **explore**),
 re-sort, filter, and export — nothing is take-my-word-for-it." >/dev/null

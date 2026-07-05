@@ -114,7 +114,9 @@ Re-running `post`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
 heatmap` (a heatmap takes two categorical axes — `--x` and `--y` — plus a
 `--value` column, one row per pair, and shades each cell by value —
-`--no-values` colours cells without printing the figures).
+`--no-values` colours cells without printing the figures). `box` draws one
+box-and-whisker per row on a shared scale: `--x` labels each box, `--y` takes
+five columns in order `min,q1,median,q3,max`, and `--desc` adds a per-box note.
 Table tiles show the first 20 rows and carry a filter box in their title bar —
 typing narrows the rows to those containing the text in any column.
 Each data tile has an **explore** button that opens the view in the faceted

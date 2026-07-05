@@ -182,9 +182,10 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
+        [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -221,7 +222,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -256,6 +257,13 @@ muckdb session rm <name> [--tile TILE]
     Cell values render through the value column's display format; pass
     `--no-values` to colour cells only (hover still shows the exact figure) —
     better for large grids where the numbers would be noise.
+  - **`box`** to compare distributions across groups — one horizontal
+    box-and-whisker per row, all on a shared scale. `--x` labels each box;
+    `--y` takes exactly five columns in order `min,q1,median,q3,max`
+    (aggregate in the view: `min(v), quantile_cont(v,0.25), median(v),
+    quantile_cont(v,0.75), max(v)`); `--desc` names a text column rendered
+    under each label so every box carries its own explanation. Values render
+    through the median column's display format.
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid

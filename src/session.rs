@@ -41,6 +41,10 @@ pub struct Chart {
     /// (`--no-values`); hover still reveals the exact figure.
     #[serde(default, skip_serializing_if = "is_false")]
     pub no_values: bool,
+    /// Box plots: the column holding each box's descriptive note (`--desc`),
+    /// shown beside the plot so boxes can be compared with context.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub desc: Option<String>,
     /// Optional axis titles. When unset the chart shows no axis label.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xlabel: Option<String>,
@@ -520,8 +524,16 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     if let Some(v) = &chart.value {
         check("--value", v)?;
     }
+    if let Some(d) = &chart.desc {
+        check("--desc", d)?;
+    }
     if chart.kind == "heatmap" && (chart.x.is_none() || chart.y.is_empty()) {
         bail!("--chart heatmap needs --x and --y (the two axes; --value for the cell value)");
+    }
+    if chart.kind == "box" && (chart.x.is_none() || chart.y.len() != 5) {
+        bail!(
+            "--chart box needs --x (the box label) and --y with exactly five columns, in order: min,q1,median,q3,max (aggregate in the view, e.g. min(v), quantile_cont(v,0.25), median(v), quantile_cont(v,0.75), max(v))"
+        );
     }
     Ok(())
 }
@@ -653,6 +665,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     x: p.get("x").map(str::to_string),
                     value: p.get("value").map(str::to_string),
                     no_values: p.get("no-values").is_some(),
+                    desc: p.get("desc").map(str::to_string),
                     xlabel: p.get("xlabel").map(str::to_string),
                     ylabel: p.get("ylabel").map(str::to_string),
                     bars: p.get("bars").map(str::to_string),
@@ -779,9 +792,11 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "usage: muckdb session <create|list|post|tile|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
+                 --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
+                 [--desc COL]  (box: a per-box note column, shown beside each plot)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \
@@ -832,6 +847,7 @@ mod tests {
             y: vec!["country".into()],
             value: Some("sites".into()),
             no_values: false,
+            desc: None,
             xlabel: None,
             ylabel: None,
             bars: None,

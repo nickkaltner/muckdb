@@ -399,6 +399,7 @@ mod tests {
                         y: vec!["n".into()],
                         value: None,
                         no_values: false,
+                        desc: None,
                         xlabel: None,
                         ylabel: None,
                         bars: None,
