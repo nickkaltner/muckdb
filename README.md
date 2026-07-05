@@ -11,7 +11,8 @@ straight through — and muckdb quietly does two extra things:
    it to your LAN, where it's advertised over **mDNS** for discovery.
 2. **Keeps a live ledger.** Every invocation is recorded, and whenever a command
    touches a database, the web view presents that database's tables — rows
-   (with search, facets, sorting, pagination), a tabbed **stats** workbench
+   (with search, facets, sorting, pagination; nested LIST/STRUCT/MAP values
+   render as compact chips that expand on click), a tabbed **stats** workbench
    (**per column** histograms; a directional **correlation** matrix scoring how
    well each column predicts each other; **time series** overviews with smoothed
    trendlines, a tunable distance-from-trend **outlier list**, drag-to-filter

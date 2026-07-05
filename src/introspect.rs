@@ -352,6 +352,31 @@ pub fn list_tables(db: &str) -> Result<Vec<TableInfo>> {
     Ok(tables)
 }
 
+/// Nested duckdb types (LIST/STRUCT/MAP/UNION). `duckdb -json` emits their
+/// values in duckdb literal syntax (`{red=3, blue=5}`) — not valid JSON, which
+/// breaks the whole payload parse. Columns of these types are wrapped in
+/// `to_json()`, which the CLI then embeds as real nested JSON.
+fn is_nested_type(t: &str) -> bool {
+    let t = t.to_uppercase();
+    t.contains("STRUCT") || t.contains("MAP(") || t.contains("UNION") || t.contains("[]")
+}
+
+/// A SELECT projection over (name, type) columns with nested types made
+/// JSON-safe via `to_json(col) AS col`.
+fn json_safe_projection(cols: &[(String, String)]) -> String {
+    cols.iter()
+        .map(|(n, t)| {
+            let q = quote_ident(n);
+            if is_nested_type(t) {
+                format!("to_json({q}) AS {q}")
+            } else {
+                q
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 /// Preview one page of a table's rows, optionally filtered by a free-text
 /// search and facet filters. Also returns the total matching row count so the
 /// caller can paginate.
@@ -371,7 +396,8 @@ pub fn preview(
     }
     // Column order is authoritative from DESCRIBE (also drives text search and
     // the empty-result case).
-    let columns: Vec<String> = describe(db, table)?.into_iter().map(|(n, _)| n).collect();
+    let described = describe(db, table)?;
+    let columns: Vec<String> = described.iter().map(|(n, _)| n.clone()).collect();
     let tbl = quote_ident(table);
 
     let where_sql = build_where(&columns, q, filters)
@@ -392,7 +418,9 @@ pub fn preview(
         .and_then(|r| r.get("n").and_then(Value::as_i64))
         .unwrap_or(0);
 
-    let sql = format!("SELECT * FROM {tbl}{where_sql}{order_sql} LIMIT {limit} OFFSET {offset}");
+    let proj = json_safe_projection(&described);
+    let sql =
+        format!("SELECT {proj} FROM {tbl}{where_sql}{order_sql} LIMIT {limit} OFFSET {offset}");
     let rows = query_json(db, &sql)?;
 
     let data = rows
@@ -486,7 +514,30 @@ pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
     if !Path::new(db).exists() {
         bail!("database file does not exist: {db}");
     }
-    let rows = query_json(db, sql)?;
+    // If the result has nested-typed columns, rewrap the query so they come
+    // back as real JSON (see is_nested_type). A failed DESCRIBE (multi-statement
+    // input, syntax error) falls through to the original SQL untouched.
+    let trimmed = sql.trim().trim_end_matches(';');
+    let effective = match query_json(db, &format!("DESCRIBE {trimmed}")) {
+        Ok(desc) => {
+            let cols: Vec<(String, String)> = desc
+                .iter()
+                .filter_map(|r| {
+                    Some((
+                        r.get("column_name")?.as_str()?.to_string(),
+                        r.get("column_type")?.as_str()?.to_string(),
+                    ))
+                })
+                .collect();
+            if cols.iter().any(|(_, t)| is_nested_type(t)) {
+                format!("SELECT {} FROM ({trimmed})", json_safe_projection(&cols))
+            } else {
+                sql.to_string()
+            }
+        }
+        Err(_) => sql.to_string(),
+    };
+    let rows = query_json(db, &effective)?;
     let columns: Vec<String> = match rows.first() {
         Some(Value::Object(map)) => map.keys().cloned().collect(),
         _ => Vec::new(),

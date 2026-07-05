@@ -410,6 +410,13 @@
   .fmt-affix { color: var(--muted); }
   .cell-link { color: var(--orange); text-decoration: none; }
   .cell-link:hover { text-decoration: underline; }
+  .cell-json { font: inherit; font-size: 12px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; cursor: pointer; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+  .cell-json:hover { border-color: var(--orange-dim); color: var(--fg); }
+  .json-box { max-width: 720px; height: auto; max-height: 82vh; margin: auto; }
+  .json-body { overflow: auto; }
+  .json-pre { margin: 0; padding: 14px 18px; overflow: auto; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
+  .jv-table { width: 100%; }
+  .jv-table .jv-idx { color: var(--faint); text-align: right; width: 1%; white-space: nowrap; }
   .cell-link .fmt-affix { color: var(--orange-dim); }
   .fmt-link-tpl { color: var(--muted); }
   /* schema */
@@ -1519,8 +1526,27 @@
   }
   function cell(v, col, table, db, autoEpoch, filterable, row, allCols) {
     if (v === null || v === undefined) return '<td class="null">NULL</td>';
-    if (typeof v === "object") return `<td>${esc(JSON.stringify(v))}</td>`;
     const f = (col != null && db) ? colFmt(db, col, table) : null;
+    // Nested values (LIST/STRUCT/MAP) render as a compact chip; click opens a
+    // structured overlay. A list of scalars shows its elements through the
+    // column's display format ("1 Gbps, 10 Gbps, …") rather than raw JSON.
+    if (typeof v === "object") {
+      const s = JSON.stringify(v);
+      const scalars = Array.isArray(v) && v.every((x) => typeof x !== "object" || x === null);
+      let disp = s;
+      if (scalars) {
+        // Inline, the affix wraps the whole list once — "1, 10, 100 Gbps" —
+        // rather than repeating after every element (the overlay does that),
+        // and only the first 3 elements show; "…" marks more behind the click.
+        const bare = f ? Object.assign({}, f, { prefix: undefined, suffix: undefined }) : null;
+        disp = ((f && f.prefix) || "")
+          + v.slice(0, 3).map((x) => x === null ? "NULL" : String(bare ? applyFmt(bare, x) : x)).join(", ")
+          + (v.length > 3 ? ", …" : "")
+          + ((f && f.suffix) || "");
+      }
+      const short = disp.length > 64 ? disp.slice(0, 61) + "…" : disp;
+      return `<td><button class="cell-json" data-json="${attr(s)}" data-jdb="${attr(db || "")}" data-jtable="${attr(table || "")}" data-jcol="${attr(col || "")}" title="view full value">${esc(short)}</button></td>`;
+    }
     let inner;
     if (f && (f.tz || f.epoch) && String(v).trim() !== "") inner = applyFmtHtml(f, v);
     else if (f && String(v).trim() !== "" && isFinite(Number(v))) inner = applyFmtHtml(f, Number(v));
@@ -2442,6 +2468,49 @@
   }
   // Expand a chart tile into a large overlay for legibility.
   let zoomChart = null;
+  // Full view of a nested cell value (LIST/STRUCT/MAP) in a zoom-style overlay
+  // (Esc / click-out close via the shared closeZoom). Structured by shape:
+  // a list of scalars → numbered values through the column's display format;
+  // a list of objects → a table (one row per element, keys as columns);
+  // a map/struct → a key/value table; anything deeper → pretty JSON.
+  function showJsonValue(raw, db, table, col) {
+    let v = null;
+    try { v = JSON.parse(raw); } catch (_) {}
+    const f = (db && col) ? colFmt(db, col, table) : null;
+    const fmt1 = (x) => x === null || x === undefined ? '<span class="null">NULL</span>'
+      : typeof x === "object" ? esc(JSON.stringify(x))
+      : esc(String(f ? applyFmt(f, x) : x));
+    let title = col || "value", bodyHtml;
+    const scalars = Array.isArray(v) && v.every((x) => typeof x !== "object" || x === null);
+    if (scalars) {
+      title += ` · ${v.length} ${v.length === 1 ? "value" : "values"}`;
+      bodyHtml = `<table class="preview jv-table"><tbody>${v.map((x, i) =>
+        `<tr><td class="jv-idx">${i + 1}</td><td>${fmt1(x)}</td></tr>`).join("")}</tbody></table>`;
+    } else if (Array.isArray(v) && v.length && v.every((x) => x && typeof x === "object" && !Array.isArray(x))) {
+      const keys = [...new Set(v.flatMap((o) => Object.keys(o)))];
+      title += ` · ${v.length} ${v.length === 1 ? "row" : "rows"}`;
+      bodyHtml = `<table class="preview jv-table"><thead><tr><th class="jv-idx">#</th>${keys.map((k) => `<th>${esc(k)}</th>`).join("")}</tr></thead><tbody>${v.map((o, i) =>
+        `<tr><td class="jv-idx">${i + 1}</td>${keys.map((k) => `<td>${o[k] === undefined ? "" : fmt1(o[k])}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    } else if (v && typeof v === "object" && !Array.isArray(v)) {
+      const keys = Object.keys(v);
+      title += ` · ${keys.length} ${keys.length === 1 ? "key" : "keys"}`;
+      bodyHtml = `<table class="preview jv-table"><tbody>${keys.map((k) =>
+        `<tr><td class="jv-idx">${esc(k)}</td><td>${fmt1(v[k])}</td></tr>`).join("")}</tbody></table>`;
+    } else {
+      let pretty = String(raw);
+      try { pretty = JSON.stringify(v, null, 2); } catch (_) {}
+      bodyHtml = `<pre class="json-pre">${esc(pretty)}</pre>`;
+    }
+    const layer = document.createElement("div");
+    layer.className = "zoom-overlay";
+    layer.innerHTML = `<div class="zoom-box json-box"><div class="zoom-bar"><span class="zoom-title">${esc(title)}</span>` +
+      `<span class="zoom-actions"><button class="zoom-close">✕ close</button></span></div>` +
+      `<div class="json-body">${bodyHtml}</div></div>`;
+    document.body.appendChild(layer);
+    layer.addEventListener("mousedown", (e) => {
+      if (e.target === layer || e.target.closest(".zoom-close")) closeZoom();
+    });
+  }
   function closeZoom() {
     if (zoomChart) { try { zoomChart.destroy(); } catch (_) {} zoomChart = null; }
     const z = document.querySelector(".zoom-overlay"); if (z) z.remove();
@@ -3627,6 +3696,7 @@
       else { const ta = document.createElement("textarea"); ta.value = txt; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) {} ta.remove(); }
       return;
     }
+    const js = ev.target.closest("[data-json]"); if (js) { showJsonValue(js.dataset.json, js.dataset.jdb || null, js.dataset.jtable || null, js.dataset.jcol || null); return; }
     const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
     const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
     const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
