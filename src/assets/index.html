@@ -1415,12 +1415,12 @@
     return `<div class="facet-col${hidden ? " col-hidden" : ""}"><span class="fc-name" title="${attr(name)}">${esc(name)}</span><button class="eye${hidden ? " off" : ""}" data-eye="${attr(name)}" title="${t}" aria-label="${t}">${hidden ? EYE_OFF : EYE_ON}</button></div>`;
   }
   // Merge a column's NULL bucket into its count-descending values list. Each
-  // entry is {value, count} or {nul: true, count} for the NULL bucket. The
-  // bucket shows whenever the column has nulls at all (hasNulls), even when a
-  // filter drops its count to 0 — like any other zero-count value.
-  function facetBuckets(values, nulls, hasNulls) {
+  // entry is {value, count} or {nul: true, count} for the NULL bucket.
+  // `showNull` decides whether the bucket is included at all (the panel hides a
+  // zero-count NULL bucket on non-boolean columns; the modal always shows it).
+  function facetBuckets(values, nulls, showNull) {
     const buckets = values.slice();
-    if (hasNulls) {
+    if (showNull) {
       const i = buckets.findIndex((b) => b.count < nulls);
       buckets.splice(i < 0 ? buckets.length : i, 0, { nul: true, count: nulls });
     }
@@ -1437,16 +1437,24 @@
     return `<button class="facet-val${on ? " on" : ""}" data-fcol="${attr(col)}" ${dat}><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv${v.nul ? " nul" : ""}" title="${attr(v.nul ? "NULL" : v.value)}">${disp}</span><span class="fc">${v.count}</span></button>`;
   }
   function renderValuesFacet(f) {
-    const max = Math.max(1, f.nulls || 0, ...f.values.map((v) => v.count));
     const fmt = colFmt(state.selDb, f.name, state.selTable);
-    const vals = facetBuckets(f.values, f.nulls, f.has_nulls).map((v) => facetValBtn(f.name, v, max, fmt)).join("");
-    // More distinct values exist than the capped list shows → offer the
-    // "show all" modal (NULL counts as one bucket).
-    const nullBucket = f.has_nulls ? 1 : 0;
-    const totalBuckets = (f.total || f.values.length) + nullBucket;
-    const shown = f.values.length + nullBucket;
-    const more = totalBuckets > shown ? `<button class="facet-more" data-fmore="${attr(f.name)}">show all ${totalBuckets} values…</button>` : "";
-    return `<div class="facet-group">${facetHead(f.name)}${vals}${more}</div>`;
+    // Boolean columns keep every value (true/false both matter even at 0);
+    // other columns drop zero-count values to keep the panel quiet — they stay
+    // reachable through the "show all" modal. The NULL bucket follows the same
+    // rule: always shown for a boolean with nulls, otherwise only when it has a
+    // non-zero count under the current filters.
+    const vals = f.boolean ? f.values : f.values.filter((v) => v.count > 0);
+    const showNull = f.has_nulls && (f.boolean || f.nulls > 0);
+    const max = Math.max(1, showNull ? f.nulls : 0, ...vals.map((v) => v.count));
+    const buckets = facetBuckets(vals, f.nulls, showNull);
+    const rows = buckets.map((v) => facetValBtn(f.name, v, max, fmt)).join("");
+    // Everything reachable via "show all": the distinct total plus the NULL
+    // option (offered whenever the column has any nulls). The button appears
+    // when the panel shows fewer than that — whether from the cap or hidden
+    // zero-count values.
+    const totalBuckets = (f.total || f.values.length) + (f.has_nulls ? 1 : 0);
+    const more = totalBuckets > buckets.length ? `<button class="facet-more" data-fmore="${attr(f.name)}">show all ${totalBuckets} values…</button>` : "";
+    return `<div class="facet-group">${facetHead(f.name)}${rows}${more}</div>`;
   }
   // "show all values" modal for one facet column: every distinct value (the
   // most common ALL_FACET_VALUES of them) with counts scoped by the other

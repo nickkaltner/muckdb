@@ -136,6 +136,13 @@ pub fn is_temporal(col_type: &str) -> bool {
     !is_nested_type(&t) && (t.contains("DATE") || t.contains("TIME"))
 }
 
+/// True for a scalar BOOLEAN column (not a `BOOLEAN[]` list). Boolean facets
+/// keep their zero-count values on screen (true/false both matter) where other
+/// columns hide zero-count noise to the "show all" modal.
+pub fn is_boolean(col_type: &str) -> bool {
+    col_type.eq_ignore_ascii_case("BOOLEAN")
+}
+
 /// Build a SQL `WHERE` body (without the `WHERE` keyword) from a free-text
 /// search and a set of facet filters, or `None` when neither is present.
 ///
@@ -708,6 +715,11 @@ pub enum ColumnFacet {
         /// filters with containment (Filter.contains) rather than equality.
         #[serde(skip_serializing_if = "is_false")]
         list: bool,
+        /// True for a BOOLEAN column — the panel keeps its zero-count values
+        /// (true/false both shown); other columns hide zero-count values to
+        /// the "show all" modal so the panel stays quiet.
+        #[serde(skip_serializing_if = "is_false")]
+        boolean: bool,
         /// Rows where the column is NULL under the active filters — shown as
         /// its own facet bucket (with a 0 count when filters exclude them).
         nulls: i64,
@@ -849,6 +861,7 @@ pub fn facets(
                 name: name.clone(),
                 values,
                 list,
+                boolean: is_boolean(ty),
                 nulls,
                 has_nulls,
                 total,
@@ -1922,6 +1935,32 @@ mod tests {
         assert_eq!(mkt.len(), 2, "both values stay visible");
         assert!(mkt.iter().any(|v| v.value == "B" && v.count == 5));
         assert!(mkt.iter().any(|v| v.value == "A" && v.count == 0));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn boolean_columns_are_flagged_for_facets() {
+        if !duckdb_ok() {
+            eprintln!("skipping boolean_columns_are_flagged_for_facets: no duckdb");
+            return;
+        }
+        let db = temp_db("facet_bool");
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, (i % 3 = 0) AS flag, \
+             ('g' || (i % 4)::VARCHAR) AS grp FROM range(40) g(i);",
+        );
+        let fs = facets(&db, "t", None, &[]).unwrap();
+        let flag = fs.iter().find_map(|f| match f {
+            ColumnFacet::Values { name, boolean, .. } if name == "flag" => Some(*boolean),
+            _ => None,
+        });
+        let grp = fs.iter().find_map(|f| match f {
+            ColumnFacet::Values { name, boolean, .. } if name == "grp" => Some(*boolean),
+            _ => None,
+        });
+        assert_eq!(flag, Some(true), "boolean column is flagged");
+        assert_eq!(grp, Some(false), "varchar column is not");
         std::fs::remove_file(&db).ok();
     }
 
