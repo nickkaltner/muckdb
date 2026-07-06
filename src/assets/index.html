@@ -1076,7 +1076,8 @@
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
   function hasFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val); }
-  function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined && f.tmin === undefined); }
+  function hasNullFilter(col) { return state.filters.some((f) => f.column === col && f.is_null); }
+  function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined && f.tmin === undefined && !f.is_null); }
   function timeFilter(col) { return state.filters.find((f) => f.column === col && f.tmin !== undefined || (f.column === col && f.tmax !== undefined)); }
 
   // ---- URL <-> state ----------------------------------------------------
@@ -1435,7 +1436,8 @@
   function filterChipsHtml() {
     return state.filters.map((f, i) => {
       let label;
-      if (f.value !== undefined) {
+      if (f.is_null) label = `<span class="col">${esc(f.column)}</span> is NULL`;
+      else if (f.value !== undefined) {
         // Containment filters read "∋" (the array holds the value); values go
         // through the column's display format like the facet they came from.
         const fmt = colFmt(state.selDb, f.column, state.selTable);
@@ -1542,7 +1544,9 @@
       // Columns with a values facet are categorical — their cells get the
       // hover "+" filter affordance.
       const cat = new Set(state.facets.filter((f) => f.kind !== "range" && f.kind !== "time").map((f) => f.name));
-      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i], cat.has(allCols[i]), r, allCols)).join("") + "</tr>").join("");
+      // Any faceted column (values, range or time) can take an IS NULL filter.
+      const fac = new Set(state.facets.map((f) => f.name));
+      const body = rows.map((r) => "<tr>" + visIdx.map((i) => cell(r[i], allCols[i], state.selTable, state.selDb, au[i], cat.has(allCols[i]), r, allCols, fac.has(allCols[i]))).join("") + "</tr>").join("");
       const from = state.page * size + 1, to = state.page * size + rows.length, last = (state.page + 1) * size >= state.total;
       // Uniform-width labels keep the native select compact so its chevron sits
       // right next to the value (the aria-label + pagination context carry meaning).
@@ -1556,8 +1560,18 @@
       maybeAutoFit();
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
-  function cell(v, col, table, db, autoEpoch, filterable, row, allCols) {
-    if (v === null || v === undefined) return '<td class="null">NULL</td>';
+  function cell(v, col, table, db, autoEpoch, filterable, row, allCols, nullFilterable) {
+    // NULL cells get the same hover "+" (as "col is NULL") on any faceted
+    // column — a missing value is filterable whatever the facet kind.
+    if (v === null || v === undefined) {
+      let b = "";
+      if (nullFilterable) {
+        const on = hasNullFilter(col);
+        const t = on ? `Remove filter ${col} is NULL` : `Filter ${col} is NULL`;
+        b = `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
+      }
+      return `<td class="null">NULL${b}</td>`;
+    }
     const f = (col != null && db) ? colFmt(db, col, table) : null;
     // Nested values (LIST/STRUCT/MAP) render as a compact chip; click opens a
     // structured overlay. A list of scalars shows its elements through the
@@ -2255,15 +2269,18 @@
     const conds = [];
     const byCol = {};
     state.filters.forEach((f) => {
-      if (f.value === undefined) return;
+      if (f.value === undefined && !f.is_null) return;
       const key = JSON.stringify([f.column, !!f.contains]); // containment groups apart
-      (byCol[key] = byCol[key] || []).push(f.value);
+      // A null marker in the group renders as IS NULL, ORed like the values.
+      (byCol[key] = byCol[key] || []).push(f.is_null ? null : f.value);
     });
     Object.entries(byCol).forEach(([key, vs]) => {
       const [c, contains] = JSON.parse(key);
-      const parts = vs.map((v) => contains
-        ? `list_contains(CAST(${qIdent(c)} AS VARCHAR[]), ${qLit(v)})`
-        : `CAST(${qIdent(c)} AS VARCHAR) = ${qLit(v)}`);
+      const parts = vs.map((v) => v === null
+        ? `${qIdent(c)} IS NULL`
+        : contains
+          ? `list_contains(CAST(${qIdent(c)} AS VARCHAR[]), ${qLit(v)})`
+          : `CAST(${qIdent(c)} AS VARCHAR) = ${qLit(v)}`);
       conds.push(parts.length > 1 ? `(${parts.join(" OR ")})` : parts[0]);
     });
     state.filters.forEach((f) => {
@@ -3703,6 +3720,13 @@
     }
     afterFilterChange();
   }
+  // Toggle the special "column IS NULL" filter (the hover "+" on a NULL cell).
+  function toggleNullFilter(column) {
+    const i = state.filters.findIndex((f) => f.column === column && f.is_null);
+    if (i >= 0) state.filters.splice(i, 1);
+    else state.filters.push({ column, is_null: true });
+    afterFilterChange();
+  }
   // Show/hide a column in the rows table via its facet eye. Filtering/faceting on
   // a hidden column still works — it just isn't rendered as a table column.
   function toggleColHidden(column) {
@@ -3724,7 +3748,7 @@
     syncUrl(false);
   }
   function setRange(col, lo, hi, fmin, fmax) {
-    state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined && f.tmin === undefined));
+    state.filters = state.filters.filter((f) => !(f.column === col && f.value === undefined && f.tmin === undefined && !f.is_null));
     const eps = (fmax - fmin) / 1000;
     if (lo > fmin + eps || hi < fmax - eps) state.filters.push({ column: col, min: lo, max: hi });
     afterFilterChange();
@@ -3886,7 +3910,7 @@
     const sc = ev.target.closest("[data-sortcol]"); if (sc) { sortBy(sc.dataset.sortcol); return; }
     const rm = ev.target.closest("[data-rmfilter]"); if (rm) { burstAt(rm); state.filters.splice(Number(rm.dataset.rmfilter), 1); afterFilterChange(); return; }
     const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
-    const facet = ev.target.closest("[data-fcol]"); if (facet) { toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
+    const facet = ev.target.closest("[data-fcol]"); if (facet) { if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
     const pd = ev.target.closest("[data-px]"); if (pd) { showPredictDetail(pd.dataset.px, pd.dataset.py); return; }
     const pdt = ev.target.closest("[data-pdtab]"); if (pdt) { statsTab = pdt.dataset.pdtab; loadStats(); syncUrl(true); return; }
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }

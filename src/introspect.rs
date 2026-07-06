@@ -115,6 +115,9 @@ pub struct Filter {
     /// `[1, 10]`, `[10]` and `[10, 400]` alike.
     #[serde(default)]
     pub contains: bool,
+    /// Match rows where the column IS NULL (no `value` accompanies this).
+    #[serde(default)]
+    pub is_null: bool,
 }
 
 impl Filter {
@@ -145,21 +148,30 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
     // Value filters: group by column — values within a column combine with OR
     // (the value is any of the chosen ones), and columns combine with AND.
     // Containment filters (list columns) group the same way but test whether
-    // the row's array holds the value instead of equalling it.
-    let mut by_col: Vec<(String, bool, Vec<String>)> = Vec::new();
+    // the row's array holds the value instead of equalling it. An IS NULL
+    // filter joins its column's OR group ("QLD or missing" is one choice set).
+    let mut by_col: Vec<(String, bool, Vec<String>, bool)> = Vec::new();
     for f in filters {
-        if let Some(v) = &f.value {
-            match by_col
-                .iter_mut()
-                .find(|(c, k, _)| *c == f.column && *k == f.contains)
-            {
-                Some((_, _, vals)) => vals.push(v.clone()),
-                None => by_col.push((f.column.clone(), f.contains, vec![v.clone()])),
+        if f.value.is_none() && !f.is_null {
+            continue;
+        }
+        let entry = match by_col
+            .iter_mut()
+            .find(|(c, k, ..)| *c == f.column && *k == f.contains)
+        {
+            Some(e) => e,
+            None => {
+                by_col.push((f.column.clone(), f.contains, Vec::new(), false));
+                by_col.last_mut().unwrap()
             }
+        };
+        match &f.value {
+            Some(v) => entry.2.push(v.clone()),
+            None => entry.3 = true,
         }
     }
-    for (col, contains, vals) in &by_col {
-        let ors: Vec<String> = vals
+    for (col, contains, vals, has_null) in &by_col {
+        let mut ors: Vec<String> = vals
             .iter()
             .map(|v| {
                 if *contains {
@@ -177,6 +189,9 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
                 }
             })
             .collect();
+        if *has_null {
+            ors.push(format!("{} IS NULL", quote_ident(col)));
+        }
         clauses.push(if ors.len() == 1 {
             ors.into_iter().next().unwrap()
         } else {
@@ -1117,6 +1132,7 @@ mod tests {
             tmin: None,
             tmax: None,
             contains: false,
+            is_null: false,
         }
     }
     /// A numeric range filter.
@@ -1129,6 +1145,20 @@ mod tests {
             tmin: None,
             tmax: None,
             contains: false,
+            is_null: false,
+        }
+    }
+    /// An IS NULL filter.
+    fn nf(column: &str) -> Filter {
+        Filter {
+            column: column.into(),
+            value: None,
+            min: None,
+            max: None,
+            tmin: None,
+            tmax: None,
+            contains: false,
+            is_null: true,
         }
     }
     /// A temporal range filter.
@@ -1141,6 +1171,7 @@ mod tests {
             tmin: tmin.map(str::to_string),
             tmax: tmax.map(str::to_string),
             contains: false,
+            is_null: false,
         }
     }
 
@@ -1289,6 +1320,35 @@ mod tests {
         assert_eq!(
             build_where(&cols, None, &filters).unwrap(),
             "(CAST(\"species\" AS VARCHAR) = 'coot' OR CAST(\"species\" AS VARCHAR) = 'teal')"
+        );
+    }
+
+    #[test]
+    fn build_where_is_null_filter() {
+        let cols = vec!["state".to_string()];
+        assert_eq!(
+            build_where(&cols, None, &[nf("state")]).unwrap(),
+            "\"state\" IS NULL"
+        );
+    }
+
+    #[test]
+    fn build_where_is_null_ors_with_same_column_values() {
+        // Facet semantics: choices within one column OR together, so
+        // "QLD or missing" reads as one grouped clause.
+        let cols = vec!["state".to_string()];
+        assert_eq!(
+            build_where(&cols, None, &[vf("state", "QLD"), nf("state")]).unwrap(),
+            "(CAST(\"state\" AS VARCHAR) = 'QLD' OR \"state\" IS NULL)"
+        );
+    }
+
+    #[test]
+    fn build_where_is_null_ands_across_columns() {
+        let cols = vec!["state".to_string(), "market".to_string()];
+        assert_eq!(
+            build_where(&cols, None, &[nf("state"), vf("market", "US")]).unwrap(),
+            "\"state\" IS NULL AND CAST(\"market\" AS VARCHAR) = 'US'"
         );
     }
 
@@ -1539,6 +1599,38 @@ mod tests {
         assert!(row[idx("st")].is_object(), "st must be a JSON object");
         assert!(row[idx("mp")].is_object(), "mp must be a JSON object");
         assert_eq!(row[idx("mp")].get("red").and_then(Value::as_i64), Some(0));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn preview_filters_null_rows_via_is_null() {
+        if !duckdb_ok() {
+            eprintln!("skipping preview_filters_null_rows_via_is_null: no duckdb");
+            return;
+        }
+        let db = temp_db("is_null");
+        // state is NULL for i = 0, 3, 6 — three of nine rows.
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, \
+             CASE WHEN i % 3 = 0 THEN NULL ELSE 'v' || i::VARCHAR END AS state \
+             FROM range(9) g(i);",
+        );
+        // Deserialize from JSON — the exact shape the web UI sends in `filter=`.
+        let filters: Vec<Filter> =
+            serde_json::from_str(r#"[{"column":"state","is_null":true}]"#).unwrap();
+        let p = preview(&db, "t", 100, 0, None, &filters, None, None).unwrap();
+        assert_eq!(p.total, 3);
+        let state_idx = p.columns.iter().position(|c| c == "state").unwrap();
+        assert!(p.rows.iter().all(|r| r[state_idx].is_null()));
+
+        // A value filter on the same column ORs with the null filter.
+        let filters: Vec<Filter> = serde_json::from_str(
+            r#"[{"column":"state","value":"v1"},{"column":"state","is_null":true}]"#,
+        )
+        .unwrap();
+        let p = preview(&db, "t", 100, 0, None, &filters, None, None).unwrap();
+        assert_eq!(p.total, 4);
         std::fs::remove_file(&db).ok();
     }
 
