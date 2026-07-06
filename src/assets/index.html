@@ -223,6 +223,10 @@
   .facet-val.on .fv { color: var(--orange); }
   .facet-val .fc { color: var(--faint); z-index: 1; }
   .facet-val .fbar { position: absolute; left: 0; top: 2px; bottom: 2px; background: color-mix(in srgb, var(--orange) 14%, transparent); border-radius: 4px; transition: width 0.42s cubic-bezier(0.22, 0.61, 0.36, 1); }
+  .facet-val .fv.nul { color: var(--faint); }
+  .facet-val[hidden] { display: none; }
+  .facet-more { display: block; width: 100%; text-align: left; font: inherit; font-size: 11px; color: var(--orange-dim); background: none; border: 0; cursor: pointer; padding: 4px 6px; border-radius: 4px; }
+  .facet-more:hover { color: var(--orange); background: var(--raised); }
 
   .range-readout { font-size: 12px; color: var(--fg); margin: 2px 2px 8px; }
   .range-readout .rsep { color: var(--faint); }
@@ -437,6 +441,12 @@
   .cell-json .cell-el-sel { color: var(--orange); font-weight: 700; }
   .json-box { max-width: 720px; height: auto; max-height: 82vh; margin: auto; }
   .json-body { overflow: auto; }
+  /* facet "show all values" modal */
+  .facet-all-box { max-width: 460px; height: auto; max-height: 82vh; margin: auto; }
+  .facet-all-body { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; min-height: 0; }
+  .facet-all-body .facet-search { margin-bottom: 0; flex: none; }
+  .facet-all-note { font-size: 11px; color: var(--faint); flex: none; }
+  .facet-all-list { overflow: auto; min-height: 0; }
   .json-pre { margin: 0; padding: 14px 18px; overflow: auto; font-size: 12.5px; line-height: 1.5; color: var(--fg); }
   .jv-table { width: 100%; }
   .jv-table .jv-idx { color: var(--faint); text-align: right; width: 1%; white-space: nowrap; }
@@ -619,13 +629,24 @@
   .seg-clock { color: var(--fg); }
   .seg-port { color: var(--orange-dim); border-right: 0; }
 
+  /* Below the small-screen breakpoint the facet panel becomes a slide-over
+     drawer on the left, toggled by a floating "filters" pill; picking a
+     value dismisses it. Above the breakpoint the pill/backdrop don't exist. */
+  .facet-drawer-btn, .facet-backdrop { display: none; }
   @media (max-width: 900px) {
     .db-body { grid-template-columns: 1fr; }
-    .facet-panel { border-right: 0; border-bottom: 1px solid var(--line); max-height: 200px; }
+    .facet-panel { position: fixed; top: 0; left: 0; bottom: 0; z-index: 81; width: min(320px, 86vw); background: var(--bg); border-right: 1px solid var(--line); box-shadow: 18px 0 60px rgba(0, 0, 0, 0.5); transform: translateX(-103%); transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1); }
+    body.facet-drawer .facet-panel { transform: none; }
+    .facet-backdrop { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none; transition: opacity 0.26s; }
+    body.facet-drawer .facet-backdrop { opacity: 1; pointer-events: auto; }
+    .facet-drawer-btn { display: inline-flex; align-items: center; gap: 6px; position: fixed; left: 14px; bottom: 46px; z-index: 79; font: inherit; font-size: 12.5px; color: var(--fg); background: var(--raised); border: 1px solid var(--orange-dim); border-radius: 999px; padding: 8px 15px; cursor: pointer; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.45); }
+    .facet-drawer-btn:hover { border-color: var(--orange); }
+    .facet-drawer-btn .fdb-n { color: var(--orange); }
+    .facet-drawer-btn.off, .db-body.full .facet-drawer-btn { display: none; }
     .subtitle, .seg-counts { display: none; }
   }
   @media (prefers-reduced-motion: reduce) { .entry.fresh { animation: none; } .conn.live .cursor { animation: none; }
-    .hist .bar, .toprow .tbar, .box-iqr, .box-med, .stat-card, .facet-col .fc-name, .facet-col .fc-name::after { transition: none; }
+    .hist .bar, .toprow .tbar, .box-iqr, .box-med, .stat-card, .facet-col .fc-name, .facet-col .fc-name::after, .facet-panel, .facet-backdrop { transition: none; }
     .facet-col .eye.blink svg { animation: none; }
     .panels.enter .panel, .panel.updated { animation: none; }
     .stat-nums, .facet-val .fbar { transition: none; } }
@@ -656,6 +677,8 @@
     <section class="view flex" id="view-databases" aria-label="Databases">
       <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span><span class="navgroup" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></span></div>
       <div class="db-body">
+        <button class="facet-drawer-btn off" id="facet-drawer-btn" aria-label="open filters">filters</button>
+        <div class="facet-backdrop" id="facet-backdrop"></div>
         <aside class="facet-panel" id="facet-panel"></aside>
         <div class="results" id="results">
           <div class="empty" id="db-empty">No databases yet. Open one with <code>muckdb mydb.db</code> and it appears here.</div>
@@ -1286,6 +1309,7 @@
     state.q = ""; state.filters = []; state.page = 0; state.facets = []; state.hidden = []; state.sort = null; state.dir = "asc";
     renderDbNav();
     $("facet-panel").innerHTML = "";
+    updateFacetDrawerBtn(); closeFacetDrawer();
     $("results").innerHTML = '<div class="note">loading tables…</div>';
     try {
       const data = await (await fetch("/api/tables?db=" + encodeURIComponent(path))).json();
@@ -1330,6 +1354,16 @@
   }
 
   // ---- facets (left) ----------------------------------------------------
+  // The small-screen "filters" pill that opens the facet drawer: visible only
+  // while a table's facets are on screen; shows the active-filter count.
+  function updateFacetDrawerBtn() {
+    const b = $("facet-drawer-btn");
+    if (!b) return;
+    b.classList.toggle("off", !state.facets.length);
+    const n = state.filters.length;
+    b.innerHTML = n ? `filters <span class="fdb-n">· ${n}</span>` : "filters";
+  }
+  function closeFacetDrawer() { document.body.classList.remove("facet-drawer"); }
   function buildFacetShell() {
     $("facet-panel").innerHTML = `<input class="facet-search" id="facet-search" type="search" placeholder="search all columns…" value="${attr(state.q)}" /><div id="facet-body"></div>`;
   }
@@ -1360,6 +1394,7 @@
     }).join("");
     const clear = state.filters.length ? `<button class="facet-clear" id="facet-clear">✕ clear ${plural(state.filters.length, "filter")}</button>` : "";
     body.innerHTML = clear + (state.facets.length ? groups : '<div class="note">No columns to facet.</div>');
+    updateFacetDrawerBtn();
     if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
     // Seed the previous widths, commit, then restore so CSS tweens between them.
     const pend = [];
@@ -1379,17 +1414,84 @@
     const t = hidden ? "show column in table" : "hide column from table";
     return `<div class="facet-col${hidden ? " col-hidden" : ""}"><span class="fc-name" title="${attr(name)}">${esc(name)}</span><button class="eye${hidden ? " off" : ""}" data-eye="${attr(name)}" title="${t}" aria-label="${t}">${hidden ? EYE_OFF : EYE_ON}</button></div>`;
   }
+  // Merge a column's NULL bucket into its count-descending values list. Each
+  // entry is {value, count} or {nul: true, count} for the NULL bucket. The
+  // bucket shows whenever the column has nulls at all (hasNulls), even when a
+  // filter drops its count to 0 — like any other zero-count value.
+  function facetBuckets(values, nulls, hasNulls) {
+    const buckets = values.slice();
+    if (hasNulls) {
+      const i = buckets.findIndex((b) => b.count < nulls);
+      buckets.splice(i < 0 ? buckets.length : i, 0, { nul: true, count: nulls });
+    }
+    return buckets;
+  }
+  // One facet value row (shared by the panel and the "show all" modal).
+  // Display values go through the column's format ("100.0" → "100 Gbps");
+  // the raw value stays in data-fval so filtering is untouched. The NULL
+  // bucket carries data-fnull and toggles the "col is NULL" filter.
+  function facetValBtn(col, v, max, fmt) {
+    const on = v.nul ? hasNullFilter(col) : hasFilter(col, v.value);
+    const disp = v.nul ? "NULL" : (fmt ? applyFmtHtml(fmt, v.value) : esc(v.value));
+    const dat = v.nul ? 'data-fnull="1"' : `data-fval="${attr(v.value)}"`;
+    return `<button class="facet-val${on ? " on" : ""}" data-fcol="${attr(col)}" ${dat}><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv${v.nul ? " nul" : ""}" title="${attr(v.nul ? "NULL" : v.value)}">${disp}</span><span class="fc">${v.count}</span></button>`;
+  }
   function renderValuesFacet(f) {
-    const max = Math.max(1, ...f.values.map((v) => v.count));
-    // Display values through the column's format ("100.0" → "100 Gbps");
-    // the raw value stays in data-fval so filtering is untouched.
+    const max = Math.max(1, f.nulls || 0, ...f.values.map((v) => v.count));
     const fmt = colFmt(state.selDb, f.name, state.selTable);
-    const vals = f.values.map((v) => {
-      const on = hasFilter(f.name, v.value) ? " on" : "";
-      const disp = fmt ? applyFmtHtml(fmt, v.value) : esc(v.value);
-      return `<button class="facet-val${on}" data-fcol="${attr(f.name)}" data-fval="${attr(v.value)}"><span class="fbar" style="width:${Math.round((v.count / max) * 100)}%"></span><span class="box"></span><span class="fv" title="${attr(v.value)}">${disp}</span><span class="fc">${v.count}</span></button>`;
-    }).join("");
-    return `<div class="facet-group">${facetHead(f.name)}${vals}</div>`;
+    const vals = facetBuckets(f.values, f.nulls, f.has_nulls).map((v) => facetValBtn(f.name, v, max, fmt)).join("");
+    // More distinct values exist than the capped list shows → offer the
+    // "show all" modal (NULL counts as one bucket).
+    const nullBucket = f.has_nulls ? 1 : 0;
+    const totalBuckets = (f.total || f.values.length) + nullBucket;
+    const shown = f.values.length + nullBucket;
+    const more = totalBuckets > shown ? `<button class="facet-more" data-fmore="${attr(f.name)}">show all ${totalBuckets} values…</button>` : "";
+    return `<div class="facet-group">${facetHead(f.name)}${vals}${more}</div>`;
+  }
+  // "show all values" modal for one facet column: every distinct value (the
+  // most common ALL_FACET_VALUES of them) with counts scoped by the other
+  // columns' filters, like the panel. Clicking toggles filters and keeps the
+  // modal open for multi-select; the input filters the list client-side.
+  async function showAllFacetValues(col) {
+    const layer = document.createElement("div");
+    layer.className = "zoom-overlay";
+    layer.innerHTML = `<div class="zoom-box facet-all-box"><div class="zoom-bar"><span class="zoom-title">${esc(col)}</span><span class="zoom-actions"><button class="zoom-close">✕ close</button></span></div><div class="facet-all-body"><div class="note">loading values…</div></div></div>`;
+    document.body.appendChild(layer);
+    layer.addEventListener("mousedown", (e) => {
+      if (e.target === layer || e.target.closest(".zoom-close")) closeZoom();
+    });
+    const body = layer.querySelector(".facet-all-body");
+    const params = new URLSearchParams({ db: state.selDb, table: state.selTable, column: col });
+    if (state.q.trim()) params.set("q", state.q.trim());
+    if (state.filters.length) params.set("filter", JSON.stringify(state.filters));
+    try {
+      const d = await (await fetch("/api/facet-values?" + params.toString())).json();
+      if (d.error) { body.innerHTML = `<div class="note err">${esc(d.error)}</div>`; return; }
+      const fmt = colFmt(state.selDb, col, state.selTable);
+      const max = Math.max(1, d.nulls || 0, ...d.values.map((v) => v.count));
+      const title = layer.querySelector(".zoom-title");
+      const totalBuckets = (d.total || 0) + (d.has_nulls ? 1 : 0);
+      if (title) title.textContent = `${col} · ${totalBuckets} ${totalBuckets === 1 ? "value" : "values"}`;
+      const note = d.total > d.values.length ? `<div class="facet-all-note">showing the ${d.values.length} most common of ${d.total} values.</div>` : "";
+      body.innerHTML = `<input class="facet-search" id="facet-all-filter" type="search" placeholder="filter values…" />${note}<div class="facet-all-list">${facetBuckets(d.values, d.nulls, d.has_nulls).map((v) => facetValBtn(col, v, max, fmt)).join("")}</div>`;
+      const inp = body.querySelector("#facet-all-filter");
+      inp.addEventListener("input", () => {
+        const needle = inp.value.trim().toLowerCase();
+        body.querySelectorAll(".facet-all-list .facet-val").forEach((b) => {
+          const t = b.dataset.fnull ? "null" : String(b.dataset.fval).toLowerCase();
+          b.hidden = !!needle && !t.includes(needle);
+        });
+      });
+      inp.focus();
+    } catch (e) { body.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  // After a pick inside the modal, re-tick its rows from the live filter
+  // state (afterFilterChange re-renders the panel but not this overlay).
+  function syncFacetAllOnStates() {
+    document.querySelectorAll(".facet-all-list .facet-val").forEach((b) => {
+      const on = b.dataset.fnull ? hasNullFilter(b.dataset.fcol) : hasFilter(b.dataset.fcol, b.dataset.fval);
+      b.classList.toggle("on", on);
+    });
   }
   function renderRangeFacet(f) {
     const head = facetHead(f.name);
@@ -3910,7 +4012,18 @@
     const sc = ev.target.closest("[data-sortcol]"); if (sc) { sortBy(sc.dataset.sortcol); return; }
     const rm = ev.target.closest("[data-rmfilter]"); if (rm) { burstAt(rm); state.filters.splice(Number(rm.dataset.rmfilter), 1); afterFilterChange(); return; }
     const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
-    const facet = ev.target.closest("[data-fcol]"); if (facet) { if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval); return; }
+    const facet = ev.target.closest("[data-fcol]");
+    if (facet) {
+      if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval);
+      // A pick from the slide-over drawer dismisses it; a pick inside the
+      // "show all" modal keeps it open for multi-select but re-ticks its rows.
+      if (facet.closest("#facet-panel")) closeFacetDrawer();
+      else if (facet.closest(".facet-all-list")) syncFacetAllOnStates();
+      return;
+    }
+    const fmore = ev.target.closest("[data-fmore]"); if (fmore) { showAllFacetValues(fmore.dataset.fmore); return; }
+    if (ev.target.closest("#facet-drawer-btn")) { document.body.classList.toggle("facet-drawer"); return; }
+    if (ev.target.id === "facet-backdrop") { closeFacetDrawer(); return; }
     const pd = ev.target.closest("[data-px]"); if (pd) { showPredictDetail(pd.dataset.px, pd.dataset.py); return; }
     const pdt = ev.target.closest("[data-pdtab]"); if (pdt) { statsTab = pdt.dataset.pdtab; loadStats(); syncUrl(true); return; }
     if (ev.target.id === "facet-clear") { state.filters = []; afterFilterChange(); return; }
@@ -4004,7 +4117,7 @@
   document.addEventListener("keydown", (ev) => {
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
-    if (ev.key === "Escape") { closeZoom(); closePicker(); closeCredits(); }
+    if (ev.key === "Escape") { closeZoom(); closePicker(); closeCredits(); closeFacetDrawer(); }
     // Space toggles the selected session panel expanded/contracted. Runs even
     // with a zoom overlay up (so it closes it), but not over a picker or inputs.
     if ((ev.key === " " || ev.key === "Spacebar") && state.tab === "sessions" && state.selSession

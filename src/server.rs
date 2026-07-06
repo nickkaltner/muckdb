@@ -54,6 +54,7 @@ pub async fn run() -> Result<()> {
         .route("/api/predict", get(api_predict))
         .route("/api/junk", get(api_junk))
         .route("/api/facets", get(api_facets))
+        .route("/api/facet-values", get(api_facet_values))
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
         .route("/api/formats", get(api_formats))
@@ -357,6 +358,24 @@ async fn api_facets(Query(p): Query<FacetsParams>) -> Response {
     let filters = parse_filters(p.filter.as_deref());
     match introspect::facets(&p.db, &p.table, p.q.as_deref(), &filters) {
         Ok(facets) => Json(json!({ "facets": facets })).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct FacetValuesParams {
+    db: String,
+    table: String,
+    column: String,
+    q: Option<String>,
+    filter: Option<String>,
+}
+
+/// Every distinct value of one column, for the facet "show all" modal.
+async fn api_facet_values(Query(p): Query<FacetValuesParams>) -> Response {
+    let filters = parse_filters(p.filter.as_deref());
+    match introspect::facet_values(&p.db, &p.table, &p.column, p.q.as_deref(), &filters) {
+        Ok(v) => Json(v).into_response(),
         Err(e) => error_json(&e),
     }
 }

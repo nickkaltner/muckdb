@@ -708,6 +708,16 @@ pub enum ColumnFacet {
         /// filters with containment (Filter.contains) rather than equality.
         #[serde(skip_serializing_if = "is_false")]
         list: bool,
+        /// Rows where the column is NULL under the active filters — shown as
+        /// its own facet bucket (with a 0 count when filters exclude them).
+        nulls: i64,
+        /// Whether the column has NULL rows at all (unfiltered) — decides
+        /// whether the NULL bucket is offered.
+        has_nulls: bool,
+        /// Distinct non-null values in the table (elements for a list
+        /// column), unfiltered; more than `values.len()` means the list was
+        /// truncated to TOP_VALUES.
+        total: i64,
     },
     Range {
         name: String,
@@ -759,7 +769,8 @@ pub fn facets(
             .collect();
         let qc = quote_ident(name);
         let not_null = format!("{qc} IS NOT NULL");
-        let where_sql = match build_where(&all_names, q, &others) {
+        let cond = build_where(&all_names, q, &others);
+        let where_sql = match &cond {
             Some(w) => format!(" WHERE {w} AND {not_null}"),
             None => format!(" WHERE {not_null}"),
         };
@@ -830,65 +841,181 @@ pub fn facets(
                 min,
                 max,
             });
-        } else if is_scalar_list_type(ty) {
-            // A list column facets by ELEMENT: each distinct element with the
-            // number of rows whose array contains it (list_distinct dedupes
-            // within a row so a row counts once per element). Selecting one
-            // filters by containment — the 10.0 facet matches [1, 10], [10]
-            // and [10, 400] alike.
-            let rows = query_json(
-                db,
-                &format!(
-                    "SELECT CAST(u AS VARCHAR) AS v, count(*) AS c \
-                     FROM (SELECT unnest(list_distinct({qc})) AS u FROM {tbl}{where_sql}) \
-                     WHERE u IS NOT NULL GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
-                ),
-            )?;
-            let values = rows
-                .into_iter()
-                .filter_map(|r| {
-                    Some(TopValue {
-                        value: r.get("v").and_then(Value::as_str)?.to_string(),
-                        count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
-                    })
-                })
-                .collect();
-            out.push(ColumnFacet::Values {
-                name: name.clone(),
-                values,
-                list: true,
-            });
         } else {
-            let rows = query_json(
-                db,
-                &format!(
-                    "SELECT CAST({qc} AS VARCHAR) AS v, count(*) AS c FROM {tbl}{where_sql} \
-                     GROUP BY v ORDER BY c DESC, v LIMIT {TOP_VALUES}"
-                ),
-            )?;
-            let values = rows
-                .into_iter()
-                .filter_map(|r| {
-                    Some(TopValue {
-                        value: r.get("v").and_then(Value::as_str)?.to_string(),
-                        count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
-                    })
-                })
-                .collect();
+            let list = is_scalar_list_type(ty);
+            let (values, nulls, has_nulls, total) =
+                value_buckets(db, &tbl, &qc, list, cond.as_deref(), TOP_VALUES)?;
             out.push(ColumnFacet::Values {
                 name: name.clone(),
                 values,
-                list: false,
+                list,
+                nulls,
+                has_nulls,
+                total,
             });
         }
     }
     Ok(out)
 }
 
+/// Every distinct value of one column (with row counts), the shape behind the
+/// facet panel's "show all" view. Scoped like the facet panel itself: filters
+/// on OTHER columns constrain the counts (values they exclude stay listed
+/// with a 0 count), the column's own filters don't. `values` is
+/// count-descending and capped at ALL_FACET_VALUES; `total` above
+/// `values.len()` means it was truncated.
+#[derive(Debug, Clone, Serialize)]
+pub struct FacetValues {
+    pub values: Vec<TopValue>,
+    pub nulls: i64,
+    pub has_nulls: bool,
+    pub total: i64,
+}
+
+pub fn facet_values(
+    db: &str,
+    table: &str,
+    column: &str,
+    q: Option<&str>,
+    filters: &[Filter],
+) -> Result<FacetValues> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    let cols = describe(db, table)?;
+    let Some((_, ty)) = cols.iter().find(|(n, _)| n == column) else {
+        bail!("no such column: {column}");
+    };
+    let all_names: Vec<String> = cols.iter().map(|(n, _)| n.clone()).collect();
+    let filters = normalize_contains(&cols, filters);
+    let others: Vec<Filter> = filters
+        .iter()
+        .filter(|f| f.column != column)
+        .cloned()
+        .collect();
+    let cond = build_where(&all_names, q, &others);
+    let (values, nulls, has_nulls, total) = value_buckets(
+        db,
+        &quote_ident(table),
+        &quote_ident(column),
+        is_scalar_list_type(ty),
+        cond.as_deref(),
+        ALL_FACET_VALUES,
+    )?;
+    Ok(FacetValues {
+        values,
+        nulls,
+        has_nulls,
+        total,
+    })
+}
+
+/// Distinct values of one column with row counts — by ELEMENT for a list
+/// column: each distinct element with the number of rows whose array contains
+/// it (list_distinct dedupes within a row so a row counts once per element;
+/// selecting one filters by containment, so the 10.0 facet matches [1, 10],
+/// [10] and [10, 400] alike).
+///
+/// The value universe is the whole table (so a value never disappears when a
+/// filter on another column drops its count to zero); `cond` — the WHERE built
+/// from the other columns' filters + search — is applied as a per-row `FILTER`
+/// on the count instead, leaving excluded values listed with a 0 count.
+/// Returns the filtered null-row count, whether the column has any nulls at
+/// all (unfiltered — decides if the NULL bucket is offered), and the distinct
+/// non-null total (unfiltered — `> values.len()` means the list was truncated).
+fn value_buckets(
+    db: &str,
+    tbl: &str,
+    qc: &str,
+    list: bool,
+    cond: Option<&str>,
+    limit: usize,
+) -> Result<(Vec<TopValue>, i64, bool, i64)> {
+    // count(*) over the group, but only rows matching the active filters.
+    let count_expr = match cond {
+        Some(c) => format!("count(*) FILTER (WHERE ({c}))"),
+        None => "count(*)".to_string(),
+    };
+    let rows = if list {
+        // Carry the per-row match flag through the unnest so the FILTER counts
+        // only kept rows' elements.
+        let keep = match cond {
+            Some(c) => format!(", ({c}) AS keep"),
+            None => String::new(),
+        };
+        let cnt = if cond.is_some() {
+            "count(*) FILTER (WHERE keep)"
+        } else {
+            "count(*)"
+        };
+        query_json(
+            db,
+            &format!(
+                "SELECT CAST(u AS VARCHAR) AS v, {cnt} AS c \
+                 FROM (SELECT unnest(list_distinct({qc})) AS u{keep} FROM {tbl}) \
+                 WHERE u IS NOT NULL GROUP BY v ORDER BY c DESC, v LIMIT {limit}"
+            ),
+        )?
+    } else {
+        query_json(
+            db,
+            &format!(
+                "SELECT CAST({qc} AS VARCHAR) AS v, {count_expr} AS c \
+                 FROM {tbl} WHERE {qc} IS NOT NULL \
+                 GROUP BY v ORDER BY c DESC, v LIMIT {limit}"
+            ),
+        )?
+    };
+    let values = rows
+        .into_iter()
+        .filter_map(|r| {
+            Some(TopValue {
+                value: r.get("v").and_then(Value::as_str)?.to_string(),
+                count: r.get("c").and_then(Value::as_i64).unwrap_or(0),
+            })
+        })
+        .collect();
+    // The NULL bucket's count reflects the filter; has_nulls is unfiltered.
+    let nulls_filtered = match cond {
+        Some(c) => format!("count(*) FILTER (WHERE {qc} IS NULL AND ({c}))"),
+        None => format!("count(*) FILTER (WHERE {qc} IS NULL)"),
+    };
+    let total_expr = if list {
+        format!(
+            "(SELECT count(DISTINCT u) \
+                FROM (SELECT unnest(list_distinct({qc})) AS u FROM {tbl}) WHERE u IS NOT NULL)"
+        )
+    } else {
+        format!("count(DISTINCT {qc})")
+    };
+    let meta = query_json(
+        db,
+        &format!(
+            "SELECT {nulls_filtered} AS nulls, \
+             count(*) FILTER (WHERE {qc} IS NULL) AS anynull, \
+             {total_expr} AS total FROM {tbl}"
+        ),
+    )?;
+    let first = meta.first();
+    let nulls = first
+        .and_then(|r| r.get("nulls").and_then(Value::as_i64))
+        .unwrap_or(0);
+    let has_nulls = first
+        .and_then(|r| r.get("anynull").and_then(Value::as_i64))
+        .unwrap_or(0)
+        > 0;
+    let total = first
+        .and_then(|r| r.get("total").and_then(Value::as_i64))
+        .unwrap_or(0);
+    Ok((values, nulls, has_nulls, total))
+}
+
 /// Number of histogram buckets for numeric columns.
 const HIST_BINS: usize = 12;
 /// Number of top values kept per categorical column (facets).
 const TOP_VALUES: usize = 12;
+/// Cap on the "show all values" facet listing (`facet_values`).
+const ALL_FACET_VALUES: usize = 1000;
 /// Columns whose approximate distinct count is at or below this get an exact
 /// `count(DISTINCT …)` instead — cheap at low cardinality, and avoids the
 /// HyperLogLog approximation being visibly wrong for small sets.
@@ -1648,9 +1775,9 @@ mod tests {
         let nums = fs
             .iter()
             .find_map(|f| match f {
-                ColumnFacet::Values { name, values, list } if name == "nums" => {
-                    Some((values.clone(), *list))
-                }
+                ColumnFacet::Values {
+                    name, values, list, ..
+                } if name == "nums" => Some((values.clone(), *list)),
                 _ => None,
             })
             .expect("nums must get a values facet");
@@ -1714,6 +1841,125 @@ mod tests {
         assert_eq!(s.row_count, 200);
         assert_eq!(col(&s, "grp").distinct, 37, "grp distinct must be exact");
         assert_eq!(col(&s, "id").distinct, 200, "id distinct must be exact");
+        std::fs::remove_file(&db).ok();
+    }
+
+    /// grp is NULL when i % 5 == 0 (i%20 ∈ {0,5,10,15}) → 20 null rows and
+    /// 16 distinct non-null values (g1..g19 minus g5/g10/g15), 5 rows each.
+    /// mkt splits rows evenly between 'A' (even i) and 'B'.
+    fn make_nullable_db(tag: &str) -> String {
+        let db = temp_db(tag);
+        run_sql(
+            &db,
+            "CREATE TABLE t AS SELECT i AS id, \
+             CASE WHEN i % 5 = 0 THEN NULL ELSE 'g' || (i % 20)::VARCHAR END AS grp, \
+             CASE WHEN i % 2 = 0 THEN 'A' ELSE 'B' END AS mkt \
+             FROM range(100) g(i);",
+        );
+        db
+    }
+
+    #[test]
+    fn values_facets_carry_null_and_total_counts() {
+        if !duckdb_ok() {
+            eprintln!("skipping values_facets_carry_null_and_total_counts: no duckdb");
+            return;
+        }
+        let db = make_nullable_db("facet_nulls");
+        let fs = facets(&db, "t", None, &[]).unwrap();
+        let grp = fs
+            .iter()
+            .find_map(|f| match f {
+                ColumnFacet::Values {
+                    name,
+                    values,
+                    nulls,
+                    has_nulls,
+                    total,
+                    ..
+                } if name == "grp" => Some((values, *nulls, *has_nulls, *total)),
+                _ => None,
+            })
+            .expect("grp values facet");
+        assert_eq!(grp.1, 20, "20 rows have NULL grp");
+        assert!(grp.2, "grp has nulls");
+        assert_eq!(grp.3, 16, "16 distinct non-null values");
+        assert_eq!(grp.0.len(), 12, "value list stays capped at TOP_VALUES");
+        // A column without NULLs reports zero.
+        let mkt = fs
+            .iter()
+            .find_map(|f| match f {
+                ColumnFacet::Values {
+                    name,
+                    nulls,
+                    has_nulls,
+                    ..
+                } if name == "mkt" => Some((*nulls, *has_nulls)),
+                _ => None,
+            })
+            .expect("mkt values facet");
+        assert_eq!(mkt, (0, false));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn facets_keep_zero_count_values_visible() {
+        if !duckdb_ok() {
+            eprintln!("skipping facets_keep_zero_count_values_visible: no duckdb");
+            return;
+        }
+        let db = make_nullable_db("facet_zero");
+        // grp = 'g1' pins odd rows only, so every matching row has mkt = 'B'.
+        // 'A' must still be offered — with a 0 count — not vanish.
+        let fs = facets(&db, "t", None, &[vf("grp", "g1")]).unwrap();
+        let mkt = fs
+            .iter()
+            .find_map(|f| match f {
+                ColumnFacet::Values { name, values, .. } if name == "mkt" => Some(values),
+                _ => None,
+            })
+            .expect("mkt values facet");
+        assert_eq!(mkt.len(), 2, "both values stay visible");
+        assert!(mkt.iter().any(|v| v.value == "B" && v.count == 5));
+        assert!(mkt.iter().any(|v| v.value == "A" && v.count == 0));
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn facet_values_lists_every_value_scoped_to_other_columns() {
+        if !duckdb_ok() {
+            eprintln!("skipping facet_values_lists_every_value_scoped_to_other_columns: no duckdb");
+            return;
+        }
+        let db = make_nullable_db("facet_all");
+        let all = facet_values(&db, "t", "grp", None, &[]).unwrap();
+        assert_eq!(all.total, 16);
+        assert_eq!(all.values.len(), 16, "every distinct value is listed");
+        assert_eq!(all.nulls, 20);
+        assert!(all.values.iter().all(|v| v.count == 5));
+
+        // Filters on OTHER columns scope the counts; the column's own filters
+        // don't (same semantics as the facet panel). Values the filter
+        // excludes stay listed with a 0 count.
+        let filters = vec![vf("mkt", "A"), vf("grp", "g1")];
+        let scoped = facet_values(&db, "t", "grp", None, &filters).unwrap();
+        assert_eq!(scoped.nulls, 10, "even-i rows only");
+        assert!(scoped.has_nulls);
+        assert_eq!(scoped.values.len(), 16, "zero-count values stay listed");
+        assert!(
+            scoped
+                .values
+                .iter()
+                .any(|v| v.value == "g2" && v.count == 5),
+            "even groups keep their 5 rows under mkt=A"
+        );
+        assert!(
+            scoped
+                .values
+                .iter()
+                .any(|v| v.value == "g1" && v.count == 0),
+            "odd groups show a 0 count under mkt=A"
+        );
         std::fs::remove_file(&db).ok();
     }
 
