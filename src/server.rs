@@ -225,7 +225,7 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
     Ok(())
 }
 
-async fn index() -> Html<&'static str> {
+async fn index() -> Response {
     // The app is a static asset except for the build version (shown in the
     // credits card) — stamp it once and serve the cached result. `worldmap.svg`
     // is hard-cached by the browser, so its fetch URL is also stamped with a hash
@@ -240,7 +240,16 @@ async fn index() -> Html<&'static str> {
             .replace("__MUCKDB_VERSION__", env!("CARGO_PKG_VERSION"))
             .replace("__WORLDMAP_REV__", &rev)
     });
-    Html(PAGE.as_str())
+    // Always revalidate the HTML so a rebuilt app (new asset stamps) is picked up
+    // on the next load rather than served from the browser's heuristic cache.
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (header::CACHE_CONTROL, "no-cache"),
+        ],
+        Html(PAGE.as_str()),
+    )
+        .into_response()
 }
 
 /// Serialize the current derived state, or an error response.
