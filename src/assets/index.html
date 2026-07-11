@@ -825,7 +825,10 @@
   // the databases view its frame is the results area (right of the facets); in
   // sessions it's the panels body; in the ledger it sticks to the list top.
   const Topbar = (() => {
-    let bar, fill, active = 0, prog = 0, trickle = 0, hideT = 0;
+    // Only reveal the bar once a request has been in flight this long, so quick
+    // loads that finish first never flash it.
+    const DELAY_MS = 120;
+    let bar, fill, active = 0, prog = 0, trickle = 0, hideT = 0, showT = 0, shown = false;
     const hostFor = () => {
       if (state.tab === "databases") return document.querySelector(".db-body");
       if (state.tab === "sessions") return $("session-body");
@@ -833,27 +836,34 @@
       return null;
     };
     const set = (p) => { prog = p; if (fill) fill.style.width = (p * 100).toFixed(2) + "%"; };
-    function show() {
-      if (SHOT) return;
-      if (++active > 1) return;
-      if (!bar) { bar = document.createElement("div"); bar.className = "topbar"; fill = document.createElement("div"); fill.className = "topbar-fill"; bar.appendChild(fill); }
+    function begin() {
       const h = hostFor();
-      if (!h) { active--; return; }
+      if (!h) return;
+      if (!bar) { bar = document.createElement("div"); bar.className = "topbar"; fill = document.createElement("div"); fill.className = "topbar-fill"; bar.appendChild(fill); }
       // ledger scrolls, so the bar sticks to its top; the other frames don't.
       if (h.id === "view-ledger") h.insertBefore(bar, h.firstChild); else h.appendChild(bar);
       clearTimeout(hideT);
       bar.classList.add("on");
+      shown = true;
       set(0.08);
       clearInterval(trickle);
       trickle = setInterval(() => { if (prog < 0.9) set(prog + (0.9 - prog) * 0.1); }, 280);
+    }
+    function show() {
+      if (SHOT) return;
+      if (++active > 1) return;
+      clearTimeout(showT);
+      showT = setTimeout(begin, DELAY_MS);
     }
     function done() {
       if (SHOT) return;
       active = Math.max(0, active - 1);
       if (active > 0) return;
+      clearTimeout(showT); // cancel a still-pending reveal (quick load)
+      if (!shown) return; // never showed → nothing to finish
       clearInterval(trickle);
       set(1);
-      hideT = setTimeout(() => { if (bar) bar.classList.remove("on"); set(0); }, 260);
+      hideT = setTimeout(() => { if (bar) bar.classList.remove("on"); shown = false; set(0); }, 260);
     }
     return { show, done };
   })();
