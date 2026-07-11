@@ -77,6 +77,8 @@ pub async fn run() -> Result<()> {
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/html2canvas.js", get(html2canvas_js))
+        .route("/favicon.ico", get(favicon_ico))
+        .route("/favicon.svg", get(favicon_svg))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -668,6 +670,30 @@ async fn html2canvas_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/html2canvas.min.js"),
+    )
+        .into_response()
+}
+
+/// The tab favicon (a muckdb flower). Cached hard — it changes only on upgrade.
+async fn favicon_ico() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/x-icon"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_bytes!("assets/favicon.ico").as_slice(),
+    )
+        .into_response()
+}
+
+/// The same flower as a crisp SVG favicon (modern browsers prefer it).
+async fn favicon_svg() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_str!("assets/favicon.svg"),
     )
         .into_response()
 }

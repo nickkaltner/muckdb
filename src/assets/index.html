@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+<link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
+<link rel="apple-touch-icon" href="/favicon.svg" />
 <title>muckdb — live console</title>
 <style>
   :root {
@@ -1205,7 +1208,23 @@
     }
     return p.toString();
   }
+  // The tab title always starts with "muckdb —" and names the current context:
+  // the session (its title, else its id) on the sessions tab; the table or db on
+  // the databases tab; "ledger" on the ledger tab.
+  function updateTitle() {
+    let ctx = "";
+    if (state.tab === "sessions" && state.selSession) {
+      ctx = (state.sessionData && state.sessionData.title) || state.selSession;
+    } else if (state.tab === "databases") {
+      if (state.selTable) ctx = state.selTable;
+      else if (state.selDb) ctx = basename(state.selDb);
+    } else if (state.tab === "ledger") {
+      ctx = "ledger";
+    }
+    document.title = ctx ? `muckdb — ${ctx}` : "muckdb — live console";
+  }
   function syncUrl(push) {
+    updateTitle();
     if (suppressSync || SHOT) return;
     const qs = buildQuery();
     const url = buildPath() + (qs ? "?" + qs : "");
@@ -1644,6 +1663,7 @@
       <div id="result-body"></div>`;
     fitResultsHead();
     reloadBody();
+    updateTitle();
   }
   // Keep the table header on one line: prefer the full title + inline export, but
   // when space is tight first collapse export to a dropdown, then truncate the
