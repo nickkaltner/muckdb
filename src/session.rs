@@ -33,6 +33,16 @@ pub struct Chart {
     pub x: Option<String>,
     #[serde(default)]
     pub y: Vec<String>,
+    /// Map tiles: the latitude / longitude columns (`--lat`/`--lon`). When unset,
+    /// a map tile auto-detects columns named lat/latitude and lon/lng/longitude.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lon: Option<String>,
+    /// Map tiles: an optional per-point label column (`--label`) surfaced in the
+    /// hover tooltip so each marker names its points.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
     /// Heatmap cell value column (`--value`); with `--x` and the first `--y`
     /// giving the two axes, one row per x×y pair.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -527,6 +537,33 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     if let Some(d) = &chart.desc {
         check("--desc", d)?;
     }
+    if let Some(l) = &chart.lat {
+        check("--lat", l)?;
+    }
+    if let Some(l) = &chart.lon {
+        check("--lon", l)?;
+    }
+    if let Some(l) = &chart.label {
+        check("--label", l)?;
+    }
+    if chart.kind == "map" {
+        // A map needs latitude and longitude: explicit --lat/--lon, else a
+        // column named lat/latitude and lon/lng/long/longitude (case-insensitive).
+        let auto = |explicit: &Option<String>, cands: &[&str]| -> bool {
+            explicit.is_some()
+                || cols
+                    .iter()
+                    .any(|c| cands.iter().any(|n| c.eq_ignore_ascii_case(n)))
+        };
+        if !auto(&chart.lat, &["lat", "latitude"])
+            || !auto(&chart.lon, &["lon", "lng", "long", "longitude"])
+        {
+            bail!(
+                "--chart map needs latitude and longitude columns: pass --lat COL --lon COL, or name them lat/latitude and lon/lng/longitude\ncolumns: {}",
+                cols.join(", ")
+            );
+        }
+    }
     if chart.kind == "heatmap" && (chart.x.is_none() || chart.y.is_empty()) {
         bail!("--chart heatmap needs --x and --y (the two axes; --value for the cell value)");
     }
@@ -663,6 +700,9 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 chart: Box::new(Chart {
                     kind: p.get("chart").unwrap_or("table").to_string(),
                     x: p.get("x").map(str::to_string),
+                    lat: p.get("lat").map(str::to_string),
+                    lon: p.get("lon").map(str::to_string),
+                    label: p.get("label").map(str::to_string),
                     value: p.get("value").map(str::to_string),
                     no_values: p.get("no-values").is_some(),
                     desc: p.get("desc").map(str::to_string),
@@ -792,9 +832,10 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "usage: muckdb session <create|list|post|tile|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
+                 --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip\n                       \
                  --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
                  [--desc COL]  (box: a per-box note column, shown beside each plot)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
@@ -845,6 +886,9 @@ mod tests {
             kind: "heatmap".into(),
             x: Some("port_speed".into()),
             y: vec!["country".into()],
+            lat: None,
+            lon: None,
+            label: None,
             value: Some("sites".into()),
             no_values: false,
             desc: None,
@@ -863,6 +907,41 @@ mod tests {
         // Older sessions without the field still load.
         let old: Chart = serde_json::from_str("{\"kind\":\"bar\",\"y\":[]}").unwrap();
         assert!(old.value.is_none());
+    }
+
+    #[test]
+    fn map_chart_serde_roundtrips_lat_lon() {
+        let c = Chart {
+            kind: "map".into(),
+            x: None,
+            y: vec![],
+            lat: Some("latitude".into()),
+            lon: Some("longitude".into()),
+            label: Some("city".into()),
+            value: None,
+            no_values: false,
+            desc: None,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let back: Chart = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.lat.as_deref(), Some("latitude"));
+        assert_eq!(back.lon.as_deref(), Some("longitude"));
+        assert_eq!(back.label.as_deref(), Some("city"));
+        // Non-map charts omit the fields entirely (skip_serializing_if).
+        let bar = serde_json::to_string(&Chart {
+            lat: None,
+            lon: None,
+            ..c
+        })
+        .unwrap();
+        assert!(!bar.contains("\"lat\""));
     }
 
     #[test]

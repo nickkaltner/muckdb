@@ -182,9 +182,11 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
+        [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
+        [--label COL]  (map: per-point label shown in the hover tooltip)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
@@ -222,7 +224,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -264,6 +266,14 @@ muckdb session rm <name> [--tile TILE]
     quantile_cont(v,0.75), max(v)`); `--desc` names a text column rendered
     under each label so every box carries its own explanation. Values render
     through the median column's display format.
+  - **`map`** to plot geographic points on a compact ASCII world map. Give it
+    `--lat`/`--lon` columns (or name them lat/latitude & lon/lng/longitude and
+    they're auto-detected), one row per point — don't pre-aggregate; the tile
+    bins points into grid cells itself. Each cell with data gets a coloured `x`
+    shaded by how many points land in it, or by the average of `--value` when
+    given. Points are projected onto a true equirectangular grid, so markers sit
+    on the right coastline. `--label COL` names each point in a rich hover
+    tooltip (coords, count, aggregate value, and the labels in that cell).
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid

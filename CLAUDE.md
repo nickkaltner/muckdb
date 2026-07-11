@@ -1,5 +1,7 @@
 # Using muckdb (guide for Claude / coding agents)
 
+please keep the latest version running whenever possible.
+
 `muckdb` is a drop-in wrapper around the `duckdb` CLI that also runs a live web
 UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run with
 `muckdb` instead — same arguments, same stdout/exit codes — and it additionally:
@@ -54,9 +56,11 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
+        [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
+        [--label COL]  (map: per-point label shown in the hover tooltip)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
@@ -82,7 +86,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -103,7 +107,14 @@ muckdb session rm <name> [--tile TILE]
   box, `--y` takes exactly five columns in order `min,q1,median,q3,max`
   (aggregate in the view: `min(v), quantile_cont(v,0.25), median(v),
   quantile_cont(v,0.75), max(v)`), and `--desc` names a text column whose
-  note renders under each label so every box explains itself.
+  note renders under each label so every box explains itself. `map` plots
+  geographic points on a compact ASCII world map: give it `--lat`/`--lon`
+  columns (or name them lat/latitude & lon/lng/longitude and they're
+  auto-detected), one row per point. Each grid cell with data gets a coloured
+  `x` shaded by how many points fall in it, or by the average of `--value` when
+  given. Don't pre-aggregate — pass the raw points (one row each); the tile bins
+  them into cells itself. `--label COL` names each point in a rich hover tooltip
+  (coords, count, value, and the labels of the points in that cell).
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.
