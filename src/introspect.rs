@@ -438,11 +438,15 @@ fn is_scalar_list_type(t: &str) -> bool {
 
 /// An element value filter on a scalar-list column means containment. Older
 /// clients and saved links may omit the `contains` flag — infer it from the
-/// schema. Exception: a *whole-array* value like `[red, blue]` (from the stats
-/// per-column top-values) means equality on the whole list, which the equality
-/// path handles as `CAST(col AS VARCHAR) = '[red, blue]'`; forcing containment
-/// there would test for an element literally named "[red, blue]" and match
-/// nothing. So skip values that are themselves an array literal.
+/// schema.
+///
+/// A *whole-array* value like `[red, blue]` (from the stats per-column
+/// top-values) means equality on the whole list, handled as
+/// `CAST(col AS VARCHAR) = '[red, blue]'`. A scalar list's elements are never
+/// themselves arrays, so `list_contains` on such a value can only ever match
+/// nothing — which collapsed the page. Force equality for whole-array values
+/// **regardless of the incoming `contains` flag**, so both fresh clicks and
+/// saved links that persisted `contains:true` behave correctly.
 pub(crate) fn normalize_contains(cols: &[(String, String)], filters: &[Filter]) -> Vec<Filter> {
     filters
         .iter()
@@ -453,14 +457,13 @@ pub(crate) fn normalize_contains(cols: &[(String, String)], filters: &[Filter]) 
                 .as_deref()
                 .map(str::trim)
                 .is_some_and(|v| v.starts_with('[') && v.ends_with(']'));
-            if f.value.is_some()
-                && !f.contains
-                && !whole_array
-                && cols
-                    .iter()
-                    .any(|(n, t)| *n == f.column && is_scalar_list_type(t))
-            {
-                f.contains = true;
+            let is_list_col = cols
+                .iter()
+                .any(|(n, t)| *n == f.column && is_scalar_list_type(t));
+            if whole_array && is_list_col {
+                f.contains = false; // whole-array literal → equality, never containment
+            } else if f.value.is_some() && !f.contains && is_list_col {
+                f.contains = true; // bare element on a list column → containment
             }
             f
         })
@@ -1462,6 +1465,16 @@ mod tests {
         assert!(
             !whole[0].contains,
             "whole-array value stays equality, not containment"
+        );
+
+        // A saved link may have persisted contains:true on a whole-array value —
+        // that can never match via list_contains, so force it back to equality.
+        let mut persisted = vf("port_gbps", "[1.0, 10.0]");
+        persisted.contains = true;
+        let out2 = normalize_contains(&cols, &[persisted]);
+        assert!(
+            !out2[0].contains,
+            "whole-array value is equality even if contains was set"
         );
         let w = build_where(
             &["port_gbps".to_string()],
