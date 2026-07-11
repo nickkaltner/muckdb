@@ -136,6 +136,19 @@ fn browser_cmd(browser: &Path, profile: &Path, width: u32, height: u32) -> Comma
         .arg("--no-first-run")
         .arg("--disable-extensions")
         .arg("--mute-audio")
+        // On macOS, headless Chrome otherwise blocks on a Keychain-access
+        // ("Chrome Safe Storage") confirmation it can never show, so the process
+        // never becomes ready and every capture times out. A mock keychain / the
+        // basic password store sidestep the system keyring entirely. Both are
+        // harmless no-ops on Linux (no Keychain there).
+        .arg("--use-mock-keychain")
+        .arg("--password-store=basic")
+        // Quiet the startup so virtual time can drain and the browser exits
+        // promptly instead of idling on background chatter.
+        .arg("--disable-sync")
+        .arg("--disable-background-networking")
+        .arg("--disable-default-apps")
+        .arg("--no-default-browser-check")
         .arg(format!("--user-data-dir={}", profile.display()))
         .arg(format!("--window-size={width},{height}"))
         .arg(format!("--virtual-time-budget={TIME_BUDGET_MS}"));
