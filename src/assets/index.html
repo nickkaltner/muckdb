@@ -464,7 +464,7 @@
   .wm-svg .wm-sea-vid video { width: 100%; height: 100%; object-fit: cover; }
   /* Light themes: invert the dark static clip (so it lightens, not darkens, pale
      water) and push contrast up so the motion reads. */
-  html.wm-light .wm-svg .wm-sea-vid video, html.wm-light .wm-ascii-vid { filter: invert(1) contrast(1.15); }
+  html.wm-light .wm-svg .wm-sea-vid video, html.wm-light .wm-ascii-vid { filter: invert(1) contrast(1.05); }
   /* Data overlay, shared by the hi-fi SVG map and the ascii overlay: markers,
      semi-transparent connection arcs, and labels (top layer, with a
      surface-coloured halo so they stay legible over land/arcs/dots). */
@@ -1168,7 +1168,7 @@
     LINK_ROUND = t.roundLinks !== false;
     // Sea-static video opacity. On light themes the dark clip is inverted (see the
     // .wm-light CSS) so it lightens rather than darkens, and can run a touch stronger.
-    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.3 : 0.08)));
+    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.16 : 0.08)));
     // Land opacity: light themes need more contrast so coastlines read on pale sea.
     root.setProperty("--wm-land-opacity", String(t.light ? 0.22 : 0.12));
     // Mark light themes so the sea-static video can be inverted + contrast-boosted
