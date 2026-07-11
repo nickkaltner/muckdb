@@ -8,10 +8,19 @@
 //! `<html data-shot-h="...">`. Capture is two passes: a `--dump-dom` measure
 //! pass reads that height, then the real `--screenshot` pass uses it as the
 //! window height so the PNG fits the content exactly.
+//!
+//! Both passes are *output-driven*, not exit-driven: we take the result the
+//! moment it's ready (the `data-shot-h` marker appears in the dumped DOM, or the
+//! PNG file finishes being written) and then kill the whole browser process
+//! group. Headless Chrome on macOS has been seen to produce its output and then
+//! never exit, which used to hang every capture until the 45s ceiling; grabbing
+//! the artifact directly and reaping the group sidesteps that entirely.
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
@@ -28,8 +37,13 @@ const MAX_HEIGHT: u32 = 12000;
 const FALLBACK_HEIGHT: u32 = 900;
 /// Virtual time given to the page for fetches + chart rendering.
 const TIME_BUDGET_MS: u32 = 10_000;
-/// Wall-clock ceiling per browser run.
+/// Wall-clock ceiling for the screenshot pass.
 const RUN_TIMEOUT: Duration = Duration::from_secs(45);
+/// The measure pass is best-effort (a fallback height exists), so bound it more
+/// tightly than the screenshot pass.
+const MEASURE_TIMEOUT: Duration = Duration::from_secs(20);
+/// Poll cadence while waiting for a pass's output to appear.
+const POLL: Duration = Duration::from_millis(100);
 
 /// The shot-mode URL for a session (optionally narrowed to one tile).
 pub fn shot_url(session: &str, tile: Option<&str>) -> String {
@@ -97,27 +111,132 @@ fn capture_in(
     };
 
     let png = tmp.join("shot.png");
+    let _ = std::fs::remove_file(&png);
     let mut cmd = browser_cmd(browser, tmp, width, height);
     cmd.arg(format!("--screenshot={}", png.display())).arg(&url);
-    let (status, _out, err) = run_with_timeout(cmd, RUN_TIMEOUT)?;
+    let mut run = spawn_group(cmd)?;
+
+    // Wait for the PNG to appear and stop growing (the browser has finished
+    // writing it) — or for the process to exit, or the ceiling. Then reap the
+    // whole group, whether or not it was going to exit on its own.
+    let deadline = Instant::now() + RUN_TIMEOUT;
+    let (mut last_len, mut stable) = (0u64, 0);
+    loop {
+        if let Ok(meta) = std::fs::metadata(&png) {
+            let len = meta.len();
+            stable = if len > 0 && len == last_len {
+                stable + 1
+            } else {
+                0
+            };
+            last_len = len;
+            if stable >= 2 {
+                break;
+            }
+        }
+        match run.child.try_wait() {
+            Ok(Some(_)) | Err(_) => break,
+            Ok(None) => {}
+        }
+        if Instant::now() >= deadline {
+            break;
+        }
+        std::thread::sleep(POLL);
+    }
+    let err = String::from_utf8_lossy(&run.err.lock().unwrap())
+        .trim()
+        .to_string();
+    kill_tree(&mut run.child);
+
     let bytes = std::fs::read(&png).unwrap_or_default();
     if bytes.is_empty() {
-        bail!(
-            "browser produced no screenshot (exit {:?}): {}",
-            status.code(),
-            String::from_utf8_lossy(&err).trim()
-        );
+        bail!("browser produced no screenshot (timed out or failed): {err}");
     }
     Ok(bytes)
 }
 
-/// Measure pass: dump the rendered DOM and read the `data-shot-h` attribute
-/// the shot-mode page stamps on `<html>` once every tile has loaded.
+/// Measure pass: dump the rendered DOM and read the `data-shot-h` attribute the
+/// shot-mode page stamps on `<html>` once every tile has loaded. Output-driven:
+/// returns as soon as the marker shows up in stdout, then reaps the browser.
 fn measure_height(browser: &Path, tmp: &Path, url: &str, width: u32) -> Option<u32> {
     let mut cmd = browser_cmd(browser, tmp, width, FALLBACK_HEIGHT);
     cmd.arg("--dump-dom").arg(url);
-    let (_status, out, _err) = run_with_timeout(cmd, RUN_TIMEOUT).ok()?;
-    parse_shot_height(&String::from_utf8_lossy(&out)).map(|h| h.clamp(MIN_HEIGHT, MAX_HEIGHT))
+    let mut run = spawn_group(cmd).ok()?;
+    let deadline = Instant::now() + MEASURE_TIMEOUT;
+    let read_h = |run: &Running| {
+        parse_shot_height(&String::from_utf8_lossy(&run.out.lock().unwrap()))
+            .map(|h| h.clamp(MIN_HEIGHT, MAX_HEIGHT))
+    };
+    let found = loop {
+        if let Some(h) = read_h(&run) {
+            break Some(h);
+        }
+        match run.child.try_wait() {
+            Ok(Some(_)) | Err(_) => break read_h(&run),
+            Ok(None) => {}
+        }
+        if Instant::now() >= deadline {
+            break read_h(&run);
+        }
+        std::thread::sleep(POLL);
+    };
+    kill_tree(&mut run.child);
+    found
+}
+
+/// A spawned browser plus threads draining its stdout/stderr into buffers we can
+/// poll while it runs.
+struct Running {
+    child: std::process::Child,
+    out: Arc<Mutex<Vec<u8>>>,
+    err: Arc<Mutex<Vec<u8>>>,
+}
+
+/// Spawn `cmd` in its own process group (so the whole browser tree can be reaped
+/// together) with stdout/stderr drained on threads into shared buffers.
+fn spawn_group(mut cmd: Command) -> Result<Running> {
+    cmd.stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(unix)]
+    {
+        use std::os::unix::process::CommandExt;
+        // New group led by the child, so pgid == child pid.
+        cmd.process_group(0);
+    }
+    let mut child = cmd.spawn().context("spawning browser")?;
+    let drain = |mut pipe: Box<dyn Read + Send>| {
+        let buf = Arc::new(Mutex::new(Vec::new()));
+        let sink = buf.clone();
+        std::thread::spawn(move || {
+            let mut chunk = [0u8; 8192];
+            while let Ok(n) = pipe.read(&mut chunk) {
+                if n == 0 {
+                    break;
+                }
+                sink.lock().unwrap().extend_from_slice(&chunk[..n]);
+            }
+        });
+        buf
+    };
+    let out = drain(Box::new(child.stdout.take().expect("piped stdout")));
+    let err = drain(Box::new(child.stderr.take().expect("piped stderr")));
+    Ok(Running { child, out, err })
+}
+
+/// Kill the whole process group (reaping any Chrome helper processes) so nothing
+/// is left running; on non-unix just kill the child.
+fn kill_tree(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        // pgid == child pid (see spawn_group); SIGKILL the group. ESRCH if it's
+        // already gone, which is fine.
+        unsafe {
+            libc::killpg(child.id() as libc::pid_t, libc::SIGKILL);
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
 }
 
 /// Extract the height from `data-shot-h="N"` in a serialized DOM.
@@ -153,46 +272,6 @@ fn browser_cmd(browser: &Path, profile: &Path, width: u32, height: u32) -> Comma
         .arg(format!("--window-size={width},{height}"))
         .arg(format!("--virtual-time-budget={TIME_BUDGET_MS}"));
     cmd
-}
-
-/// Run a command, collecting stdout/stderr, killing it past the deadline.
-fn run_with_timeout(
-    mut cmd: Command,
-    timeout: Duration,
-) -> Result<(std::process::ExitStatus, Vec<u8>, Vec<u8>)> {
-    use std::io::Read;
-    cmd.stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    let mut child = cmd.spawn().context("spawning browser")?;
-    // Drain the pipes on threads so a large DOM dump can't deadlock the child.
-    let mut stdout = child.stdout.take().expect("piped stdout");
-    let mut stderr = child.stderr.take().expect("piped stderr");
-    let out_thread = std::thread::spawn(move || {
-        let mut v = Vec::new();
-        let _ = stdout.read_to_end(&mut v);
-        v
-    });
-    let err_thread = std::thread::spawn(move || {
-        let mut v = Vec::new();
-        let _ = stderr.read_to_end(&mut v);
-        v
-    });
-    let deadline = Instant::now() + timeout;
-    let status = loop {
-        if let Some(st) = child.try_wait().context("waiting for browser")? {
-            break st;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            bail!("browser timed out after {}s", timeout.as_secs());
-        }
-        std::thread::sleep(Duration::from_millis(50));
-    };
-    let out = out_thread.join().unwrap_or_default();
-    let err = err_thread.join().unwrap_or_default();
-    Ok((status, out, err))
 }
 
 /// Find a Chromium-based browser: $MUCKDB_BROWSER, then well-known names on
