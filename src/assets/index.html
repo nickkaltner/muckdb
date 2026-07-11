@@ -4135,13 +4135,14 @@
     cbs.afterTitle = () => zoneLabel(tz);
   }
   function chartOpts(scatter, time, stacked, minUnit, offset) {
-    // Grid lines derive from the theme foreground at a low alpha, so they're faint
-    // light lines on dark themes and faint dark lines on light themes (a fixed
-    // white grid is invisible on paper/glacier). Major (unit-boundary) ticks —
-    // e.g. each midnight on an hourly axis — get a slightly stronger line.
-    const fg = resolveColor("var(--fg)");
-    const gridA = (a) => `rgba(${fg[0]}, ${fg[1]}, ${fg[2]}, ${a})`;
-    const gridMinor = gridA(0.07), gridMajor = gridA(0.16);
+    // Grid lines are the theme foreground mixed toward the surface (an opaque soft
+    // grey — light on dark themes, a soft mid-grey on light ones), so they read on
+    // every theme where a fixed faint white was invisible on paper/glacier. Light
+    // themes get a stronger mix (they need more to show over pale panels). Major
+    // (unit-boundary) ticks — e.g. each midnight on an hourly axis — are stronger.
+    const isLight = !!(THEMES[state.theme] && THEMES[state.theme].light);
+    const gridMinor = mixColors("var(--fg)", isLight ? 22 : 9, "var(--surface)");
+    const gridMajor = mixColors("var(--fg)", isLight ? 38 : 18, "var(--surface)");
     const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? gridMajor : gridMinor);
     const x = time
       ? { type: "time",
