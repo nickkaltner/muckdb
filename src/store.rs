@@ -6,6 +6,8 @@
 
 use std::fs::OpenOptions;
 use std::io::{BufRead, BufReader, Write};
+use std::path::Path;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
@@ -84,6 +86,36 @@ pub fn now_millis() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Write `data` to `path` atomically: stream it into a uniquely-named temp file
+/// in the same directory, fsync, then `rename` it over `path`. rename(2) is
+/// atomic on one filesystem, so a concurrent reader (the daemon watcher, an
+/// export) always sees either the whole old file or the whole new one — never a
+/// truncated half-write. Callers that also need to avoid *lost updates* under
+/// concurrent read-modify-write must serialize around their own load+write.
+pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
+    static SEQ: AtomicU64 = AtomicU64::new(0);
+    let dir = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path
+        .file_name()
+        .and_then(|s| s.to_str())
+        .unwrap_or("muckdb");
+    let tmp = dir.join(format!(
+        ".{stem}.{}.{}.tmp",
+        std::process::id(),
+        SEQ.fetch_add(1, Ordering::Relaxed)
+    ));
+    let result = (|| -> std::io::Result<()> {
+        let mut f = std::fs::File::create(&tmp)?;
+        f.write_all(data)?;
+        f.sync_all()?;
+        std::fs::rename(&tmp, path)
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.with_context(|| format!("writing {path:?}"))
 }
 
 /// Append one record to the store as a single JSON line.

@@ -561,14 +561,20 @@ struct TrashParams {
 /// The file watcher sees the save and pushes the update to every viewer.
 async fn api_trash(Query(p): Query<TrashParams>) -> Response {
     let on = p.on != "0";
-    match session::set_tile_trashed(&p.session, &p.tile, on) {
-        Ok(true) => Json(json!({ "ok": true })).into_response(),
-        Ok(false) => (
+    // On the blocking pool: set_tile_trashed takes a per-session advisory lock,
+    // which must not block a tokio worker.
+    let result =
+        tokio::task::spawn_blocking(move || session::set_tile_trashed(&p.session, &p.tile, on))
+            .await;
+    match result {
+        Ok(Ok(true)) => Json(json!({ "ok": true })).into_response(),
+        Ok(Ok(false)) => (
             StatusCode::OK,
             Json(json!({ "error": "no such session or tile" })),
         )
             .into_response(),
-        Err(e) => error_json(&e),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("trash task failed: {e}")),
     }
 }
 
@@ -586,9 +592,15 @@ struct ActivityParams {
 /// the human actually looks at. Writes outside the watched sessions dir, so
 /// this never triggers a re-render.
 async fn api_activity(Query(p): Query<ActivityParams>) -> Response {
-    match session::record_activity(&p.session, p.tile.as_deref(), &p.action) {
-        Ok(()) => Json(json!({ "ok": true })).into_response(),
-        Err(e) => error_json(&e),
+    // On the blocking pool: record_activity serializes writers under a mutex.
+    let result = tokio::task::spawn_blocking(move || {
+        session::record_activity(&p.session, p.tile.as_deref(), &p.action)
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => Json(json!({ "ok": true })).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("activity task failed: {e}")),
     }
 }
 

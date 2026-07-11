@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -216,6 +217,11 @@ pub fn load_activity() -> BTreeMap<String, SessionActivity> {
 /// Record one interaction: `tile: None` counts a session open; otherwise
 /// `action` is "zoom" or "explore" on that tile.
 pub fn record_activity(session: &str, tile: Option<&str>, action: &str) -> Result<()> {
+    // The daemon services activity POSTs concurrently; serialize the whole
+    // read-modify-write (all writers are in this one process) so no update is
+    // lost, and pair it with an atomic file write so readers never tear.
+    static LOCK: Mutex<()> = Mutex::new(());
+    let _guard = LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut all = load_activity();
     let s = all.entry(session.to_string()).or_default();
     let now = store::now_millis();
@@ -235,9 +241,7 @@ pub fn record_activity(session: &str, tile: Option<&str>, action: &str) -> Resul
         }
     }
     let path = activity_path()?;
-    fs::write(&path, serde_json::to_string_pretty(&all)?)
-        .with_context(|| format!("writing {path:?}"))?;
-    Ok(())
+    store::write_atomic(&path, serde_json::to_string_pretty(&all)?.as_bytes())
 }
 
 /// Slugify a name into a filesystem/URL-safe id.
@@ -304,8 +308,37 @@ pub fn list() -> Result<Vec<Session>> {
 pub fn save(session: &Session) -> Result<()> {
     let path = path_for(&session.id)?;
     let json = serde_json::to_string_pretty(session)?;
-    fs::write(&path, json).with_context(|| format!("writing {path:?}"))?;
-    Ok(())
+    // Atomic (temp + rename) so the daemon/export never read a half-written file.
+    store::write_atomic(&path, json.as_bytes())
+}
+
+/// A held advisory lock on a session, released when dropped.
+pub struct SessionLock {
+    _file: fs::File,
+}
+
+/// Take an exclusive advisory lock over a session's read-modify-write so
+/// concurrent CLI writers can't lose each other's updates (last-writer-wins on
+/// the whole-file rewrite). Blocks until free; released when the guard drops.
+/// The lock lives in a sibling `<id>.json.lock` (ignored by `list`, which only
+/// reads `.json`). Acquire it at exactly one level per operation — flock isn't
+/// reentrant across fds in the same process. No-op guard off unix.
+pub fn lock_session(id: &str) -> Result<SessionLock> {
+    let path = sessions_dir()?.join(format!("{id}.json.lock"));
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .with_context(|| format!("opening lock {path:?}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            bail!("locking {path:?}: {}", std::io::Error::last_os_error());
+        }
+    }
+    Ok(SessionLock { _file: file })
 }
 
 /// Delete a session's JSON file (the CLI `rm` and the web UI's delete button).
@@ -354,6 +387,7 @@ fn upsert_tile(session: &mut Session, mut tile: Tile) {
 /// Set or clear a tile's trashed flag, persisting the session. Returns whether
 /// the session and tile both existed.
 pub fn set_tile_trashed(id: &str, tile: &str, on: bool) -> Result<bool> {
+    let _lock = lock_session(id)?;
     let Some(mut s) = load(id)? else {
         return Ok(false);
     };
@@ -379,6 +413,7 @@ pub enum Move<'a> {
 /// Reorder a tile within its session. Returns false if the session, the tile,
 /// or a named anchor (`--before`/`--after`) doesn't exist.
 pub fn move_tile(id: &str, tile: &str, mv: Move) -> Result<bool> {
+    let _lock = lock_session(id)?;
     let Some(mut s) = load(id)? else {
         return Ok(false);
     };
@@ -686,6 +721,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         "create" => {
             let name = session_arg.context("usage: muckdb session create <name>")?;
             let id = slug(&name);
+            let _lock = lock_session(&id)?;
             let mut s = load_or_new(&id, p.get("title").map(str::to_string).or(Some(name)))?;
             // Link this dashboard to a Claude Code session by UUID, when given.
             // Agents pass their own id via $CLAUDE_CODE_SESSION_ID.
@@ -706,6 +742,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         "post" => {
             let name = session_arg.context("usage: muckdb session post <name> --md <text|->")?;
             let id = slug(&name);
+            let _lock = lock_session(&id)?;
             let md = read_md(
                 p.get("md")
                     .or(p.get("markdown"))
@@ -731,6 +768,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
             let name = session_arg
                 .context("usage: muckdb session section <name> --name TILE --title HEADING")?;
             let id = slug(&name);
+            let _lock = lock_session(&id)?;
             let tile_name = p.get("name").context("--name <tile> required")?.to_string();
             let tile = Tile::Section {
                 name: tile_name.clone(),
@@ -775,6 +813,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
             let name = session_arg
                 .context("usage: muckdb session tile <name> --name T --db D (--view V|--sql S)")?;
             let id = slug(&name);
+            let _lock = lock_session(&id)?;
             let tile_name = p.get("name").context("--name <tile> required")?.to_string();
             let db = p.get("db").context("--db <path> required")?.to_string();
             let view = p.get("view").map(str::to_string);
@@ -914,6 +953,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         "rm" => {
             let name = session_arg.context("usage: muckdb session rm <name> [--tile T]")?;
             let id = slug(&name);
+            let _lock = lock_session(&id)?;
             if let Some(tile) = p.get("tile") {
                 if let Some(mut s) = load(&id)? {
                     s.tiles.retain(|t| t.name() != tile);
