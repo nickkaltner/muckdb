@@ -3584,7 +3584,7 @@
     if (wmSvgText === null) {
       // Version the URL so a released SVG change busts the browser's 7-day cache
       // (a stale worldmap.svg vs a new projection = misplaced dots / black land).
-      try { const r = await fetch("/worldmap.svg?v=__MUCKDB_VERSION__"); wmSvgText = r.ok ? await r.text() : ""; } catch (_) { wmSvgText = ""; }
+      try { const r = await fetch("/worldmap.svg?v=__MUCKDB_VERSION__&r=__WORLDMAP_REV__"); wmSvgText = r.ok ? await r.text() : ""; } catch (_) { wmSvgText = ""; }
     }
     hosts.forEach((host) => {
       host.dataset.hydrated = "1";

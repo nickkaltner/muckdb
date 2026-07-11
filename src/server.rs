@@ -227,9 +227,18 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
 
 async fn index() -> Html<&'static str> {
     // The app is a static asset except for the build version (shown in the
-    // credits card) — stamp it once and serve the cached result.
+    // credits card) — stamp it once and serve the cached result. `worldmap.svg`
+    // is hard-cached by the browser, so its fetch URL is also stamped with a hash
+    // of the SVG's content (__WORLDMAP_REV__) — any edit to the file busts that
+    // cache on the next build, without waiting for a version bump.
     static PAGE: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
-        include_str!("assets/index.html").replace("__MUCKDB_VERSION__", env!("CARGO_PKG_VERSION"))
+        use std::hash::{Hash, Hasher};
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        include_str!("assets/worldmap.svg").hash(&mut h);
+        let rev = format!("{:x}", h.finish());
+        include_str!("assets/index.html")
+            .replace("__MUCKDB_VERSION__", env!("CARGO_PKG_VERSION"))
+            .replace("__WORLDMAP_REV__", &rev)
     });
     Html(PAGE.as_str())
 }
