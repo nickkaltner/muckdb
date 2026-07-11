@@ -675,6 +675,11 @@
   .panel-act.active { background: var(--orange); color: var(--on-accent); border-color: var(--orange); font-weight: 700; }
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 300px; }
+  /* Pie tiles: the looping static clip behind the canvas (same per-theme opacity
+     + light-theme invert as the map sea). */
+  .panel-chart .pie-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; z-index: 0; opacity: var(--wm-static-opacity, 0.08); }
+  .panel-chart canvas { position: relative; z-index: 1; }
+  html.wm-light .panel-chart .pie-vid { filter: invert(1) contrast(1.05); }
   .panel-caption { font-size: 11px; color: var(--faint); margin-top: 8px; }
   .panel-act.busy { opacity: 0.5; pointer-events: none; }
   .panel-act.flash-ok { border-color: var(--ok); color: var(--ok); }
@@ -3431,7 +3436,10 @@
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     slot.style.height = "300px";
-    slot.innerHTML = "<canvas></canvas>";
+    // Pie tiles get the same looping static clip behind the canvas — it shows in
+    // the space around (and, for a doughnut, inside) the circle.
+    const pieBg = kind === "pie" ? '<video class="pie-vid" src="/sea-static.mp4" autoplay loop muted playsinline></video>' : "";
+    slot.innerHTML = pieBg + "<canvas></canvas>";
     applyTileHeight(t.name);
     try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null))); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
