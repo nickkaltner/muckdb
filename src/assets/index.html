@@ -3552,7 +3552,7 @@
     ];
     const fs = Math.max(9, Math.min(15, cellH * 1.5));
     const dots = connDots(payload.cellDots, proj, { rBase: Math.max(1.2, cellH * 0.18), rSpan: cellH * 0.42 });
-    const ov = connArcs(payload.conns, proj, { valMode: payload.valMode, fv: payload.fv, marginPx: Math.max(6, cellH * 0.9), bowCap: H * 0.5, fontSize: fs, strokeMin: 1, strokeSpan: 2.5 });
+    const ov = connArcs(payload.conns, proj, { valMode: payload.valMode, fv: payload.fv, marginPx: Math.max(3, cellH * 0.35), bowCap: H * 0.5, fontSize: fs, strokeMin: 1, strokeSpan: 2.5 });
     let svg = stage.querySelector("svg.wm-ascii-overlay");
     if (!svg) { stage.insertAdjacentHTML("beforeend", '<svg class="wm-ascii-overlay" xmlns="http://www.w3.org/2000/svg"></svg>'); svg = stage.querySelector("svg.wm-ascii-overlay"); }
     svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
