@@ -76,6 +76,7 @@ pub async fn run() -> Result<()> {
         .route("/api/activity", post(api_activity))
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
+        .route("/html2canvas.js", get(html2canvas_js))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -643,6 +644,17 @@ async fn chart_adapter_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/chart-adapter.js"),
+    )
+        .into_response()
+}
+
+/// Serve the vendored html2canvas — the web UI's copy-image button renders a
+/// panel to PNG in the browser with it (no headless-Chromium round-trip). The
+/// CLI `session screenshot` / `/api/shot` still use the backend renderer.
+async fn html2canvas_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/html2canvas.min.js"),
     )
         .into_response()
 }

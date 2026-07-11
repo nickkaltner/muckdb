@@ -725,6 +725,7 @@
 
 <script src="/chart.js"></script>
 <script src="/chart-adapter.js"></script>
+<script src="/html2canvas.js"></script>
 <script>
 (() => {
   "use strict";
@@ -2921,9 +2922,10 @@
     state.panelSel = -1;
     document.querySelectorAll("#panels .panel.sel").forEach((p) => p.classList.remove("sel"));
   }
-  // Copy-as-image: each panel gets a button that fetches a server-side
-  // headless-browser render of just that tile (/api/shot) and puts the PNG on
-  // the clipboard — the same pixels `muckdb session screenshot` produces.
+  // Copy-as-image: each panel gets a button that rasterizes the tile to a PNG
+  // in the browser (html2canvas — no headless-Chromium round-trip) and puts it
+  // on the clipboard. The CLI `session screenshot` / `/api/shot` keep using the
+  // backend renderer (there's no browser there).
   const SVG_COPYIMG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="6" cy="6.2" r="1.2"/><path d="M2 11.5l3.5-3 3 2.5 3-2.5 2.5 2"/></svg>';
   function copyImgBtn(name) {
     return `<button class="panel-act icon" data-copyimg="${attr(name)}" title="Copy panel as image" aria-label="Copy panel as image">${SVG_COPYIMG}</button>`;
@@ -2970,21 +2972,32 @@
     });
     return new ClipboardItem({ "image/png": p, "text/html": html });
   }
+  // Rasterize one panel to a PNG blob in the browser via html2canvas. The
+  // action buttons are dropped from the capture and the app background is
+  // painted behind the panel so the PNG isn't transparent where the panel's
+  // own surface doesn't reach.
+  function renderPanelBlob(name) {
+    const panel = document.querySelector(`#panels .panel[data-tile="${cssEsc(name)}"]`);
+    if (!panel) return Promise.reject(new Error("panel not found"));
+    if (typeof html2canvas !== "function") return Promise.reject(new Error("html2canvas not loaded"));
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1a1712";
+    return html2canvas(panel, {
+      backgroundColor: bg,
+      scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
+      useCORS: true,
+      logging: false,
+      ignoreElements: (el) => el.classList && el.classList.contains("panel-actions"),
+    }).then((canvas) => new Promise((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
+    }));
+  }
   async function copyPanelImage(name, btn) {
     if (!state.selSession || btn.classList.contains("busy")) return;
     btn.classList.add("busy");
     toast("rendering panel image…", false, true);
-    const url = "/api/shot?" + new URLSearchParams({ session: state.selSession, tile: name });
-    // One fetch shared by every attempt — the render takes seconds, and a
-    // failed clipboard write must not trigger a second render.
-    const pngPromise = fetch(url).then(async (r) => {
-      const blob = await r.blob();
-      if (blob.type !== "image/png") {
-        let msg = "screenshot failed"; try { msg = JSON.parse(await blob.text()).error || msg; } catch (_) {}
-        throw new Error(msg);
-      }
-      return blob;
-    });
+    // One render shared by every clipboard attempt — a failed clipboard write
+    // must not trigger a second rasterization.
+    const pngPromise = renderPanelBlob(name);
     try {
       if (SAFARI) {
         // Deadline: 6s after the render finishes the write must have settled.
@@ -3959,6 +3972,31 @@
 
   // ---- events -----------------------------------------------------------
   $("tabs").addEventListener("click", (ev) => { const t = ev.target.closest(".tab"); if (t) setTab(t.dataset.tab); });
+
+  // Copying a selection out of a rendered markdown panel: rewrite the clipboard
+  // with class/style-stripped semantic HTML so the panel's dark-theme colours
+  // and monospace fonts don't ride along. macOS rich-text targets (Slack,
+  // Notion, Mail, Word) honour those inline styles far more aggressively than
+  // Linux apps, which is what made pasted markdown look mangled there.
+  document.addEventListener("copy", (ev) => {
+    const sel = window.getSelection();
+    if (!sel || sel.isCollapsed || !sel.rangeCount) return;
+    const range = sel.getRangeAt(0);
+    const anchor = range.commonAncestorContainer;
+    const anchorEl = anchor.nodeType === 1 ? anchor : anchor.parentElement;
+    if (!anchorEl || !anchorEl.closest(".md")) return;
+    const holder = document.createElement("div");
+    holder.appendChild(range.cloneContents());
+    holder.querySelectorAll("*").forEach((el) => {
+      el.removeAttribute("class");
+      el.removeAttribute("style");
+      el.removeAttribute("id");
+    });
+    if (!ev.clipboardData) return;
+    ev.clipboardData.setData("text/html", holder.innerHTML);
+    ev.clipboardData.setData("text/plain", sel.toString());
+    ev.preventDefault();
+  });
 
   document.addEventListener("click", (ev) => {
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
