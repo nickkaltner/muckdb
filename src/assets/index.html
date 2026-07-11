@@ -3589,6 +3589,11 @@
       }
     });
   }
+  // Connection-arc opacity: arcs are a semi-transparent overlay so the map shows
+  // through. Opacity runs from ARC_OPACITY_MIN (faintest, lowest --value) up by
+  // ARC_OPACITY_RANGE at the highest --value.
+  const ARC_OPACITY_MIN = 0.22;
+  const ARC_OPACITY_RANGE = 0.28;
   // Marker circles for the data overlay. proj maps (lat,lon)→[x,y] in the target
   // coordinate space (hi-fi SVG units, or ascii-overlay pixels).
   function connDots(cellDots, proj, cfg) {
@@ -3624,7 +3629,7 @@
       const s = t0 / t1;
       const S = lerp(lerp(A, a1, s), lerp(a1, p1, s), s), C = lerp(a1, p1, s), E = p1;
       const tt = (cfg.valMode && isFinite(cn.v)) ? (cn.v - clo) / cspan : 0.5;
-      const w = (cfg.strokeMin + tt * cfg.strokeSpan).toFixed(2), op = (0.3 + tt * 0.35).toFixed(2);
+      const w = (cfg.strokeMin + tt * cfg.strokeSpan).toFixed(2), op = (ARC_OPACITY_MIN + tt * ARC_OPACITY_RANGE).toFixed(2);
       const tip = attr(`<div class="wm-tip-sub">${esc(cn.label || "connection")}${cfg.valMode && isFinite(cn.v) ? ` · ${esc(cfg.fv(cn.v))}` : ""}</div>`);
       arcs += `<path class="wm-arc wm-x" d="M${S[0].toFixed(1)} ${S[1].toFixed(1)}Q${C[0].toFixed(1)} ${C[1].toFixed(1)} ${E[0].toFixed(1)} ${E[1].toFixed(1)}" style="stroke:${stroke};stroke-width:${w};stroke-opacity:${op}" data-tip="${tip}"/>`;
       if (cn.label) {
