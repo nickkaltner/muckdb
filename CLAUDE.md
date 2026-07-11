@@ -247,7 +247,10 @@ file to check your dashboard looks right. Omit `--tile` for the whole dashboard;
 the height auto-fits the content. Needs a Chromium-based browser (chromium/
 chrome/brave/edge, or `MUCKDB_BROWSER=/path`). The same render is available as
 `GET /api/shot?session=<id>&tile=<name>` (`image/png`) and behind the copy-image
-button on every panel in the web UI.
+button on every panel in the web UI. The web UI header also has a **poster**
+button that downloads a single PNG of the whole dashboard (rendered in-browser),
+and **table tiles have a full-width toggle** (the horizontal-expand icon) that
+breaks the tile out of the centred column so every column is visible.
 
 ## Good habits
 

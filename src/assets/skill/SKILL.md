@@ -465,6 +465,10 @@ muckdb session screenshot pond-analysis --tile species --out species.png
   with `MUCKDB_BROWSER=/path/to/browser`). Renders in ~1s.
 - The same render backs `GET /api/shot?session=<id>&tile=<name>` (returns
   `image/png`) and the **copy-image button** on every panel in the web UI.
+- The web UI header also has a **poster** button that downloads one PNG of the
+  whole dashboard (every tile, rendered in-browser), and **table tiles have a
+  full-width toggle** (horizontal-expand icon) that breaks the tile out of the
+  centred column so all columns show at once.
 
 ## Good habits
 

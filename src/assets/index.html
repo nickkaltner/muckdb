@@ -517,7 +517,7 @@
 
   /* sessions */
   .session-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
-  .panels-scroll { flex: 1; overflow: auto; }
+  .panels-scroll { flex: 1; overflow: auto; container-type: inline-size; }
   /* Table of contents — only offered on wide screens (the panels are centred at
      max 1100px, leaving room on the right). Toggle in the session nav row. */
   .toc-toggle { display: none; align-items: center; gap: 6px; flex: none; margin-left: auto; font: inherit; font-size: 11px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 5px; padding: 4px 9px; cursor: pointer; }
@@ -563,6 +563,10 @@
   .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
   .panel { position: relative; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
+  /* Table tiles toggled to full width break out of the centred 1100px column to
+     fill the scroller, so every column is visible. On screens narrower than the
+     column it's a no-op. */
+  .panel.full-bleed { width: calc(100cqw - 36px); margin-left: calc((100cqw - min(100cqw, 1100px)) / -2); }
   /* Section tiles: a heading divider, not a boxed panel. */
   .panel.section-panel { background: none; box-shadow: none; overflow: visible; }
   .section-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 6px 8px; border-bottom: 2px solid var(--line); }
@@ -723,6 +727,7 @@
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
       <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span>
         <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
+        <button class="toc-toggle sess-act" id="poster-btn" title="Download a PNG poster of the whole dashboard"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.1"/><path d="M2.5 11l3.2-2.7 2.3 1.9 3-2.4 2.5 2.1"/></svg><span>poster</span></button>
         <button class="toc-toggle sess-act" id="session-rm-btn" title="Delete this session (click twice)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.8 9h6.4l.8-9M6.5 7v4M9.5 7v4"/></svg><span>delete</span></button>
         <button class="toc-toggle" id="toc-toggle" title="Toggle contents" aria-label="Toggle table of contents"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h2M2 8h2M2 12h2M6 4h8M6 8h8M6 12h8"/></svg><span>contents</span></button>
       </div>
@@ -778,7 +783,7 @@
     page: 0, total: 0,
     pageMode: "auto", pageSize: 25,
     sql: "",
-    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, tileFilter: {}, zoomPanel: null,
+    sessions: [], selSession: null, sessionData: null, ledgerGroup: false, tileMode: {}, tableShrunk: {}, tileWide: {}, tileFilter: {}, zoomPanel: null,
     tocOpen: true,      // session table-of-contents visible (wide screens only)
     formats: {},        // db path → { columns:{col:fmt}, tables:{"t.col":fmt} }
     panelSel: -1,
@@ -3027,6 +3032,12 @@
     });
     return new ClipboardItem({ "image/png": p, "text/html": html });
   }
+  // html2canvas onclone hook: drop the transient pulse/enter animation classes,
+  // whose keyframes use color-mix() (unparseable by html2canvas) and would be
+  // captured mid-animation anyway.
+  function stripPulse(doc) {
+    doc.querySelectorAll(".updated, .enter").forEach((el) => el.classList.remove("updated", "enter"));
+  }
   // Rasterize one panel to a PNG blob in the browser via html2canvas. The
   // action buttons are dropped from the capture and the app background is
   // painted behind the panel so the PNG isn't transparent where the panel's
@@ -3042,9 +3053,44 @@
       useCORS: true,
       logging: false,
       ignoreElements: (el) => el.classList && el.classList.contains("panel-actions"),
+      onclone: stripPulse,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
     }));
+  }
+  // Rasterize the whole dashboard (every visible tile, stacked) to a PNG blob —
+  // the "poster" export. Drops the per-panel controls from the capture.
+  function renderDashboardBlob() {
+    const el = $("panels");
+    if (!el) return Promise.reject(new Error("no dashboard"));
+    if (typeof html2canvas !== "function") return Promise.reject(new Error("html2canvas not loaded"));
+    const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1a1712";
+    return html2canvas(el, {
+      backgroundColor: bg,
+      scale: 2,
+      useCORS: true,
+      logging: false,
+      ignoreElements: (e) => e.classList && (e.classList.contains("panel-actions") || e.classList.contains("panel-grip") || e.classList.contains("tile-filter")),
+      onclone: stripPulse,
+    }).then((canvas) => new Promise((resolve, reject) => {
+      canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
+    }));
+  }
+  async function exportDashboardPoster() {
+    if (!state.selSession) { toast("select a session first", true); return; }
+    toast("rendering dashboard poster…", false, true);
+    try {
+      const blob = await renderDashboardBlob();
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${state.selSession}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      toast("downloaded dashboard poster");
+    } catch (e) {
+      console.warn("poster export:", e);
+      toast("poster export failed: " + ((e && e.message) || e), true);
+    }
   }
   async function copyPanelImage(name, btn) {
     if (!state.selSession || btn.classList.contains("busy")) return;
@@ -3124,15 +3170,21 @@
     const contractBtn = kind === "table"
       ? `<button class="panel-act icon${shrunk ? " active" : ""}" data-contract="${attr(t.name)}" title="${shrunk ? "Show all rows" : "Shrink to fewer rows"}" aria-label="Resize rows">${shrunk ? SVG_EXPAND_ROWS : SVG_CONTRACT}</button>`
       : "";
+    // Table tiles can break out of the centred column to full width, to see all
+    // the columns at once.
+    const wide = !!state.tileWide[t.name];
+    const widenBtn = kind === "table"
+      ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
+      : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too).
     const grip = kind === "heatmap" || kind === "box" || kind === "map" ? "" : gripHtml(t.name);
-    return `<div class="panel" data-tile="${attr(t.name)}">
+    return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions">${sqlBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions">${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
@@ -3182,6 +3234,7 @@
   }
   // SVG glyphs for the table-tile row-height toggle (chevrons toward / away from
   // centre = contract / expand).
+  const SVG_WIDEN = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 4L2 8l4 4M10 4l4 4-4 4M2 8h12"/></svg>';
   const SVG_CONTRACT = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 3l4 3 4-3M4 13l4-3 4 3"/></svg>';
   const SVG_EXPAND_ROWS = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6l4-3 4 3M4 10l4 3 4-3"/></svg>';
   // Table tiles keep their fetched rowset here so the title-bar filter can
@@ -3232,9 +3285,10 @@
       const t = (v - lo) / span;
       const fill = Math.round(8 + t * 84);
       // --no-values: colour only; the hover title still carries the figure.
-      return `<div class="pd-cell hm-cell" style="background: color-mix(in srgb, var(--orange) ${fill}%, var(--surface))" title="${attr(`${y} × ${x} — ${fv(v)}`)}">${spec.no_values ? "" : esc(fv(v))}</div>`;
+      return `<div class="pd-cell hm-cell" style="background:${mixColors('var(--orange)', fill, 'var(--surface)')}" title="${attr(`${y} × ${x} — ${fv(v)}`)}">${spec.no_values ? "" : esc(fv(v))}</div>`;
     }).join("")).join("");
-    const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad"></span><span>${esc(fv(hi))}</span></div>`;
+    const hmGrad = `linear-gradient(90deg, ${mixColors('var(--orange)', 8, 'var(--surface)')}, ${mixColors('var(--orange)', 92, 'var(--surface)')})`;
+    const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad" style="background:${hmGrad}"></span><span>${esc(fv(hi))}</span></div>`;
     return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
   }
   // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
@@ -3269,7 +3323,7 @@
         <div class="bx-plot" title="${attr(title)}">
           <span class="box-whisk" style="left:${wl}%;right:${100 - wr}%"></span>
           <span class="box-cap" style="left:${wl}%"></span><span class="box-cap" style="left:${wr}%"></span>
-          <span class="box-iqr" style="left:${bl}%;width:${bw}%"></span>
+          <span class="box-iqr" style="left:${bl}%;width:${bw}%;background:${mixColors('var(--orange)', 30, 'transparent')}"></span>
           <span class="box-med" style="left:${ml}%"></span>
         </div>
         <span class="bx-med-val">${esc(fv(med))}</span>
@@ -3346,15 +3400,17 @@
           const t = (intensity(e) - lo) / span;
           const clat = Math.round(WM_LAT_T - (row + 0.5) / WM_H * (WM_LAT_T - WM_LAT_B));
           const clon = Math.round(WM_LON_W + (c + 0.5) / WM_W * (WM_LON_E - WM_LON_W));
-          out += `<span class="wm-x" style="color:color-mix(in srgb, var(--ember) ${55 + Math.round(t * 45)}%, var(--surface))" data-tip="${attr(tipFor(e, clat, clon))}">x</span>`;
+          out += `<span class="wm-x" style="color:${mixColors('var(--ember)', 55 + t * 45, 'var(--surface)')}" data-tip="${attr(tipFor(e, clat, clon))}">x</span>`;
         } else {
           out += c < src.length && src[c] === "*" ? "*" : " ";
         }
       }
       out += "\n";
     }
-    const legend = `<div class="wm-legend"><span class="wm-lg-label">${valMode ? esc(spec.value) : "points / cell"}</span><span>${esc(fv(lo))}</span><span class="wm-grad"></span><span>${esc(fv(hi))}</span><span class="wm-count">${plotted.toLocaleString()} plotted · ${cells.size} cells</span></div>`;
-    return `<div class="worldmap-wrap"><pre class="worldmap">${out.replace(/\n$/, "")}</pre></div>${legend}`;
+    const wmGrad = `linear-gradient(90deg, ${mixColors('var(--ember)', 55, 'var(--surface)')}, ${mixColors('var(--ember)', 100, 'var(--surface)')})`;
+    const legend = `<div class="wm-legend"><span class="wm-lg-label">${valMode ? esc(spec.value) : "points / cell"}</span><span>${esc(fv(lo))}</span><span class="wm-grad" style="background:${wmGrad}"></span><span>${esc(fv(hi))}</span><span class="wm-count">${plotted.toLocaleString()} plotted · ${cells.size} cells</span></div>`;
+    const land = mixColors('var(--fg)', 26, 'transparent');
+    return `<div class="worldmap-wrap"><pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>${legend}`;
   }
   const TILE_TABLE_ROWS = 20;
   function miniTable(cols, rows, db, table, shrunk, limit, filtered) {
@@ -3373,6 +3429,30 @@
   // Bar corner radius (top only) — themes opt in via `barRadius`; 0 = square.
   let BAR_RADIUS = THEMES.hearth.barRadius || 0;
   function hexA(h, a) { const n = parseInt(h.slice(1), 16); return `rgba(${(n >> 16) & 255},${(n >> 8) & 255},${n & 255},${a})`; }
+  // Resolve any CSS colour (var(--x), hex, rgb, transparent) to [r,g,b,a] via a
+  // hidden probe. Used by mixColors so tiles can emit concrete rgb() instead of
+  // CSS color-mix(), which html2canvas (the copy-image / poster renderer) can't
+  // parse. Re-resolves live, so it stays theme-correct (tiles re-render on theme
+  // change).
+  let _colorProbe = null;
+  function resolveColor(v) {
+    if (!_colorProbe) { _colorProbe = document.createElement("span"); _colorProbe.style.cssText = "position:absolute;visibility:hidden;pointer-events:none"; document.body.appendChild(_colorProbe); }
+    _colorProbe.style.color = "";
+    _colorProbe.style.color = v;
+    const m = getComputedStyle(_colorProbe).color.match(/[\d.]+/g) || ["0", "0", "0"];
+    return [+m[0] || 0, +m[1] || 0, +m[2] || 0, m[3] === undefined ? 1 : +m[3]];
+  }
+  // Equivalent of CSS `color-mix(in srgb, A pct%, B)` (premultiplied), returning
+  // an rgb()/rgba() string.
+  function mixColors(a, pct, b) {
+    const A = resolveColor(a), B = resolveColor(b), t = Math.max(0, Math.min(1, pct / 100)), u = 1 - t;
+    const al = A[3] * t + B[3] * u;
+    if (al <= 0) return "rgba(0,0,0,0)";
+    const r = Math.round((A[0] * A[3] * t + B[0] * B[3] * u) / al);
+    const g = Math.round((A[1] * A[3] * t + B[1] * B[3] * u) / al);
+    const bl = Math.round((A[2] * A[3] * t + B[2] * B[3] * u) / al);
+    return al >= 0.999 ? `rgb(${r}, ${g}, ${bl})` : `rgba(${r}, ${g}, ${bl}, ${+al.toFixed(3)})`;
+  }
   // A vertical gradient from a series colour (glossy bars/areas). Falls back to
   // the flat colour until Chart.js has measured the plot area.
   function vgrad(hex, top, bot) {
@@ -4190,6 +4270,16 @@
     const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
     const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
+    const wdn = ev.target.closest("[data-widen]");
+    if (wdn) {
+      const n = wdn.dataset.widen;
+      const on = !state.tileWide[n]; state.tileWide[n] = on;
+      const panel = wdn.closest(".panel");
+      if (panel) panel.classList.toggle("full-bleed", on);
+      wdn.classList.toggle("active", on);
+      wdn.title = on ? "Fit to column width" : "Expand to full width";
+      return;
+    }
     const ctr = ev.target.closest("[data-contract]");
     if (ctr) {
       const n = ctr.dataset.contract;
@@ -4257,6 +4347,7 @@
       a.click();
       return;
     }
+    if (ev.target.closest("#poster-btn")) { exportDashboardPoster(); return; }
     if (ev.target.closest("#import-btn")) { $("import-file").click(); return; }
     const rmBtn = ev.target.closest("#session-rm-btn");
     if (rmBtn) {
