@@ -40,12 +40,51 @@ pub fn history_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("history.jsonl"))
 }
 
-/// Pidfile used as the single-instance guard for the daemon.
-pub fn pid_file() -> Result<PathBuf> {
-    Ok(state_dir()?.join("daemon.pid"))
+/// Pidfile used as the single-instance guard for the daemon on `port`.
+///
+/// The default port keeps the historic `daemon.pid` name for backward
+/// compatibility; any other port gets a port-suffixed name so daemons on
+/// different ports don't fight over one pidfile lock.
+pub fn pid_file(port: u16) -> Result<PathBuf> {
+    let name = if port == crate::facade::PORT {
+        "daemon.pid".to_string()
+    } else {
+        format!("daemon-{port}.pid")
+    };
+    Ok(state_dir()?.join(name))
 }
 
-/// Log file the detached daemon redirects stdout/stderr into.
-pub fn daemon_log() -> Result<PathBuf> {
-    Ok(state_dir()?.join("daemon.log"))
+/// Log file the detached daemon on `port` redirects stdout/stderr into.
+/// Suffixed by port like [`pid_file`] so concurrent daemons don't share a log.
+pub fn daemon_log(port: u16) -> Result<PathBuf> {
+    let name = if port == crate::facade::PORT {
+        "daemon.log".to_string()
+    } else {
+        format!("daemon-{port}.log")
+    };
+    Ok(state_dir()?.join(name))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::facade::PORT;
+
+    #[test]
+    fn default_port_keeps_legacy_filenames() {
+        assert_eq!(pid_file(PORT).unwrap().file_name().unwrap(), "daemon.pid");
+        assert_eq!(daemon_log(PORT).unwrap().file_name().unwrap(), "daemon.log");
+    }
+
+    #[test]
+    fn non_default_port_is_suffixed() {
+        assert_eq!(
+            pid_file(11055).unwrap().file_name().unwrap(),
+            "daemon-11055.pid"
+        );
+        assert_eq!(
+            daemon_log(11055).unwrap().file_name().unwrap(),
+            "daemon-11055.log"
+        );
+    }
 }

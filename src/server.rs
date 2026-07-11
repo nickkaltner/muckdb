@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde_json::json;
 use tokio::sync::broadcast;
 
-use crate::facade::PORT;
+use crate::facade;
 use crate::{introspect, paths, session, store};
 
 const PREVIEW_LIMIT: u32 = 25;
@@ -89,11 +89,12 @@ pub async fn run() -> Result<()> {
         .ok()
         .and_then(|s| s.parse().ok())
         .unwrap_or_else(|| std::net::IpAddr::from([127, 0, 0, 1]));
-    let addr = SocketAddr::from((bind, PORT));
+    let port = facade::resolved_port();
+    let addr = SocketAddr::from((bind, port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
         .with_context(|| format!("binding {addr}"))?;
-    println!("muckdb daemon listening on http://localhost:{PORT}");
+    println!("muckdb daemon listening on http://localhost:{port}");
     axum::serve(listener, app).await.context("server error")?;
     Ok(())
 }
@@ -108,7 +109,7 @@ fn register_mdns() -> Result<mdns_sd::ServiceDaemon> {
         "muckdb",
         "muckdb.local.",
         "",
-        PORT,
+        facade::resolved_port(),
         &[("path", "/")][..],
     )
     .context("building mDNS service info")?

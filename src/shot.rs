@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
 
-use crate::facade::PORT;
+use crate::facade;
 
 pub const DEFAULT_WIDTH: u32 = 1200;
 pub const MIN_WIDTH: u32 = 320;
@@ -48,7 +48,8 @@ const POLL: Duration = Duration::from_millis(100);
 /// The shot-mode URL for a session (optionally narrowed to one tile).
 pub fn shot_url(session: &str, tile: Option<&str>) -> String {
     let mut url = format!(
-        "http://127.0.0.1:{PORT}/session/{}/?shot=1",
+        "http://127.0.0.1:{}/session/{}/?shot=1",
+        facade::resolved_port(),
         urlencode(session)
     );
     if let Some(t) = tile {
@@ -335,13 +336,14 @@ mod tests {
 
     #[test]
     fn shot_url_includes_tile_when_given() {
+        let port = facade::resolved_port();
         assert_eq!(
             shot_url("pond-analysis", None),
-            format!("http://127.0.0.1:{PORT}/session/pond-analysis/?shot=1")
+            format!("http://127.0.0.1:{port}/session/pond-analysis/?shot=1")
         );
         assert_eq!(
             shot_url("pond-analysis", Some("by species")),
-            format!("http://127.0.0.1:{PORT}/session/pond-analysis/?shot=1&tile=by%20species")
+            format!("http://127.0.0.1:{port}/session/pond-analysis/?shot=1&tile=by%20species")
         );
     }
 

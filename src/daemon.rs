@@ -6,15 +6,16 @@ use std::fs;
 use anyhow::{Context, Result};
 use daemonize::Daemonize;
 
-use crate::facade::PORT;
+use crate::facade;
 use crate::{paths, server};
 
 /// Detach from the terminal (fork + setsid), write the pidfile, redirect output
 /// to the daemon log, then run the server. Forking happens *before* any tokio
 /// runtime is created, which is the only safe ordering.
 pub fn serve() -> Result<()> {
-    let pid_file = paths::pid_file()?;
-    let log_path = paths::daemon_log()?;
+    let port = facade::resolved_port();
+    let pid_file = paths::pid_file(port)?;
+    let log_path = paths::daemon_log(port)?;
     let stdout = fs::File::create(&log_path).with_context(|| format!("creating {log_path:?}"))?;
     let stderr = stdout.try_clone()?;
 
@@ -30,9 +31,9 @@ pub fn serve() -> Result<()> {
     rt.block_on(server::run())
 }
 
-/// Read the daemon pid from the pidfile, if present and parseable.
-fn read_pid() -> Option<i32> {
-    let path = paths::pid_file().ok()?;
+/// Read the daemon pid from the port's pidfile, if present and parseable.
+fn read_pid(port: u16) -> Option<i32> {
+    let path = paths::pid_file(port).ok()?;
     let contents = fs::read_to_string(path).ok()?;
     contents.trim().parse::<i32>().ok()
 }
@@ -43,46 +44,49 @@ fn pid_alive(pid: i32) -> bool {
     unsafe { libc::kill(pid, 0) == 0 }
 }
 
-/// Whether the daemon is accepting connections on the HTTP port.
-fn port_open() -> bool {
+/// Whether the daemon is accepting connections on `port`.
+fn port_open(port: u16) -> bool {
     use std::net::{SocketAddr, TcpStream};
     use std::time::Duration;
-    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
     TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
-/// `muckdb --status`: report whether the daemon is running.
+/// `muckdb --status`: report whether the daemon for the selected port is running.
 pub fn status() -> Result<i32> {
-    let listening = port_open();
-    let pid = read_pid();
+    let port = facade::resolved_port();
+    let listening = port_open(port);
+    let pid = read_pid(port);
     match (listening, pid) {
         (true, Some(pid)) => {
-            println!("muckdb daemon running (pid {pid}) at http://localhost:{PORT}");
+            println!("muckdb daemon running (pid {pid}) at http://localhost:{port}");
             Ok(0)
         }
         (true, None) => {
-            println!("muckdb daemon running at http://localhost:{PORT} (no pidfile)");
+            println!("muckdb daemon running at http://localhost:{port} (no pidfile)");
             Ok(0)
         }
         (false, Some(pid)) if pid_alive(pid) => {
-            println!("muckdb daemon process {pid} is alive but not yet serving on {PORT}");
+            println!("muckdb daemon process {pid} is alive but not yet serving on {port}");
             Ok(0)
         }
         _ => {
-            println!("muckdb daemon is not running");
+            println!("muckdb daemon is not running (port {port})");
             Ok(1)
         }
     }
 }
 
-/// `muckdb --stop`: terminate the daemon and clean up the pidfile.
+/// `muckdb --stop`: terminate the daemon for the selected port and clean up its
+/// pidfile.
 pub fn stop() -> Result<i32> {
-    let Some(pid) = read_pid() else {
-        println!("muckdb daemon is not running (no pidfile)");
+    let port = facade::resolved_port();
+    let Some(pid) = read_pid(port) else {
+        println!("muckdb daemon is not running (no pidfile for port {port})");
         return Ok(1);
     };
     if !pid_alive(pid) {
-        let _ = fs::remove_file(paths::pid_file()?);
+        let _ = fs::remove_file(paths::pid_file(port)?);
         println!("muckdb daemon was not running; cleaned up stale pidfile");
         return Ok(1);
     }
@@ -104,7 +108,7 @@ pub fn stop() -> Result<i32> {
     if pid_alive(pid) {
         let _ = unsafe { libc::kill(pid, libc::SIGKILL) };
     }
-    let _ = fs::remove_file(paths::pid_file()?);
-    println!("stopped muckdb daemon (pid {pid})");
+    let _ = fs::remove_file(paths::pid_file(port)?);
+    println!("stopped muckdb daemon (pid {pid}, port {port})");
     Ok(0)
 }

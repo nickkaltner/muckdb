@@ -17,7 +17,14 @@ mod store;
 use std::process::exit;
 
 fn main() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut args: Vec<String> = std::env::args().skip(1).collect();
+    // Resolve `--port <N>` / `--port=<N>` up front and record it in MUCKDB_PORT
+    // so every consumer (facade, server, daemon control, and any spawned child)
+    // agrees on the port; then drop the flag so it never reaches duckdb.
+    if let Some(port) = extract_port_flag(&mut args) {
+        // SAFETY: single-threaded here — set before any daemon/thread starts.
+        unsafe { std::env::set_var("MUCKDB_PORT", port.to_string()) };
+    }
     let code = match run(&args) {
         Ok(code) => code,
         Err(e) => {
@@ -26,6 +33,35 @@ fn main() {
         }
     };
     exit(code);
+}
+
+/// Pull a `--port <N>` or `--port=<N>` flag out of `args` (removing it) and
+/// return the parsed port. Returns `None` if the flag is absent; an unparseable
+/// or zero value is ignored (the default/env resolution then applies).
+fn extract_port_flag(args: &mut Vec<String>) -> Option<u16> {
+    let mut port = None;
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        if arg == "--port" {
+            let val = args.get(i + 1).and_then(|s| s.trim().parse::<u16>().ok());
+            let consume = if args.get(i + 1).is_some() { 2 } else { 1 };
+            if let Some(p) = val.filter(|&p| p != 0) {
+                port = Some(p);
+            }
+            args.drain(i..i + consume.min(args.len() - i));
+            continue;
+        }
+        if let Some(rest) = arg.strip_prefix("--port=") {
+            if let Some(p) = rest.trim().parse::<u16>().ok().filter(|&p| p != 0) {
+                port = Some(p);
+            }
+            args.remove(i);
+            continue;
+        }
+        i += 1;
+    }
+    port
 }
 
 fn run(args: &[String]) -> anyhow::Result<i32> {
@@ -40,7 +76,10 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         // Start the background daemon without opening a browser.
         Some("start" | "--start") => {
             facade::ensure_daemon()?;
-            println!("muckdb daemon serving at http://localhost:{}", facade::PORT);
+            println!(
+                "muckdb daemon serving at http://localhost:{}",
+                facade::resolved_port()
+            );
             Ok(0)
         }
         // muckdb's own help (duckdb's help, rebranded, with muckdb commands on top).
@@ -57,7 +96,7 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         Some("ls") => ls(&args[1..]),
         Some("--display") => {
             facade::ensure_daemon()?;
-            let url = format!("http://localhost:{}", facade::PORT);
+            let url = format!("http://localhost:{}", facade::resolved_port());
             println!("muckdb daemon serving at {url}");
             open_browser(&url);
             Ok(0)
@@ -76,13 +115,16 @@ fn help() -> anyhow::Result<i32> {
 muckdb — a duckdb CLI facade with a live web view.
 
 Runs exactly like `duckdb` (same arguments, stdout, and exit codes) and also
-records every invocation and serves a live web UI at http://localhost:11000.
+records every invocation and serves a live web UI at http://localhost:11000
+(override the port with --port <N> or MUCKDB_PORT; a non-default port uses its
+own pidfile/log so multiple daemons can run at once).
 
 muckdb commands:
   start                  start the background daemon (without opening a browser)
   --display              open the web UI (starts the background daemon if needed)
   --status               report whether the daemon is running
   --stop                 stop the background daemon
+  --port <N>             use TCP port N for the daemon (default 11000; per-port pidfile)
   --version              print muckdb's version, then duckdb's
   session <subcommand>   build dashboards: create | list | post | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
@@ -226,4 +268,52 @@ fn open_browser(url: &str) {
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::extract_port_flag;
+
+    fn v(args: &[&str]) -> Vec<String> {
+        args.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn absent_port_flag_leaves_args_untouched() {
+        let mut args = v(&["db.duckdb", "-c", "SELECT 1"]);
+        assert_eq!(extract_port_flag(&mut args), None);
+        assert_eq!(args, v(&["db.duckdb", "-c", "SELECT 1"]));
+    }
+
+    #[test]
+    fn space_separated_port_is_parsed_and_removed() {
+        let mut args = v(&["--port", "11055", "start"]);
+        assert_eq!(extract_port_flag(&mut args), Some(11055));
+        assert_eq!(args, v(&["start"]));
+    }
+
+    #[test]
+    fn equals_form_is_parsed_and_removed() {
+        let mut args = v(&["--port=12000", "--status"]);
+        assert_eq!(extract_port_flag(&mut args), Some(12000));
+        assert_eq!(args, v(&["--status"]));
+    }
+
+    #[test]
+    fn zero_and_unparseable_ports_are_ignored_but_still_stripped() {
+        let mut args = v(&["--port", "0", "x"]);
+        assert_eq!(extract_port_flag(&mut args), None);
+        assert_eq!(args, v(&["x"]));
+
+        let mut args = v(&["--port", "nope", "x"]);
+        assert_eq!(extract_port_flag(&mut args), None);
+        assert_eq!(args, v(&["x"]));
+    }
+
+    #[test]
+    fn trailing_port_flag_without_value_is_dropped() {
+        let mut args = v(&["--port"]);
+        assert_eq!(extract_port_flag(&mut args), None);
+        assert!(args.is_empty());
+    }
 }

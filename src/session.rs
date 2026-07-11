@@ -696,7 +696,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
             crate::facade::ensure_daemon()?;
             println!(
                 "session {id} ready at http://localhost:{}/session/{id}",
-                crate::facade::PORT
+                crate::facade::resolved_port()
             );
             if let Some(uuid) = &s.claude_session {
                 println!("linked to Claude session {uuid}");
@@ -906,7 +906,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 imported.session.tiles.len(),
                 imported.dbs.len(),
                 if imported.dbs.len() == 1 { "" } else { "s" },
-                crate::facade::PORT,
+                crate::facade::resolved_port(),
                 imported.session.id
             );
             Ok(0)

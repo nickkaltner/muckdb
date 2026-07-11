@@ -13,8 +13,22 @@ use anyhow::{Context, Result};
 
 use crate::store::{self, Phase, Record};
 
-/// TCP port the daemon's HTTP/WS server binds.
+/// Default TCP port the daemon's HTTP/WS server binds.
 pub const PORT: u16 = 11000;
+
+/// The port the daemon should use, resolved consistently across the process.
+///
+/// Priority: an explicit `--port <N>` CLI flag (which `main` records into the
+/// `MUCKDB_PORT` env var so every consumer — and any spawned child — agrees),
+/// else a pre-existing `MUCKDB_PORT`, else the default [`PORT`]. A `0`/invalid
+/// value falls back to the default.
+pub fn resolved_port() -> u16 {
+    std::env::var("MUCKDB_PORT")
+        .ok()
+        .and_then(|s| s.trim().parse::<u16>().ok())
+        .filter(|&p| p != 0)
+        .unwrap_or(PORT)
+}
 
 /// duckdb flags that consume the following argument as their value. Used when
 /// scanning passthrough args to find the positional database filename.
@@ -62,7 +76,7 @@ pub fn detect_db_path(args: &[String], cwd: &Path) -> Option<String> {
 
 /// Returns true if something is already listening on the daemon port.
 fn daemon_listening() -> bool {
-    let addr = SocketAddr::from(([127, 0, 0, 1], PORT));
+    let addr = SocketAddr::from(([127, 0, 0, 1], resolved_port()));
     TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
@@ -76,8 +90,11 @@ pub fn ensure_daemon() -> Result<()> {
     let exe = std::env::current_exe().context("locating muckdb executable")?;
     // The spawned process daemonizes itself (fork + setsid), so its direct
     // parent exits almost immediately; we reap it below to avoid a zombie.
+    // Propagate the resolved port explicitly so the child re-resolves to the
+    // same value (it re-reads MUCKDB_PORT).
     let mut child = Command::new(exe)
         .arg("--__serve")
+        .env("MUCKDB_PORT", resolved_port().to_string())
         .spawn()
         .context("spawning muckdb daemon")?;
 
