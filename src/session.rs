@@ -92,6 +92,15 @@ pub enum Tile {
         #[serde(default, skip_serializing_if = "is_false")]
         trashed: bool,
     },
+    /// A heading-only tile that groups the panels after it: renders as a section
+    /// divider in the dashboard and as a section header in the contents.
+    Section {
+        name: String,
+        #[serde(default)]
+        title: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        trashed: bool,
+    },
     View {
         name: String,
         #[serde(default)]
@@ -116,19 +125,25 @@ fn is_false(b: &bool) -> bool {
 impl Tile {
     pub fn name(&self) -> &str {
         match self {
-            Tile::Markdown { name, .. } | Tile::View { name, .. } => name,
+            Tile::Markdown { name, .. } | Tile::Section { name, .. } | Tile::View { name, .. } => {
+                name
+            }
         }
     }
 
     pub fn trashed(&self) -> bool {
         match self {
-            Tile::Markdown { trashed, .. } | Tile::View { trashed, .. } => *trashed,
+            Tile::Markdown { trashed, .. }
+            | Tile::Section { trashed, .. }
+            | Tile::View { trashed, .. } => *trashed,
         }
     }
 
     fn set_trashed(&mut self, on: bool) {
         match self {
-            Tile::Markdown { trashed, .. } | Tile::View { trashed, .. } => *trashed = on,
+            Tile::Markdown { trashed, .. }
+            | Tile::Section { trashed, .. }
+            | Tile::View { trashed, .. } => *trashed = on,
         }
     }
 }
@@ -351,6 +366,47 @@ pub fn set_tile_trashed(id: &str, tile: &str, on: bool) -> Result<bool> {
     Ok(true)
 }
 
+/// Where to move a tile within its session's ordering.
+pub enum Move<'a> {
+    Up,
+    Down,
+    /// A 1-based target position.
+    To(usize),
+    Before(&'a str),
+    After(&'a str),
+}
+
+/// Reorder a tile within its session. Returns false if the session, the tile,
+/// or a named anchor (`--before`/`--after`) doesn't exist.
+pub fn move_tile(id: &str, tile: &str, mv: Move) -> Result<bool> {
+    let Some(mut s) = load(id)? else {
+        return Ok(false);
+    };
+    let Some(from) = s.tiles.iter().position(|t| t.name() == tile) else {
+        return Ok(false);
+    };
+    let item = s.tiles.remove(from);
+    let len = s.tiles.len();
+    // Target index within the list *after* the tile has been removed.
+    let insert = match mv {
+        Move::Up => from.saturating_sub(1),
+        Move::Down => (from + 1).min(len),
+        Move::To(pos) => pos.saturating_sub(1).min(len),
+        Move::Before(anchor) => match s.tiles.iter().position(|t| t.name() == anchor) {
+            Some(a) => a,
+            None => return Ok(false),
+        },
+        Move::After(anchor) => match s.tiles.iter().position(|t| t.name() == anchor) {
+            Some(a) => a + 1,
+            None => return Ok(false),
+        },
+    };
+    s.tiles.insert(insert.min(len), item);
+    s.updated = store::now_millis();
+    save(&s)?;
+    Ok(true)
+}
+
 // ---- CLI -----------------------------------------------------------------
 
 /// A tiny `--key value` + positional argument parser for the session CLI.
@@ -360,7 +416,7 @@ struct Args {
 }
 
 /// Flags that take no value — the parser must not eat the next argument.
-const BOOL_FLAGS: &[&str] = &["no-validate"];
+const BOOL_FLAGS: &[&str] = &["no-validate", "up", "down"];
 
 impl Args {
     fn parse(args: &[String]) -> Self {
@@ -671,6 +727,50 @@ pub fn cli(args: &[String]) -> Result<i32> {
             );
             Ok(0)
         }
+        "section" => {
+            let name = session_arg
+                .context("usage: muckdb session section <name> --name TILE --title HEADING")?;
+            let id = slug(&name);
+            let tile_name = p.get("name").context("--name <tile> required")?.to_string();
+            let tile = Tile::Section {
+                name: tile_name.clone(),
+                title: p.get("title").map(str::to_string),
+                trashed: false,
+            };
+            let mut s = load_or_new(&id, None)?;
+            upsert_tile(&mut s, tile);
+            save(&s)?;
+            crate::facade::ensure_daemon()?;
+            println!("set section '{tile_name}' in session {id}");
+            Ok(0)
+        }
+        "move" => {
+            let name = session_arg.context(
+                "usage: muckdb session move <name> --tile T (--up | --down | --to N | --before X | --after X)",
+            )?;
+            let id = slug(&name);
+            let tile = p.get("tile").context("--tile <name> required")?;
+            let mv = if p.get("up").is_some() {
+                Move::Up
+            } else if p.get("down").is_some() {
+                Move::Down
+            } else if let Some(to) = p.get("to") {
+                Move::To(to.parse().context("--to needs a positive integer")?)
+            } else if let Some(b) = p.get("before") {
+                Move::Before(b)
+            } else if let Some(a) = p.get("after") {
+                Move::After(a)
+            } else {
+                bail!("say where to move it: --up, --down, --to N, --before TILE, or --after TILE");
+            };
+            if move_tile(&id, tile, mv)? {
+                crate::facade::ensure_daemon()?;
+                println!("moved tile '{tile}' in session {id}");
+                Ok(0)
+            } else {
+                bail!("no such session '{id}', tile '{tile}', or anchor tile");
+            }
+        }
         "tile" => {
             let name = session_arg
                 .context("usage: muckdb session tile <name> --name T --db D (--view V|--sql S)")?;
@@ -829,9 +929,11 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|tile|screenshot|export|import|rm> ...\n\
+                "usage: muckdb session <create|list|post|section|tile|move|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
+                 section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
+                 move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \

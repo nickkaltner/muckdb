@@ -541,6 +541,12 @@
   .toc-item .toc-kind { flex: none; color: var(--faint); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; }
   .toc-item:hover { background: var(--raised); color: var(--fg); }
   .toc-item.active { color: var(--orange); border-left-color: var(--orange); }
+  /* Section headers stand out from tile entries and group the items under them;
+     tile entries after a section get a touch of indent to show the grouping. */
+  .toc-section { display: block; width: 100%; text-align: left; font: inherit; font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; color: var(--fg); background: none; border: 0; cursor: pointer; padding: 14px 10px 4px; }
+  .toc-section:first-child { padding-top: 2px; }
+  .toc-section:hover { color: var(--orange); }
+  .toc-section.active { color: var(--orange); }
   /* Trash section: hidden panels wait here; clicking one restores it. */
   .toc-trash-head { margin-top: 16px; padding-top: 10px; border-top: 1px solid var(--line-soft); }
   .toc-item.trash .toc-label { color: var(--faint); }
@@ -557,6 +563,12 @@
   .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
   .panel { position: relative; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
+  /* Section tiles: a heading divider, not a boxed panel. */
+  .panel.section-panel { background: none; box-shadow: none; overflow: visible; }
+  .section-bar { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 12px 6px 8px; border-bottom: 2px solid var(--line); }
+  .section-title { font-family: var(--mono); font-size: 20px; line-height: 1.2; color: var(--fg); margin: 0; }
+  .section-panel .panel-actions { opacity: 0; transition: opacity 0.14s; }
+  .section-panel:hover .panel-actions { opacity: 1; }
   /* Height grip: an ⌐ corner in the bottom-right of every tile — faint while the
      panel is hovered, solid on the grip itself; drag up/down to resize. */
   .panel-grip { position: absolute; right: 0; bottom: 0; width: 22px; height: 22px; cursor: ns-resize; opacity: 0; z-index: 4; }
@@ -785,7 +797,10 @@
   })();
   if (SHOT) { document.documentElement.classList.add("shot"); document.body.classList.add("shot"); }
   let charts = [];
-  let tocObserver = null;
+  let tocSpyCleanup = null;
+  // A TOC click pins its entry active through the smooth scroll so the spy can't
+  // briefly flip to the panel above as the scroll settles.
+  let tocPinName = null, tocPinUntil = 0;
 
   // ---- themes -----------------------------------------------------------
   // Each theme sets the base CSS variables (gradients/derived vars recompute
@@ -2888,13 +2903,18 @@
   }
   // One TOC entry per panel, in order; clicking jumps to it. Markdown panels are
   // included (they're usually the intro/summary you most want to jump to).
-  function tocKind(t) { return t.type === "markdown" ? "md" : ((t.chart && t.chart.kind) || "table"); }
+  function tocKind(t) { return t.type === "markdown" ? "md" : t.type === "section" ? "section" : ((t.chart && t.chart.kind) || "table"); }
   function renderToc(tiles, trashed) {
     const el = $("session-toc"); if (!el) return;
     trashed = trashed || [];
-    if ((!tiles || !tiles.length) && !trashed.length) { el.innerHTML = ""; if (tocObserver) tocObserver.disconnect(); return; }
+    if ((!tiles || !tiles.length) && !trashed.length) { el.innerHTML = ""; if (tocSpyCleanup) tocSpyCleanup(); return; }
     const items = (tiles || []).map((t) => {
       const label = t.title || t.name;
+      // Sections render as headers in the contents; other tiles as entries
+      // beneath them.
+      if (t.type === "section") {
+        return `<button class="toc-section" data-toc="${attr(t.name)}" title="${attr(label)}">${esc(label)}</button>`;
+      }
       return `<button class="toc-item" data-toc="${attr(t.name)}" title="${attr(label)}"><span class="toc-label">${esc(label)}</span><span class="toc-kind">${esc(tocKind(t))}</span></button>`;
     }).join("");
     // Trashed panels: clicking one restores it to the contents above.
@@ -2907,29 +2927,41 @@
     el.innerHTML = `<div class="toc-head">contents</div>` + items + trashItems;
     setupTocSpy();
   }
+  function setTocActive(name) {
+    document.querySelectorAll("#session-toc .toc-item, #session-toc .toc-section")
+      .forEach((it) => it.classList.toggle("active", it.dataset.toc === name));
+  }
   function scrollToPanel(name) {
     const panel = document.querySelector(`#panels [data-tile="${cssEsc(name)}"]`);
-    if (panel) panel.scrollIntoView({ block: "start", behavior: "smooth" });
+    if (!panel) return;
+    // Pin + highlight immediately so clicking always lands the highlight on the
+    // clicked entry, even before the smooth scroll settles.
+    tocPinName = name; tocPinUntil = Date.now() + 900;
+    setTocActive(name);
+    panel.scrollIntoView({ block: "start", behavior: "smooth" });
   }
-  // Highlight the TOC entry for whichever panel is nearest the top of the scroll
-  // area, so the contents list tracks the reader's position.
+  // Highlight the TOC entry for the panel the reader is on: the last panel whose
+  // top has passed a line just below the scroller top. (DOM-order-first + a top
+  // band used to mis-highlight the panel above the one just scrolled to.)
   function setupTocSpy() {
-    if (tocObserver) tocObserver.disconnect();
-    const scroller = $("panels-scroll"); if (!scroller || !window.IntersectionObserver) return;
+    if (tocSpyCleanup) tocSpyCleanup();
+    const scroller = $("panels-scroll"); if (!scroller) return;
     const items = {};
-    document.querySelectorAll("#session-toc .toc-item").forEach((it) => { items[it.dataset.toc] = it; });
-    const visible = new Set();
-    tocObserver = new IntersectionObserver((entries) => {
-      entries.forEach((e) => {
-        const name = e.target.dataset.tile; if (!name) return;
-        if (e.isIntersecting) visible.add(name); else visible.delete(name);
-      });
+    document.querySelectorAll("#session-toc .toc-item, #session-toc .toc-section").forEach((it) => { items[it.dataset.toc] = it; });
+    const update = () => {
+      if (tocPinName && Date.now() < tocPinUntil) return; // honour a recent click
       const panels = [...document.querySelectorAll("#panels .panel")];
-      const top = panels.find((p) => visible.has(p.dataset.tile));
-      Object.values(items).forEach((it) => it.classList.remove("active"));
-      if (top && items[top.dataset.tile]) items[top.dataset.tile].classList.add("active");
-    }, { root: scroller, rootMargin: "0px 0px -65% 0px", threshold: 0 });
-    document.querySelectorAll("#panels .panel").forEach((p) => tocObserver.observe(p));
+      if (!panels.length) return;
+      const line = scroller.getBoundingClientRect().top + 40;
+      let active = panels[0];
+      for (const p of panels) { if (p.getBoundingClientRect().top <= line) active = p; else break; }
+      if (active && items[active.dataset.tile]) setTocActive(active.dataset.tile);
+    };
+    let raf = 0;
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); }); };
+    scroller.addEventListener("scroll", onScroll, { passive: true });
+    tocSpyCleanup = () => { scroller.removeEventListener("scroll", onScroll); tocSpyCleanup = null; };
+    update();
   }
   // Keyboard navigation of session panels — mirrors the picker: a left amber bar
   // marks the selection, and the chosen panel scrolls to the top of its container.
@@ -3071,6 +3103,12 @@
     return `<button class="panel-act icon" data-trash="${attr(name)}" title="Hide panel (restore from the trash in contents)" aria-label="Hide panel">${SVG_TRASH_X}</button>`;
   }
   function panelHtml(t) {
+    if (t.type === "section") {
+      // A heading-only divider that groups the panels after it — not a boxed
+      // panel. Still a .panel with data-tile so TOC spy / scroll-to work.
+      const label = t.title || t.name;
+      return `<div class="panel section-panel" data-tile="${attr(t.name)}"><div class="section-bar"><h2 class="section-title">${esc(label)}</h2><span class="panel-actions">${trashBtn(t.name)}</span></div></div>`;
+    }
     if (t.type === "markdown") {
       // Markdown panels size to their prose — no resize grip (data tiles keep it).
       return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;

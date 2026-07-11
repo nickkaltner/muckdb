@@ -55,6 +55,8 @@ muckdb session tile pond-analysis --name species --title "By species" \
 muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
+muckdb session section <name> --name TILE --title HEADING
+muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
@@ -75,6 +77,15 @@ muckdb session rm <name> [--tile TILE]
   `muckdb ls session <id>` (`claude_session`).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
+- **Lay the report out, and keep it laid out.** Tiles render in post order;
+  `session move` reorders one (`--up`/`--down`, `--to N` for a 1-based position,
+  or `--before`/`--after TILE`). `session section --name S --title "Heading"` adds
+  a heading-only tile that renders as a divider in the dashboard and as a section
+  header in the contents, grouping the panels after it. A dashboard is a document,
+  not an append-only log: **each time you add tiles, re-evaluate the section
+  structure and reorganise** (does it need a new section? are related tiles
+  adjacent? is the order still a sensible narrative?) with `session section` and
+  `session move`, so readability holds as the report grows.
 - **Posts are validated against the database.** A missing view, unparseable
   `--sql`, or a `--x`/`--y` that isn't a column of the result fails immediately
   with a "did you mean" suggestion and the available names — fix and re-post.

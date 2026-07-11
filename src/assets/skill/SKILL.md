@@ -181,6 +181,8 @@ muckdb session tile pond-analysis --name species --title "By species" \
 muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
+muckdb session section <name> --name TILE --title HEADING
+muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
@@ -206,6 +208,21 @@ muckdb session rm <name> [--tile TILE]
   `--no-validate` skips the check (e.g. posting before the view exists).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
+- **Lay the report out, and keep it laid out.** Tiles render in post order;
+  `session move` reorders one (`--up`/`--down`, `--to N` for a 1-based position,
+  or `--before`/`--after TILE`). `session section --name S --title "Heading"` adds
+  a heading-only tile that renders as a divider in the dashboard and a section
+  header in the contents, grouping the panels after it. Use sections to structure
+  a long report and `move` to sequence it.
+  - **A dashboard is a document, not an append-only log.** Every time you add
+    tiles, **re-evaluate the section structure and reorganise** so it still reads
+    top-to-bottom: does the new tile belong under an existing section or does it
+    need a new one? Are related tiles adjacent? Is the order still a sensible
+    narrative (summary/overview first, then supporting detail)? Use `session
+    section` and `session move` to fix it — `move --before`/`--after` to slot a
+    tile beside its section, a new `section` when a group of tiles has formed.
+    Don't just append to the end and leave the layout to drift; readability is
+    part of the deliverable, so tidy the structure as the report grows.
 - `--md -` reads the markdown from stdin (good for long/heredoc content). An
   inline `--md "..."` honours `\n`/`\t` escapes (shells leave them literal
   inside double quotes), so `--md "# Title\n\nBody"` renders as real lines.
