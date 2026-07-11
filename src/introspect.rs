@@ -118,6 +118,11 @@ pub struct Filter {
     /// Match rows where the column IS NULL (no `value` accompanies this).
     #[serde(default)]
     pub is_null: bool,
+    /// Negate the filter: exclude the matching value/null/containment instead
+    /// of keeping it (a "NOT" filter — `≠`, `is not NULL`, `∌`). NULL-preserving
+    /// for value filters (`IS DISTINCT FROM`).
+    #[serde(default)]
+    pub negate: bool,
 }
 
 impl Filter {
@@ -159,7 +164,7 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
     // filter joins its column's OR group ("QLD or missing" is one choice set).
     let mut by_col: Vec<(String, bool, Vec<String>, bool)> = Vec::new();
     for f in filters {
-        if f.value.is_none() && !f.is_null {
+        if f.negate || (f.value.is_none() && !f.is_null) {
             continue;
         }
         let entry = match by_col
@@ -204,6 +209,26 @@ pub fn build_where(columns: &[String], q: Option<&str>, filters: &[Filter]) -> O
         } else {
             format!("({})", ors.join(" OR "))
         });
+    }
+
+    // Negated (NOT) filters: each excludes a value/null/containment and ANDs
+    // with everything else (so several negations on one column exclude all of
+    // them). Value negation uses `IS DISTINCT FROM` so NULL rows are retained.
+    for f in filters.iter().filter(|f| f.negate) {
+        let col = quote_ident(&f.column);
+        let clause = match &f.value {
+            Some(v) if f.contains => format!(
+                "NOT list_contains(CAST({col} AS VARCHAR[]), '{}')",
+                escape_literal(v)
+            ),
+            Some(v) => format!(
+                "CAST({col} AS VARCHAR) IS DISTINCT FROM '{}'",
+                escape_literal(v)
+            ),
+            None if f.is_null => format!("{col} IS NOT NULL"),
+            None => continue,
+        };
+        clauses.push(clause);
     }
 
     // Range filters: numeric column bounded by min and/or max.
@@ -1273,6 +1298,7 @@ mod tests {
             tmax: None,
             contains: false,
             is_null: false,
+            negate: false,
         }
     }
     /// A numeric range filter.
@@ -1286,6 +1312,7 @@ mod tests {
             tmax: None,
             contains: false,
             is_null: false,
+            negate: false,
         }
     }
     /// An IS NULL filter.
@@ -1299,6 +1326,7 @@ mod tests {
             tmax: None,
             contains: false,
             is_null: true,
+            negate: false,
         }
     }
     /// A temporal range filter.
@@ -1312,6 +1340,15 @@ mod tests {
             tmax: tmax.map(str::to_string),
             contains: false,
             is_null: false,
+            negate: false,
+        }
+    }
+
+    /// A negated (NOT) value filter.
+    fn nvf(column: &str, value: &str) -> Filter {
+        Filter {
+            negate: true,
+            ..vf(column, value)
         }
     }
 
@@ -1489,6 +1526,68 @@ mod tests {
         assert_eq!(
             build_where(&cols, None, &[nf("state"), vf("market", "US")]).unwrap(),
             "\"state\" IS NULL AND CAST(\"market\" AS VARCHAR) = 'US'"
+        );
+    }
+
+    #[test]
+    fn build_where_negated_value_uses_is_distinct_from() {
+        // NOT filter excludes the value while keeping NULLs and other values.
+        let cols = vec!["species".to_string()];
+        assert_eq!(
+            build_where(&cols, None, &[nvf("species", "coot")]).unwrap(),
+            "CAST(\"species\" AS VARCHAR) IS DISTINCT FROM 'coot'"
+        );
+    }
+
+    #[test]
+    fn build_where_negated_is_null_is_not_null() {
+        let cols = vec!["state".to_string()];
+        let f = Filter {
+            negate: true,
+            ..nf("state")
+        };
+        assert_eq!(
+            build_where(&cols, None, &[f]).unwrap(),
+            "\"state\" IS NOT NULL"
+        );
+    }
+
+    #[test]
+    fn build_where_negated_contains_wraps_in_not() {
+        let cols = vec!["port_gbps".to_string()];
+        let mut f = nvf("port_gbps", "10.0");
+        f.contains = true;
+        assert_eq!(
+            build_where(&cols, None, &[f]).unwrap(),
+            "NOT list_contains(CAST(\"port_gbps\" AS VARCHAR[]), '10.0')"
+        );
+    }
+
+    #[test]
+    fn build_where_mixed_positive_and_negated_same_column_ands() {
+        // A `=` and a `≠` on the same column are distinct filters: the positive
+        // OR-group ANDs with the negated clause.
+        let cols = vec!["species".to_string()];
+        assert_eq!(
+            build_where(
+                &cols,
+                None,
+                &[vf("species", "coot"), nvf("species", "teal")]
+            )
+            .unwrap(),
+            "CAST(\"species\" AS VARCHAR) = 'coot' AND \
+             CAST(\"species\" AS VARCHAR) IS DISTINCT FROM 'teal'"
+        );
+        // Two negations on one column exclude both (AND).
+        assert_eq!(
+            build_where(
+                &cols,
+                None,
+                &[nvf("species", "coot"), nvf("species", "teal")]
+            )
+            .unwrap(),
+            "CAST(\"species\" AS VARCHAR) IS DISTINCT FROM 'coot' AND \
+             CAST(\"species\" AS VARCHAR) IS DISTINCT FROM 'teal'"
         );
     }
 

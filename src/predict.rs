@@ -1120,6 +1120,7 @@ mod tests {
             tmax: None,
             contains: false,
             is_null: false,
+            negate: false,
         };
         let scoped = predict(&db, "t", None, std::slice::from_ref(&f)).unwrap();
         assert_eq!(scoped.row_count, 100);

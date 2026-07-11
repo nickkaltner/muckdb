@@ -290,6 +290,7 @@
   .cellf { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 7px; vertical-align: middle; padding: 0; font: inherit; font-size: 13px; line-height: 1; color: var(--orange); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
   @media (hover: hover) and (pointer: fine) { table.preview td:hover .cellf { visibility: visible; } }
   .cellf.on { visibility: visible; color: var(--fg); border-color: var(--orange-dim); }
+  .cellf + .cellf { margin-left: 3px; }
   .cellf:hover { border-color: var(--orange); }
   .pager { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
   .pager button { font: inherit; font-size: 12px; background: var(--surface); color: var(--fg); border: 1px solid var(--line); border-radius: 5px; padding: 4px 12px; cursor: pointer; }
@@ -1141,8 +1142,11 @@
   function fmtDMY(iso) { if (!iso) return "…"; const m = String(iso).slice(0, 10).split("-"); return m.length === 3 ? `${m[2]}/${m[1]}/${m[0]}` : iso; }
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
   function cssEsc(s) { return String(s).replace(/["\\]/g, "\\$&"); }
-  function hasFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val); }
-  function hasNullFilter(col) { return state.filters.some((f) => f.column === col && f.is_null); }
+  function hasFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val && !f.negate); }
+  function hasNullFilter(col) { return state.filters.some((f) => f.column === col && f.is_null && !f.negate); }
+  // NOT (negated) counterparts — a value is independently toggleable as `=`/`≠`.
+  function hasNotFilter(col, val) { return state.filters.some((f) => f.column === col && f.value === val && f.negate); }
+  function hasNotNullFilter(col) { return state.filters.some((f) => f.column === col && f.is_null && f.negate); }
   function rangeFilter(col) { return state.filters.find((f) => f.column === col && f.value === undefined && f.tmin === undefined && !f.is_null); }
   function timeFilter(col) { return state.filters.find((f) => f.column === col && f.tmin !== undefined || (f.column === col && f.tmax !== undefined)); }
 
@@ -1589,13 +1593,15 @@
   function filterChipsHtml() {
     return state.filters.map((f, i) => {
       let label;
-      if (f.is_null) label = `<span class="col">${esc(f.column)}</span> is NULL`;
+      if (f.is_null) label = `<span class="col">${esc(f.column)}</span> is ${f.negate ? "not " : ""}NULL`;
       else if (f.value !== undefined) {
         // Containment filters read "∋" (the array holds the value); values go
         // through the column's display format like the facet they came from.
+        // Negated filters read "≠" / "∌".
         const fmt = colFmt(state.selDb, f.column, state.selTable);
         const disp = fmt ? applyFmtHtml(fmt, f.value) : esc(f.value);
-        label = `<span class="col">${esc(f.column)}</span> ${f.contains ? "∋" : "="} ${disp}`;
+        const op = f.negate ? (f.contains ? "∌" : "≠") : (f.contains ? "∋" : "=");
+        label = `<span class="col">${esc(f.column)}</span> ${op} ${disp}`;
       } else if (f.tmin !== undefined || f.tmax !== undefined) label = `<span class="col">${esc(f.column)}</span>: ${fmtDMY(f.tlo || f.tmin)}→${fmtDMY(f.thi || f.tmax)}`;
       else label = `<span class="col">${esc(f.column)}</span>: ${fmtNum(f.min)}–${fmtNum(f.max)}`;
       return `<button class="fchip" data-rmfilter="${i}" aria-label="remove filter — ${esc(f.column)}">${label}<span class="x">✕</span></button>`;
@@ -1722,6 +1728,10 @@
         const on = hasNullFilter(col);
         const t = on ? `Remove filter ${col} is NULL` : `Filter ${col} is NULL`;
         b = `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
+        // Sibling NOT button — filters "col is not NULL".
+        const noton = hasNotNullFilter(col);
+        const nt = noton ? `Remove filter ${col} is not NULL` : `Filter ${col} is not NULL`;
+        b += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">≠</button>`;
       }
       return `<td class="null">NULL${b}</td>`;
     }
@@ -1742,7 +1752,7 @@
         const bare = f ? Object.assign({}, f, { prefix: undefined, suffix: undefined }) : null;
         const fmtEl = (x) => x === null ? "NULL" : String(bare ? applyFmt(bare, x) : x);
         const selVals = (db === state.selDb && table === state.selTable)
-          ? state.filters.filter((ft) => ft.column === col && ft.contains && ft.value !== undefined).map((ft) => ft.value)
+          ? state.filters.filter((ft) => ft.column === col && ft.contains && ft.value !== undefined && !ft.negate).map((ft) => ft.value)
           : [];
         const isSel = (x) => x !== null && selVals.some((sv) => String(x) === sv || Number(x) === Number(sv));
         const idxs = v.map((_, i) => i);
@@ -1780,6 +1790,10 @@
       const on = hasFilter(col, String(v));
       const t = on ? `Remove filter ${col} = ${String(v)}` : `Filter ${col} = ${String(v)}`;
       inner += `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
+      // Sibling NOT button — filters "col ≠ value" (independent of the "=" one).
+      const noton = hasNotFilter(col, String(v));
+      const nt = noton ? `Remove filter ${col} ≠ ${String(v)}` : `Filter ${col} ≠ ${String(v)}`;
+      inner += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">≠</button>`;
     }
     return `<td>${inner}</td>`;
   }
@@ -4065,9 +4079,29 @@
   }
   // Toggle the special "column IS NULL" filter (the hover "+" on a NULL cell).
   function toggleNullFilter(column) {
-    const i = state.filters.findIndex((f) => f.column === column && f.is_null);
+    const i = state.filters.findIndex((f) => f.column === column && f.is_null && !f.negate);
     if (i >= 0) state.filters.splice(i, 1);
     else state.filters.push({ column, is_null: true });
+    afterFilterChange();
+  }
+  // Toggle a NOT filter (the hover "≠" beside the "+"): exclude this value —
+  // `col IS DISTINCT FROM v`, kept independent of the positive `=` filter.
+  function toggleNotFilter(column, value) {
+    const i = state.filters.findIndex((f) => f.column === column && f.value === value && f.negate);
+    if (i >= 0) state.filters.splice(i, 1);
+    else {
+      const fac = state.facets.find((f) => f.name === column);
+      const flt = { column, value, negate: true };
+      if (fac && fac.list) flt.contains = true;
+      state.filters.push(flt);
+    }
+    afterFilterChange();
+  }
+  // Toggle a negated "column IS NOT NULL" filter.
+  function toggleNotNullFilter(column) {
+    const i = state.filters.findIndex((f) => f.column === column && f.is_null && f.negate);
+    if (i >= 0) state.filters.splice(i, 1);
+    else state.filters.push({ column, is_null: true, negate: true });
     afterFilterChange();
   }
   // Show/hide a column in the rows table via its facet eye. Filtering/faceting on
@@ -4322,7 +4356,8 @@
     const eye = ev.target.closest("[data-eye]"); if (eye) { toggleColHidden(eye.dataset.eye); return; }
     const facet = ev.target.closest("[data-fcol]");
     if (facet) {
-      if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval);
+      if (facet.dataset.fnot) { if (facet.dataset.fnull) toggleNotNullFilter(facet.dataset.fcol); else toggleNotFilter(facet.dataset.fcol, facet.dataset.fval); }
+      else if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval);
       // A pick from the slide-over drawer dismisses it; a pick inside the
       // "show all" modal keeps it open for multi-select but re-ticks its rows.
       if (facet.closest("#facet-panel")) closeFacetDrawer();
