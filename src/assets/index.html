@@ -289,7 +289,7 @@
      so columns don't shift on hover. Stays visible as "−" while active. */
   .cellf { visibility: hidden; display: inline-flex; align-items: center; justify-content: center; width: 16px; height: 16px; margin-left: 7px; vertical-align: middle; padding: 0; font: inherit; font-size: 13px; line-height: 1; color: var(--orange); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; cursor: pointer; }
   @media (hover: hover) and (pointer: fine) { table.preview td:hover .cellf { visibility: visible; } }
-  .cellf.on { visibility: visible; color: var(--fg); border-color: var(--orange-dim); }
+  .cellf.on { visibility: visible; color: var(--orange); border-color: var(--orange); }
   .cellf + .cellf { margin-left: 3px; }
   .cellf:hover { border-color: var(--orange); }
   .pager { display: flex; align-items: center; gap: 14px; margin-top: 10px; font-size: 12px; color: var(--muted); }
@@ -1631,6 +1631,7 @@
         <span class="tp-name">${esc(state.selTable)}</span>
         ${t && t.is_view ? '<span class="view-pill" title="This is a SQL view, not a base table">view</span>' : ""}
         <span class="tp-rows">${colCount}</span>
+        <span class="tp-rows" id="tp-results"></span>
         <span class="tp-actions">${exp}
           <span class="seg">
             <button data-sub="rows" class="${state.subview === "rows" ? "active" : ""}">rows</button>
@@ -1686,6 +1687,8 @@
       const data = await (await fetch("/api/preview?" + params.toString())).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       state.total = data.total || 0;
+      const rc = $("tp-results");
+      if (rc) rc.textContent = `${state.total.toLocaleString()} ${state.total === 1 ? "result" : "results"}`;
       const allCols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">No rows match the current filters.</div>'; return; }
       // Columns whose facet eye is closed are dropped from the table (the rows
@@ -1727,11 +1730,11 @@
       if (nullFilterable) {
         const on = hasNullFilter(col);
         const t = on ? `Remove filter ${col} is NULL` : `Filter ${col} is NULL`;
-        b = `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
-        // Sibling NOT button — filters "col is not NULL".
+        b = `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" title="${attr(t)}" aria-label="${attr(t)}">+</button>`;
+        // Sibling exclude button — filters "col is not NULL".
         const noton = hasNotNullFilter(col);
         const nt = noton ? `Remove filter ${col} is not NULL` : `Filter ${col} is not NULL`;
-        b += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">≠</button>`;
+        b += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fnull="1" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">−</button>`;
       }
       return `<td class="null">NULL${b}</td>`;
     }
@@ -1783,17 +1786,18 @@
       const title = f.link_title ? esc(linkSubst(f.link_title, v, row, allCols, false)) : inner;
       inner = `<a class="cell-link" href="${attr(url)}" target="_blank" rel="noopener noreferrer">${title}</a>`;
     }
-    // Categorical columns (ones with a values facet) get a hover "+" that adds
-    // a filter on this column+value; it stays visible as "−" while the filter
-    // is on. Shares the [data-fcol] click path with the facet buttons.
+    // Categorical columns (ones with a values facet) get a hover "+" (include:
+    // filter col = value) and "−" (exclude: filter col ≠ value); each stays
+    // visible and highlighted while its filter is on. Shares the [data-fcol]
+    // click path with the facet buttons.
     if (filterable) {
       const on = hasFilter(col, String(v));
       const t = on ? `Remove filter ${col} = ${String(v)}` : `Filter ${col} = ${String(v)}`;
-      inner += `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" title="${attr(t)}" aria-label="${attr(t)}">${on ? "−" : "+"}</button>`;
-      // Sibling NOT button — filters "col ≠ value" (independent of the "=" one).
+      inner += `<button class="cellf${on ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" title="${attr(t)}" aria-label="${attr(t)}">+</button>`;
+      // Sibling exclude button — filters "col ≠ value" (independent of the "=" one).
       const noton = hasNotFilter(col, String(v));
       const nt = noton ? `Remove filter ${col} ≠ ${String(v)}` : `Filter ${col} ≠ ${String(v)}`;
-      inner += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">≠</button>`;
+      inner += `<button class="cellf${noton ? " on" : ""}" data-fcol="${attr(col)}" data-fval="${attr(String(v))}" data-fnot="1" title="${attr(nt)}" aria-label="${attr(nt)}">−</button>`;
     }
     return `<td>${inner}</td>`;
   }
@@ -4064,10 +4068,18 @@
   }
 
   // ---- mutations --------------------------------------------------------
+  // Drop every filter matching `pred` (used to clear the conflicting opposite
+  // before applying the other — `=` and `≠` on the same value are mutually
+  // exclusive, as are IS NULL / IS NOT NULL).
+  function dropFilters(pred) {
+    for (let j = state.filters.length - 1; j >= 0; j--) if (pred(state.filters[j])) state.filters.splice(j, 1);
+  }
   function toggleFilter(column, value) {
-    const i = state.filters.findIndex((f) => f.column === column && f.value === value);
+    const i = state.filters.findIndex((f) => f.column === column && f.value === value && !f.negate);
     if (i >= 0) state.filters.splice(i, 1);
     else {
+      // Applying "=" removes any conflicting "≠" on the same value.
+      dropFilters((f) => f.column === column && f.value === value && f.negate);
       // A list facet filters by containment: the row's array must hold the
       // value (the 10.0 facet matches [1, 10], [10] and [10, 400] alike).
       const fac = state.facets.find((f) => f.name === column);
@@ -4081,15 +4093,20 @@
   function toggleNullFilter(column) {
     const i = state.filters.findIndex((f) => f.column === column && f.is_null && !f.negate);
     if (i >= 0) state.filters.splice(i, 1);
-    else state.filters.push({ column, is_null: true });
+    else {
+      dropFilters((f) => f.column === column && f.is_null && f.negate);
+      state.filters.push({ column, is_null: true });
+    }
     afterFilterChange();
   }
-  // Toggle a NOT filter (the hover "≠" beside the "+"): exclude this value —
-  // `col IS DISTINCT FROM v`, kept independent of the positive `=` filter.
+  // Toggle a NOT filter (the hover "−" beside the "+"): exclude this value —
+  // `col IS DISTINCT FROM v`. Mutually exclusive with the positive `=` filter.
   function toggleNotFilter(column, value) {
     const i = state.filters.findIndex((f) => f.column === column && f.value === value && f.negate);
     if (i >= 0) state.filters.splice(i, 1);
     else {
+      // Applying "≠" removes any conflicting "=" on the same value.
+      dropFilters((f) => f.column === column && f.value === value && !f.negate);
       const fac = state.facets.find((f) => f.name === column);
       const flt = { column, value, negate: true };
       if (fac && fac.list) flt.contains = true;
@@ -4101,7 +4118,10 @@
   function toggleNotNullFilter(column) {
     const i = state.filters.findIndex((f) => f.column === column && f.is_null && f.negate);
     if (i >= 0) state.filters.splice(i, 1);
-    else state.filters.push({ column, is_null: true, negate: true });
+    else {
+      dropFilters((f) => f.column === column && f.is_null && !f.negate);
+      state.filters.push({ column, is_null: true, negate: true });
+    }
     afterFilterChange();
   }
   // Show/hide a column in the rows table via its facet eye. Filtering/faceting on
