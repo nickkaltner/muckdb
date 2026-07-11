@@ -487,6 +487,16 @@ muckdb session screenshot pond-analysis --tile species --out species.png
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
+- **Order columns by how filterable they are — most-filtered first, view-only
+  last.** In the `SELECT` list of a view (and base tables), lead with the columns
+  a human will actually facet, search, and filter on — status, category, region,
+  name, dates, amounts — because the explorer shows and facets columns in order.
+  Push columns that can't be meaningfully filtered to the end: `latitude`/
+  `longitude` are only useful on a map (you can't sensibly filter a raw coordinate
+  by hand), and a bare `id`/`uuid` is for viewing/linking, not filtering. So a
+  natural order is *filter dimensions → measures → id/coords last*, e.g.
+  `SELECT status, region, plan, mrr, created, id, latitude, longitude FROM …` —
+  not `id` first out of habit.
 - **Caption and label every tile.** Always pass `--caption` (what it shows + the
   takeaway) and, on charts, `--title`/`--xlabel`/`--ylabel`. An unlabelled panel
   isn't done — see the caption note in the command reference above.

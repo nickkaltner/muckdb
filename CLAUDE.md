@@ -292,6 +292,12 @@ breaks the tile out of the centred column so every column is visible.
 - **Aggregate in SQL, not in the chart.** A tile plots rows as-is, so write the
   view to return exactly the series you want (`GROUP BY`, `ORDER BY`, a sensible
   `LIMIT`).
+- **Order columns most-filterable first, view-only last.** The explorer shows and
+  facets columns in `SELECT` order, so lead with the dimensions a human actually
+  filters on (status, category, region, name, dates, amounts) and push columns
+  that can't be meaningfully filtered to the end — `latitude`/`longitude` (only
+  useful on a map) and bare `id`/`uuid` (for viewing/linking, not filtering). Order
+  as *filter dimensions → measures → id/coords last*, not `id` first out of habit.
 - **Caption and label every tile.** Always pass `--caption`, and on charts
   `--title`/`--xlabel`/`--ylabel` — an unlabelled panel isn't done.
 - **Format numeric columns before posting tiles.** Set a `muckdb format` for every
