@@ -3501,9 +3501,10 @@
   const WM_W = 192, WM_H = 48;
   const WM_LON_W = -180, WM_LON_E = 180, WM_LAT_T = 84, WM_LAT_B = -56;
   // The hi-fi SVG map (/worldmap.svg) is the amCharts "worldLow" equirectangular
-  // export (viewBox "-8.85 68.05 2300 1111.7"). Its projection is linear in
-  // lon/lat; these constants were calibrated against 26 countries (max residual
-  // <9px on the 2300px map), so a point lands on the right coastline.
+  // export, cropped to viewBox "-8.85 68.05 2300 907" (Antarctica removed). Its
+  // projection is linear in lon/lat; these constants were calibrated against 26
+  // countries (max residual <9px), so a point lands on the right coastline. The
+  // crop only trims the viewBox — the same lon/lat→SVG mapping still holds.
   const wmSvgX = (lon) => 6.38188 * lon + 1140.51;
   const wmSvgY = (lat) => -6.32404 * lat + 601.48;
   // Map render mode ("ascii" | "svg"), global + persisted; toggled per map tile.
