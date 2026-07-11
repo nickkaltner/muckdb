@@ -78,8 +78,9 @@ test.describe('map tile', () => {
     await panel.locator('.wm-mode[data-mapmode="svg"]').click();
     await expect(panel.locator('.wm-svg')).toBeVisible();
 
-    // One arc per connection row (3 in the fixture), plus endpoint dots.
-    await expect(panel.locator('.wm-svg .wm-arcs .wm-arc')).toHaveCount(3);
+    // At least one arc per connection row (a wrapped arc adds a second copy),
+    // plus endpoint dots.
+    expect(await panel.locator('.wm-svg .wm-arcs .wm-arc').count()).toBeGreaterThanOrEqual(3);
     expect(await panel.locator('.wm-svg .wm-dots circle').count()).toBeGreaterThan(0);
     // Labels for each connection, and they're the LAST group (drawn on top).
     await expect(panel.locator('.wm-svg .wm-conn-labels .wm-arc-label')).toHaveCount(3);
@@ -95,6 +96,15 @@ test.describe('map tile', () => {
     // raw projected endpoint. Just assert it's a quadratic curve (M…Q…).
     const d = await panel.locator('.wm-svg .wm-arc').first().getAttribute('d');
     expect(d).toMatch(/^M[\d.\s-]+Q/);
+
+    // The fixture's New York → Sydney spans >180° of longitude, so it takes the
+    // shorter way round the globe: a second copy shifted a full map-width (a
+    // translate transform) renders the piece that wraps to the other edge.
+    const translated = await panel.locator('.wm-svg .wm-arc[transform*="translate"]').count();
+    expect(translated).toBeGreaterThanOrEqual(1);
+
+    // Labels carry a subtle rounded background pill (one per connection).
+    await expect(panel.locator('.wm-svg .wm-conn-labels .wm-label-bg')).toHaveCount(3);
 
     // Hovering a label shows the same tooltip as hovering its arc: the label
     // carries the same data-tip and triggers the shared marker tooltip.
@@ -115,7 +125,7 @@ test.describe('map tile', () => {
     const overlay = panel.locator('.wm-ascii-overlay');
     await expect(overlay).toBeVisible();
     await expect(panel.locator('.wm-ascii-stage pre.worldmap')).toBeVisible();
-    await expect(overlay.locator('.wm-arcs .wm-arc')).toHaveCount(3);
+    expect(await overlay.locator('.wm-arcs .wm-arc').count()).toBeGreaterThanOrEqual(3);
     await expect(overlay.locator('.wm-conn-labels .wm-arc-label')).toHaveCount(3);
     expect(await overlay.locator('.wm-dots circle').count()).toBeGreaterThan(0);
   });
@@ -127,11 +137,25 @@ test.describe('map tile', () => {
     await expect(panel.locator('.wm-svg')).toBeVisible();
     // The country group must resolve to a real (non-black) fill even though the
     // colour comes from currentColor — a regression guard against the cached-SVG
-    // black-map bug. Opacity keeps it faint; the resolved colour is the fg.
-    const grp = panel.locator('.wm-svg #polygons');
-    const fill = await grp.evaluate((el) => getComputedStyle(el).fill);
+    // black-map bug. The faintness comes from the #land wrapper's group opacity.
+    const fill = await panel.locator('.wm-svg #polygons').evaluate((el) => getComputedStyle(el).fill);
     expect(fill).not.toBe('rgb(0, 0, 0)');
-    const op = await grp.evaluate((el) => parseFloat(getComputedStyle(el).fillOpacity));
+    const op = await panel.locator('.wm-svg #land').evaluate((el) => parseFloat(getComputedStyle(el).opacity));
     expect(op).toBeLessThan(0.5);
+  });
+
+  test('the hi-fi sea has a subtle animated static layer, masked to open water', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="map"]');
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+    // Animated noise (feTurbulence with an <animate>), rendered subtly and clipped
+    // to the sea via the land mask.
+    await expect(panel.locator('.wm-svg #wm-static feTurbulence animate')).toHaveCount(1);
+    const stat = panel.locator('.wm-svg .wm-static');
+    await expect(stat).toHaveAttribute('mask', /wm-sea/);
+    const op = await stat.evaluate((el) => parseFloat(getComputedStyle(el).opacity));
+    expect(op).toBeGreaterThan(0);
+    expect(op).toBeLessThan(0.2);   // subtle
   });
 });

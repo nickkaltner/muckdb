@@ -144,11 +144,15 @@ muckdb session rm <name> [--tile TILE]
   map four endpoint columns (`--from-lat`/`--from-lon`/`--to-lat`/`--to-lon`,
   one connection per row) and each row is drawn as a fluid semi-transparent arc
   between two markers — the same data overlay (markers + arcs + labels) is drawn
-  over the ASCII backdrop or the hi-fi world map. Each arc bows gently and stops
-  just short of its markers (a small margin), and its width/opacity scale with
-  `--value` if given. `--label` names each arc; labels render on a top layer and
-  shift vertically to avoid overlapping (a leader line is drawn when one is
-  moved). Hovering an arc or its label shows the same tooltip.
+  over the ASCII backdrop or the hi-fi world map (whose sea has a subtle animated
+  shimmer). Each arc stops just short of its markers (a small margin), takes the
+  shorter way round the globe (wrapping the date line when that's closer), and its
+  opacity scales with `--value` (line width is uniform). `--label` names each arc;
+  labels render on a top layer with a subtle rounded pill and shift vertically to
+  avoid overlapping (a leader line is drawn when one is moved). Hovering an arc or
+  its label shows the same tooltip. Themes control the arc look (opacity, connect-
+  gap, arc-vs-straight, label-pill fill) — see the `arcOpacity`/`arcGap`/
+  `roundLinks`/`labelBg` theme keys.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

@@ -447,21 +447,24 @@
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
   .worldmap-wrap.mode-svg .wm-ascii-stage { display: none; }
   .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; }
-  .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .wm-ascii-overlay .wm-x, .wm-ascii-overlay .wm-arc, .wm-ascii-overlay .wm-arc-label { pointer-events: auto; }
   .wm-svg-host { width: 100%; }
   /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
      so it never falls back to solid black even if this rule is missing). */
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
+  /* Subtle animated "static" shimmer behind the land — reads over the open sea. */
+  .wm-svg .wm-static { opacity: 0.07; pointer-events: none; }
   /* Data overlay, shared by the hi-fi SVG map and the ascii overlay: markers,
      semi-transparent connection arcs, and labels (top layer, with a
      surface-coloured halo so they stay legible over land/arcs/dots). */
   .wm-dots circle.wm-x { cursor: pointer; }
   .wm-arcs .wm-arc { fill: none; stroke-linecap: round; cursor: pointer; }
   .wm-conn-labels .wm-lead { stroke: var(--fg); stroke-opacity: 0.35; stroke-width: 1; }
+  .wm-conn-labels .wm-label-bg { pointer-events: none; }   /* fill/alpha are per-theme, set inline */
   .wm-conn-labels .wm-arc-label { fill: var(--fg); stroke: var(--surface); stroke-linejoin: round; paint-order: stroke; text-anchor: middle; font-family: var(--mono); font-weight: 600; cursor: pointer; }
-  .wm-svg .wm-conn-labels .wm-arc-label { stroke-width: 5; }
-  .wm-ascii-overlay .wm-conn-labels .wm-arc-label { stroke-width: 3; }
+  .wm-svg .wm-conn-labels .wm-arc-label { stroke-width: 3; }
+  .wm-ascii-overlay .wm-conn-labels .wm-arc-label { stroke-width: 2; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
   .wm-tip.show { display: block; }
@@ -957,7 +960,7 @@
       },
       grad2: ["#ffffff", "#ff8a00"],
       barRadius: 6,
-      arcOpacity: 0.28, arcGap: 1.2,
+      arcOpacity: 0.28, arcGap: 1.2, labelBgAlpha: 0.5, roundLinks: false,
       chart: ["#f5f6f8", "#ffb000", "#9aa0a8", "#6e737b", "#d98e00", "#cfd3d8", "#84898f", "#4f535a"],
     },
     ember: {
@@ -969,7 +972,7 @@
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,140,46,0.09), transparent 70%)",
       },
       grad2: ["#ffb454", "#df531c"],
-      arcOpacity: 0.32,
+      arcOpacity: 0.32, labelBg: "var(--raised)", labelBgAlpha: 0.62,
       chart: ["#ff8c2e", "#4bc4a8", "#ffc861", "#e0728a", "#8aa6e0", "#a6c585", "#bf8fd0", "#df7a5b"],
     },
     crimson: {
@@ -1125,6 +1128,7 @@
       grad2: ["#ffb066", "#e0601c"],
       bargrad: ["#fff4e8", "#ffb066", "#e0601c"],
       barRadius: 6,
+      roundLinks: false,
       chart: ["#ff7e2e", "#bca78f", "#ffb066", "#a08a6f", "#e0641c", "#d4c3ad", "#a9794c", "#806852"],
     },
   };
@@ -1147,6 +1151,9 @@
     // arcs read over a pale backdrop) and the connect-gap multiplier.
     ARC_OPACITY = t.arcOpacity != null ? t.arcOpacity : (t.light ? 0.4 : 0.22);
     ARC_GAP = t.arcGap != null ? t.arcGap : 1;
+    LABEL_BG_FILL = t.labelBg || "var(--surface)";
+    LABEL_BG_ALPHA = t.labelBgAlpha != null ? t.labelBgAlpha : 0.55;
+    LINK_ROUND = t.roundLinks !== false;
     // How many of the theme's chart colours are curated-categorical (see
     // catColors); themes with a long hand-picked list opt in via catN.
     CAT_N = Math.min(t.catN || CAT_CURATED, t.chart.length);
@@ -3552,7 +3559,7 @@
     ];
     const fs = Math.max(9, Math.min(15, cellH * 1.5));
     const dots = connDots(payload.cellDots, proj, { rBase: Math.max(1.2, cellH * 0.18), rSpan: cellH * 0.42 });
-    const ov = connArcs(payload.conns, proj, { valMode: payload.valMode, fv: payload.fv, marginPx: Math.max(3, cellH * 0.35), bowCap: H * 0.5, fontSize: fs, strokeMin: 1, strokeSpan: 2.5 });
+    const ov = connArcs(payload.conns, proj, { valMode: payload.valMode, fv: payload.fv, marginPx: Math.max(3, cellH * 0.35), bowCap: H * 0.5, fontSize: fs, strokeW: 2 });
     let svg = stage.querySelector("svg.wm-ascii-overlay");
     if (!svg) { stage.insertAdjacentHTML("beforeend", '<svg class="wm-ascii-overlay" xmlns="http://www.w3.org/2000/svg"></svg>'); svg = stage.querySelector("svg.wm-ascii-overlay"); }
     svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
@@ -3603,6 +3610,13 @@
   let ARC_OPACITY = 0.22;
   const ARC_OPACITY_RANGE = 0.28;
   let ARC_GAP = 1;
+  // Arc-label pill: a very subtle rounded background so labels stay legible over
+  // the map. Fill colour + alpha are per-theme (themes set labelBg / labelBgAlpha).
+  let LABEL_BG_FILL = "var(--surface)";
+  let LABEL_BG_ALPHA = 0.55;
+  // Link shape: a bowed arc (true) or a straight line (false). Per-theme — themes
+  // set `roundLinks: false` to draw straight connections instead of arcs.
+  let LINK_ROUND = true;
   // Marker circles for the data overlay. proj maps (lat,lon)→[x,y] in the target
   // coordinate space (hi-fi SVG units, or ascii-overlay pixels).
   function connDots(cellDots, proj, cfg) {
@@ -3623,15 +3637,25 @@
     const clo = cvs.length ? Math.min(...cvs) : 0, chi = cvs.length ? Math.max(...cvs) : 1, cspan = chi - clo || 1;
     const stroke = mixColors('var(--ember)', 100, 'var(--surface)');
     const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    // The map is a cylinder: 360° of longitude spans mapW in the target space, so
+    // an arc can take the shorter route by wrapping across the antimeridian.
+    const mapW = Math.abs(proj(0, 180)[0] - proj(0, -180)[0]);
+    const viewL = Math.min(proj(0, -180)[0], proj(0, 180)[0]), viewR = viewL + mapW;
     const labelParts = [];
     let arcs = "";
     conns.forEach((cn) => {
-      const A = proj(cn.alat, cn.alon), B = proj(cn.blat, cn.blon);
+      const A = proj(cn.alat, cn.alon);
+      let B = proj(cn.blat, cn.blon);
+      // Take the shorter way round the globe: if going direct spans >180° of
+      // longitude, wrap the destination across the date line instead.
+      const dLon = cn.blon - cn.alon;
+      const wrap = dLon > 180 ? -mapW : dLon < -180 ? mapW : 0;
+      B = [B[0] + wrap, B[1]];
       const dx = B[0] - A[0], dy = B[1] - A[1], len = Math.hypot(dx, dy) || 1;
       const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
       let px = -dy / len, py = dx / len;
       if (py > 0) { px = -px; py = -py; }                    // bow upward
-      const bow = Math.min(len * 0.18, cfg.bowCap);
+      const bow = LINK_ROUND ? Math.min(len * 0.18, cfg.bowCap) : 0;   // 0 → straight line
       const Q = [mx + px * bow, my + py * bow];
       const margin = cfg.marginPx * ARC_GAP;                       // theme sets how close it connects
       const t0 = Math.min(0.35, margin / len), t1 = 1 - t0;
@@ -3639,26 +3663,42 @@
       const s = t0 / t1;
       const S = lerp(lerp(A, a1, s), lerp(a1, p1, s), s), C = lerp(a1, p1, s), E = p1;
       const tt = (cfg.valMode && isFinite(cn.v)) ? (cn.v - clo) / cspan : 0.5;
-      const w = (cfg.strokeMin + tt * cfg.strokeSpan).toFixed(2), op = (ARC_OPACITY + tt * ARC_OPACITY_RANGE).toFixed(2);
+      // Uniform stroke width; capacity (--value) is conveyed by opacity instead.
+      const w = cfg.strokeW.toFixed(2), op = (ARC_OPACITY + tt * ARC_OPACITY_RANGE).toFixed(2);
       const tip = attr(`<div class="wm-tip-sub">${esc(cn.label || "connection")}${cfg.valMode && isFinite(cn.v) ? ` · ${esc(cfg.fv(cn.v))}` : ""}</div>`);
-      arcs += `<path class="wm-arc wm-x" d="M${S[0].toFixed(1)} ${S[1].toFixed(1)}Q${C[0].toFixed(1)} ${C[1].toFixed(1)} ${E[0].toFixed(1)} ${E[1].toFixed(1)}" style="stroke:${stroke};stroke-width:${w};stroke-opacity:${op}" data-tip="${tip}"/>`;
+      const d = `M${S[0].toFixed(1)} ${S[1].toFixed(1)}Q${C[0].toFixed(1)} ${C[1].toFixed(1)} ${E[0].toFixed(1)} ${E[1].toFixed(1)}`;
+      const style = `stroke:${stroke};stroke-width:${w};stroke-opacity:${op}`;
+      arcs += `<path class="wm-arc wm-x" d="${d}" style="${style}" data-tip="${tip}"/>`;
+      // A wrapped arc runs off one edge; a copy shifted a full map-width shows the
+      // matching piece on the opposite edge (off-map parts are clipped).
+      if (wrap) arcs += `<path class="wm-arc wm-x" d="${d}" transform="translate(${(-wrap).toFixed(1)},0)" style="${style}" data-tip="${tip}"/>`;
       if (cn.label) {
-        const apx = 0.25 * A[0] + 0.5 * Q[0] + 0.25 * B[0], apy = 0.25 * A[1] + 0.5 * Q[1] + 0.25 * B[1];
+        let apx = 0.25 * A[0] + 0.5 * Q[0] + 0.25 * B[0];
+        const apy = 0.25 * A[1] + 0.5 * Q[1] + 0.25 * B[1];
+        while (apx < viewL) apx += mapW;                    // bring a wrapped apex on-screen
+        while (apx > viewR) apx -= mapW;
         labelParts.push({ text: cn.label, ax: apx, ay: apy, tip });
       }
     });
     const FS = cfg.fontSize, placed = [];
     const labels = labelParts.map((L) => {
-      const w = Math.max(FS * 1.5, L.text.length * FS * 0.56), h = FS * 1.15;
-      const x = L.ax, y0 = L.ay - h * 0.7;
+      // Monospace advance ≈ 0.62·FS; add ~1 char for the halo/safety so the
+      // on-screen clamp below doesn't shave an edge glyph.
+      const w = Math.max(FS * 1.8, L.text.length * FS * 0.62 + FS), h = FS * 1.15;
+      // Keep the whole label on-screen (a wrapped arc's apex can land at an edge).
+      const x = Math.max(viewL + w / 2, Math.min(viewR - w / 2, L.ax)), y0 = L.ay - h * 0.7;
       const hits = (yy) => placed.some((b) => Math.abs(x - b.x) < (w + b.w) / 2 && Math.abs(yy - b.y) < (h + b.h) / 2);
       let y = y0;
       if (hits(y)) { outer: for (let step = 1; step <= 16; step++) { for (const dir of [-1, 1]) { const yy = y0 + dir * step * h * 0.92; if (!hits(yy)) { y = yy; break outer; } } } }
       placed.push({ x, y, w, h });
       const moved = Math.abs(y - y0) > h * 0.5;
       const leader = moved ? `<line class="wm-lead" x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y + h * 0.32).toFixed(1)}"/>` : "";
+      // A very subtle rounded pill behind each label (theme surface at low alpha)
+      // so text stays legible over the map without a heavy halo.
+      const bw = L.text.length * FS * 0.62 + FS * 0.7;
+      const bg = `<rect class="wm-label-bg" x="${(x - bw / 2).toFixed(1)}" y="${(y - FS * 0.82).toFixed(1)}" width="${bw.toFixed(1)}" height="${(FS * 1.12).toFixed(1)}" rx="${(FS * 0.32).toFixed(1)}" style="fill:${LABEL_BG_FILL};fill-opacity:${LABEL_BG_ALPHA}"/>`;
       // The label carries the same data-tip as its arc — hover either for the tip.
-      return leader + `<text class="wm-arc-label wm-x" x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS}" data-tip="${L.tip}">${esc(L.text)}</text>`;
+      return leader + bg + `<text class="wm-arc-label wm-x" x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS}" data-tip="${L.tip}">${esc(L.text)}</text>`;
     }).join("");
     return { arcs, labels };
   }
@@ -3772,7 +3812,7 @@
     const hiProj = (lat, lon) => [wmSvgX(lon), wmSvgY(lat)];
     const dots = connDots(cellDots, hiProj, { rBase: 4, rSpan: 6 });
     const hiOv = connMode
-      ? connArcs(conns, hiProj, { valMode, fv, marginPx: 12, bowCap: 120, fontSize: 21, strokeMin: 1.5, strokeSpan: 4 })
+      ? connArcs(conns, hiProj, { valMode, fv, marginPx: 12, bowCap: 120, fontSize: 21, strokeW: 3 })
       : { arcs: "", labels: "" };
     const wmGrad = `linear-gradient(90deg, ${mixColors('var(--ember)', 55, 'var(--surface)')}, ${mixColors('var(--ember)', 100, 'var(--surface)')})`;
     const legendMetric = connMode ? "endpoints / cell" : (ptValMode ? esc(spec.value) : "points / cell");

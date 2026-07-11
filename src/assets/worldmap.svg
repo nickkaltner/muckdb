@@ -1,5 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.85 68.05 2300 907" preserveAspectRatio="xMidYMid meet" class="wm-svg">
-  <g id="polygons" fill="currentColor" fill-opacity="0.1" stroke="currentColor" stroke-opacity="0.22" stroke-width="0.5">
+  <defs>
+    <filter id="wm-static" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.28" numOctaves="2" stitchTiles="stitch" result="t"><animate attributeName="seed" values="1;4;7;10;13;16;19;22" dur="0.9s" repeatCount="indefinite" calcMode="discrete"/></feTurbulence><feColorMatrix in="t" type="saturate" values="0"/></filter>
+    <!-- Sea mask: white everywhere, black over land (currentColor→#000 via the color set here), so the static only shows over open sea. -->
+    <mask id="wm-sea" maskUnits="userSpaceOnUse" x="-8.85" y="68.05" width="2300" height="907" style="color:#000"><rect x="-8.85" y="68.05" width="2300" height="907" fill="#fff"/><use href="#polygons" stroke="#000"/></mask>
+  </defs>
+  <g id="land" opacity="0.12"><g id="polygons" fill="currentColor" stroke="currentColor" stroke-width="0.5">
     <path d="M2283.689,658.031L2283.561,657.466L2283.746,657.718Z" class="land" id="TV" title="Tuvalu"/>
     <path d="M1163.219,950.6L1162.478,950.625L1162.611,950.298L1163.341,950.3Z" class="land" id="BV" title="Bouvet Island"/>
     <path d="M1107.139,372.965L1107.116,373.284L1107.001,373.194L1107.008,373.072Z" class="land" id="GI" title="Gibraltar"/>
@@ -256,7 +261,8 @@
     <path d="M1618.578,366.148L1616.349,367.484L1612.907,368.751L1611.425,368.336L1604.118,368.712L1597.728,371.216L1594.952,373.732L1596.498,375.059L1597.728,379.207L1593.552,383.367L1594.101,386.432L1586.556,387.403L1589.208,390.773L1586.887,392.409L1584.219,392.997L1582.561,396.736L1582.801,399.902L1580.187,401.832L1576.01,400.728L1571.957,402.647L1570.104,404.486L1567.789,403.926L1564.43,406.433L1563.026,413.298L1556.13,415.059L1552.468,415.027L1549.777,416.125L1546.39,415.449L1539.434,416.021L1529.023,413.151L1530.685,411.431L1535.022,406.945L1534.23,403.436L1529.091,402.794L1528.933,397.91L1527.22,392.248L1529.493,389.904L1526.904,389.052L1526.742,386.146L1530.532,381.296L1531.692,376.426L1540.289,378.887L1543.132,377.532L1543.464,375.156L1548.269,373.921L1552.403,371.827L1554.35,366.782L1559.059,366.023L1560.397,363.997L1565.225,365.404L1568.712,365.492L1573.112,366.527L1575.078,367.945L1580.769,365.553L1582.71,366.934L1584.159,364.099L1588.998,363.392L1588.766,361.73L1593,358.34L1595.402,359.294L1597.289,361.677L1596.531,366.813L1598.886,369.575L1605.855,365.919L1609.591,364.617L1611.3,366.148L1614.552,364.977Z" class="land" id="AF" title="Afghanistan"/>
     <path d="M747.707,494.89L746.791,495.04L747.061,494.047Z" class="land" id="AG" title="Antigua and Barbuda"/>
     <path d="M695.539,524.119L695.266,524.204L694.475,523.514L695.068,523.381Z" class="land" id="AW" title="Aruba"/>
-  </g>
+  </g></g>
+  <rect class="wm-static" x="-8.85" y="68.05" width="2300" height="907" filter="url(#wm-static)" mask="url(#wm-sea)"/>
   <g id="labels" font-family="Helvetica, sans-serif" fill="#5c5c5c" text-anchor="middle" dominant-baseline="middle">
     <text x="1331.45" y="724.63" font-size="7.28">Zimbabwe</text>
     <text x="1318.41" y="689.27" font-size="11.00">Zambia</text>

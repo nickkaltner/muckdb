@@ -281,7 +281,7 @@ MD
   --db "$DB" --view network_flows --chart map \
   --from-lat from_lat --from-lon from_lon --to-lat to_lat --to-lon to_lon \
   --label label --value gbps \
-  --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map — with the line weight scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping each other; hover an arc or its label for the details." >/dev/null
+  --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map (whose sea gently shimmers), taking the shorter way round the globe when that wraps the date line, with opacity scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping; hover an arc or its label for details." >/dev/null
 
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
