@@ -22,4 +22,17 @@ test.describe('map tile', () => {
     const overlayZ = await overlay.evaluate((el) => parseInt(getComputedStyle(el).zIndex, 10) || 0);
     expect(tipZ).toBeGreaterThanOrEqual(overlayZ);
   });
+
+  test('expanded map shrinks to its content (no full-height whitespace)', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    await page.locator('.panel[data-tile="map"] [data-zoom]').click();
+    const box = page.locator('.zoom-box');
+    // Content-sized → the modal gets the "fit" treatment and renders the map.
+    await expect(box).toHaveClass(/\bfit\b/);
+    await expect(page.locator('.zoom-overlay .worldmap')).toBeVisible();
+    // The box hugs its content rather than filling the modal height.
+    const boxH = (await box.boundingBox())!.height;
+    const vh = page.viewportSize()!.height;
+    expect(boxH).toBeLessThan(vh * 0.85);
+  });
 });

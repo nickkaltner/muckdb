@@ -90,6 +90,10 @@
   #toast.show { opacity: 1; transform: translateX(-50%); }
   #toast.err { border-color: var(--fail); color: var(--fail); }
   .zoom-chart { flex: 1; min-height: 0; padding: 16px 18px; position: relative; }
+  /* Content-sized tiles (map/heatmap/box) can't stretch vertically — let the
+     modal shrink to their content instead of leaving whitespace below. */
+  .zoom-box.fit { height: auto; max-height: 92vh; }
+  .zoom-box.fit .zoom-chart { flex: none; overflow: auto; }
 
   /* credits — a little video-game thank-you card behind the ? button */
   .credits-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
@@ -2881,6 +2885,9 @@
       const cols = data.columns || [], rows = data.rows || [];
       const kind = (t.chart && t.chart.kind) || "table";
       await ensureFormats(t.db);
+      // These render to their content height, so shrink the modal to fit rather
+      // than stretching it full-height with whitespace below.
+      if (kind === "map" || kind === "heatmap" || kind === "box") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
