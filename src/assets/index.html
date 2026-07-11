@@ -84,8 +84,11 @@
   .zoom-bar { display: flex; align-items: center; gap: 12px; padding: 12px 16px; border-bottom: 1px solid var(--line-soft); }
   .zoom-bar .zoom-title { font-size: 15px; color: var(--fg); }
   .zoom-actions { margin-left: auto; display: flex; gap: 8px; }
-  .zoom-close, .zoom-explore { font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
-  .zoom-close:hover, .zoom-explore:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .zoom-close, .zoom-explore, .zoom-copyimg { font: inherit; font-size: 13px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 5px; padding: 4px 11px; cursor: pointer; }
+  .zoom-close:hover, .zoom-explore:hover, .zoom-copyimg:hover { border-color: var(--orange-dim); color: var(--orange); }
+  .zoom-copyimg { display: inline-flex; align-items: center; gap: 6px; }
+  .zoom-copyimg svg { width: 14px; height: 14px; }
+  .zoom-copyimg.busy { opacity: 0.6; pointer-events: none; }
   #toast { position: fixed; left: 50%; bottom: 34px; transform: translateX(-50%) translateY(8px); background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 8px 14px; font-size: 12.5px; opacity: 0; pointer-events: none; transition: opacity .18s ease, transform .18s ease; z-index: 300; max-width: 70vw; }
   #toast.show { opacity: 1; transform: translateX(-50%); }
   #toast.err { border-color: var(--fail); color: var(--fail); }
@@ -94,6 +97,11 @@
      modal shrink to their content instead of leaving whitespace below. */
   .zoom-box.fit { height: auto; max-height: 92vh; }
   .zoom-box.fit .zoom-chart { flex: none; overflow: auto; }
+  /* A zoomed map goes near full-screen: widen the box to 98vw so the map (ASCII
+     or SVG, both width-driven with natural height) scales up, and let the chart
+     area scroll if the content is taller than the viewport rather than chopping. */
+  .zoom-box.mapzoom { max-width: 98vw; height: auto; max-height: 94vh; }
+  .zoom-box.mapzoom .zoom-chart { flex: none; overflow: auto; }
 
   /* credits — a little video-game thank-you card behind the ? button */
   .credits-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
@@ -438,9 +446,9 @@
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
   .worldmap-wrap.mode-svg .worldmap { display: none; }
   .wm-svg-host { width: 100%; }
-  .wm-svg { display: block; width: 100%; height: auto; }
-  .wm-svg .wm-countries .c { fill: color-mix(in srgb, var(--fg) 8%, transparent); stroke: color-mix(in srgb, var(--fg) 18%, transparent); stroke-width: 0.4; }
-  .wm-svg .wm-labels .l { fill: color-mix(in srgb, var(--fg) 34%, transparent); font-family: var(--mono); font-size: 6px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+  /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
+     so it never falls back to solid black even if this rule is missing). */
+  .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
   .wm-svg .wm-dots circle.wm-x { cursor: pointer; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
@@ -2883,9 +2891,10 @@
     postActivity(name, "zoom");
     state.zoomPanel = name; syncUrl(true);
     const exploreBtn = t.view ? `<button class="zoom-explore" data-zexplore>explore</button>` : "";
+    const copyImgBtn = `<button class="zoom-copyimg" data-copyimg="${attr(t.name)}" title="Copy panel as image">${SVG_COPYIMG} copy image</button>`;
     const layer = document.createElement("div");
     layer.className = "zoom-overlay";
-    layer.innerHTML = `<div class="zoom-box"><div class="zoom-bar"><span class="zoom-title">${esc(t.title || t.name)}</span><span class="zoom-actions">${exploreBtn}<button class="zoom-close">✕ close</button></span></div><div class="zoom-chart"><canvas></canvas></div></div>`;
+    layer.innerHTML = `<div class="zoom-box"><div class="zoom-bar"><span class="zoom-title">${esc(t.title || t.name)}</span><span class="zoom-actions">${copyImgBtn}${exploreBtn}<button class="zoom-close">✕ close</button></span></div><div class="zoom-chart"><canvas></canvas></div></div>`;
     document.body.appendChild(layer);
     layer.addEventListener("mousedown", (e) => {
       if (e.target.closest(".zoom-explore")) { e.stopPropagation(); closeZoom(); exploreTile(name); return; }
@@ -2899,9 +2908,11 @@
       const cols = data.columns || [], rows = data.rows || [];
       const kind = (t.chart && t.chart.kind) || "table";
       await ensureFormats(t.db);
-      // These render to their content height, so shrink the modal to fit rather
-      // than stretching it full-height with whitespace below.
-      if (kind === "map" || kind === "heatmap" || kind === "box") layer.querySelector(".zoom-box").classList.add("fit");
+      // Heatmap/box render to their content height, so shrink the modal to fit
+      // rather than stretching it full-height with whitespace below. A map fills
+      // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
+      if (kind === "heatmap" || kind === "box") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "map") layer.querySelector(".zoom-box").classList.add("mapzoom");
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -3485,9 +3496,12 @@
   const WORLD_MAP = "                                                  * ***********        *************                                                                                                            \n                                             ************    *************************                **** ***                                    ***                                           \n                               ***   *      *** ******    ***************************                                              **                 *** *                                     \n                              ****        *  ***                  *******************                                        **             ****************               *                    \n            **                   *******     ** **********          ****************                         ***             *      *************************************************          *\n**      ***************************   ***  ****** **   * ****       ***********                         *************   *  ************ ********************************************************\n  **   ********************************************   ******        ******          *****             *****  ******  ***************************************************************************\n        **************************************       ****   *        ****                          ******  **************************************************************************** ******  \n          ****        ************************        *****  *                                     ** ****  *****************************************************************    **  **         \n           *             ************************      ********                              **     ** **  **************************************************************          ****         \n                         * *************************  ************                         ** **   ************************************************************************        **           \n                             *********************************** *                           *   ************************************************************************** *                   \n                               ******************************     **                          ****************************************************************************                      \n                              ****************************** *                                 ******** *******     *****************************************************                       \n                              *****************************                                ******     *** *****  **   ***********************************************                           \n                              **************************                                   *****        *  *  *************************************************    *                            \n                               *************************                                        ******             *********************************************   **   ***                     \n                                 *********************                                     ***********             *********************************************     *                          \n                                  * ************  ***                                      **********************************************************************                               \n                                   * *******        *                                    ************************* *******  ************************************                                \n                                       *****          *                                 *************************** ******** *      *************************** *                               \n                                        ****    **    *                                ***************************** ***********     *********   ********                                       \n                                         ********     * *** *                          *****************************  ********         ******     ******* *     *                               \n                                              *****                                    ******************************  *****           ****         ******      *                               \n                                                 **                                    ********************************                 ***           ****        *                             \n                                                   *    *******                          **********************************              *              *        *                              \n                                                       **********                         ********************************                 *         *        *   *                             \n                                                       **************                                ********************                          ** *      **                                 \n                                                     ****************                                ******************                              **   ***** *** *                           \n                                                     *******************                             *****************                                **   ***  *     ** *                      \n                                                     ***********************                          ***************                                  *         *       *****                  \n                                                      ***********************                          **************                                      **             *** *                 \n                                                      **********************                           ***************                                                                *         \n                                                       ********************                            ***************    *                                          ****  **                   \n                                                         ******************                           ***************   ***                                       ******** ***                 *\n                                                           ****************                            ************     **                                       **************                 \n                                                           ***************                              ***********    ***                                   *******************                \n                                                          ************                                  **********                                           *********************              \n                                                          ************                                   ********                                            *********************              \n                                                          ***********                                     ******                                              ********************              \n                                                          *********                                       **                                                 ***        *********               \n                                                         *********                                                                                                         *****                \n                                                         ******                                                                                                                              *  \n                                                        ******                                                                                                                *            *    \n                                                        ****                                                                                                                             **     \n                                                        ****                                                                                                                                    \n                                                        ***     *                                                                                                                               \n                                                          ***                                                                                                                                   ";
   const WM_W = 192, WM_H = 48;
   const WM_LON_W = -180, WM_LON_E = 180, WM_LAT_T = 84, WM_LAT_B = -56;
-  // The hi-fi SVG map (/worldmap.svg) shares these bounds and uses viewBox
-  // 0 0 1000 389, so a point projects to cx=(lon+180)/360*1000, cy=(84-lat)/140*389.
-  const WM_SVG_W = 1000, WM_SVG_H = 389;
+  // The hi-fi SVG map (/worldmap.svg) is the amCharts "worldLow" equirectangular
+  // export (viewBox "-8.85 68.05 2300 1111.7"). Its projection is linear in
+  // lon/lat; these constants were calibrated against 26 countries (max residual
+  // <9px on the 2300px map), so a point lands on the right coastline.
+  const wmSvgX = (lon) => 6.38188 * lon + 1140.51;
+  const wmSvgY = (lat) => -6.32404 * lat + 601.48;
   // Map render mode ("ascii" | "svg"), global + persisted; toggled per map tile.
   let mapModePref = null;
   function mapMode() {
@@ -3504,7 +3518,9 @@
     const hosts = [...(scope || document).querySelectorAll(".worldmap-wrap.mode-svg .wm-svg-host:not([data-hydrated])")];
     if (!hosts.length) return;
     if (wmSvgText === null) {
-      try { const r = await fetch("/worldmap.svg"); wmSvgText = r.ok ? await r.text() : ""; } catch (_) { wmSvgText = ""; }
+      // Version the URL so a released SVG change busts the browser's 7-day cache
+      // (a stale worldmap.svg vs a new projection = misplaced dots / black land).
+      try { const r = await fetch("/worldmap.svg?v=__MUCKDB_VERSION__"); wmSvgText = r.ok ? await r.text() : ""; } catch (_) { wmSvgText = ""; }
     }
     hosts.forEach((host) => {
       host.dataset.hydrated = "1";
@@ -3539,8 +3555,9 @@
       const row = Math.max(0, Math.min(WM_H - 1, Math.floor((WM_LAT_T - lat) / (WM_LAT_T - WM_LAT_B) * WM_H)));
       const k = row * WM_W + c;
       let e = cells.get(k);
-      if (!e) { e = { n: 0, sum: 0, labels: new Map() }; cells.set(k, e); }
+      if (!e) { e = { n: 0, sum: 0, slat: 0, slon: 0, labels: new Map() }; cells.set(k, e); }
       e.n++;
+      e.slat += lat; e.slon += lon;   // for the hi-fi dot's true centroid
       if (valMode) { const v = Number(r[valI]); if (isFinite(v)) e.sum += v; }
       if (labelI >= 0) { const lb = r[labelI] == null ? "" : String(r[labelI]); if (lb) e.labels.set(lb, (e.labels.get(lb) || 0) + 1); }
       plotted++;
@@ -3578,10 +3595,12 @@
           const fill = mixColors('var(--ember)', 55 + t * 45, 'var(--surface)');
           const tip = attr(tipFor(e, clat, clon));
           out += `<span class="wm-x" style="color:${fill}" data-tip="${tip}">x</span>`;
-          // same cell, projected onto the SVG viewBox for the hi-fi overlay
-          const cx = ((c + 0.5) / WM_W * WM_SVG_W).toFixed(1);
-          const cy = ((row + 0.5) / WM_H * WM_SVG_H).toFixed(1);
-          dots += `<circle class="wm-x" cx="${cx}" cy="${cy}" r="${(1.4 + t * 2.4).toFixed(1)}" style="fill:${fill}" data-tip="${tip}"/>`;
+          // Hi-fi overlay: place the dot at the cell's TRUE centroid (mean of its
+          // points' lat/lon), projected onto the SVG's equirectangular viewBox —
+          // NOT the coarse ASCII cell centre, so markers don't snap to characters.
+          const cx = wmSvgX(e.slon / e.n).toFixed(1);
+          const cy = wmSvgY(e.slat / e.n).toFixed(1);
+          dots += `<circle class="wm-x" cx="${cx}" cy="${cy}" r="${(4 + t * 6).toFixed(1)}" style="fill:${fill}" data-tip="${tip}"/>`;
         } else {
           out += c < src.length && src[c] === "*" ? "*" : " ";
         }

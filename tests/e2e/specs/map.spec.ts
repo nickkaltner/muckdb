@@ -51,16 +51,33 @@ test.describe('map tile', () => {
     await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-ascii\b/);
   });
 
-  test('expanded map shrinks to its content (no full-height whitespace)', async ({ page }) => {
+  test('expanded map goes near full-screen (wide modal) with a copy-image button', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     await page.locator('.panel[data-tile="map"] [data-zoom]').click();
     const box = page.locator('.zoom-box');
-    // Content-sized → the modal gets the "fit" treatment and renders the map.
-    await expect(box).toHaveClass(/\bfit\b/);
+    // Maps get the "mapzoom" treatment: the box widens toward the viewport so
+    // the map scales up instead of hugging the 1280px cap.
+    await expect(box).toHaveClass(/\bmapzoom\b/);
     await expect(page.locator('.zoom-overlay .worldmap')).toBeVisible();
-    // The box hugs its content rather than filling the modal height.
-    const boxH = (await box.boundingBox())!.height;
-    const vh = page.viewportSize()!.height;
-    expect(boxH).toBeLessThan(vh * 0.85);
+    const boxW = (await box.boundingBox())!.width;
+    const vw = page.viewportSize()!.width;
+    expect(boxW).toBeGreaterThan(vw * 0.9);
+    // Every expanded tile offers a copy-image action.
+    await expect(page.locator('.zoom-overlay .zoom-copyimg')).toBeVisible();
+  });
+
+  test('hi-fi land renders faded, never solid black (self-contained fill)', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="map"]');
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+    // The country group must resolve to a real (non-black) fill even though the
+    // colour comes from currentColor — a regression guard against the cached-SVG
+    // black-map bug. Opacity keeps it faint; the resolved colour is the fg.
+    const grp = panel.locator('.wm-svg #polygons');
+    const fill = await grp.evaluate((el) => getComputedStyle(el).fill);
+    expect(fill).not.toBe('rgb(0, 0, 0)');
+    const op = await grp.evaluate((el) => parseFloat(getComputedStyle(el).fillOpacity));
+    expect(op).toBeLessThan(0.5);
   });
 });

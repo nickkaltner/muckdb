@@ -718,8 +718,9 @@ async fn favicon_svg() -> Response {
         .into_response()
 }
 
-/// The hi-fidelity world map (equirectangular Natural Earth countries) that the
-/// map tile's "hi-fi" toggle overlays points onto. Fetched once on demand.
+/// The hi-fidelity world map (amCharts "worldLow" equirectangular export) that
+/// the map tile's "hi-fi" toggle overlays points onto. Fetched once on demand;
+/// the client versions the URL (?v=<version>) to bust this long cache on change.
 async fn worldmap_svg() -> Response {
     (
         [
