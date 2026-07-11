@@ -189,7 +189,19 @@
   .view-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--orange-dim); color: var(--orange); background: color-mix(in srgb, var(--orange) 12%, transparent); flex: none; }
   .navchip.query.active { background: var(--grad-accent); color: var(--on-accent); border-style: solid; font-weight: 700; }
 
-  .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; }
+  .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; position: relative; }
+  /* Top loading bar (topbar-style): thin gradient bar with a glossy sweep,
+     pinned to the top of the body frame. In the db view it starts right of the
+     facet panel; hidden until a request is in flight. */
+  .topbar { position: absolute; top: 0; right: 0; height: 3px; z-index: 45; overflow: hidden; pointer-events: none; opacity: 0; transition: opacity 0.2s ease; }
+  .topbar.on { opacity: 1; }
+  .topbar-fill { height: 100%; width: 0; background: var(--grad-accent); box-shadow: 0 0 10px 1px var(--orange); border-radius: 0 3px 3px 0; transition: width 0.2s ease; position: relative; overflow: hidden; }
+  .topbar-fill::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent 10%, rgba(255,255,255,0.5) 50%, transparent 90%); background-size: 220% 100%; animation: topbar-sweep 1.1s linear infinite; }
+  @keyframes topbar-sweep { from { background-position: 200% 0; } to { background-position: -200% 0; } }
+  .db-body > .topbar { left: 268px; }
+  .db-body.full > .topbar { left: 0; }
+  #session-body > .topbar { left: 0; }
+  #view-ledger > .topbar { position: sticky; left: 0; margin-bottom: -3px; }
   .db-body.full { grid-template-columns: 1fr; }
   .db-body.full .facet-panel { display: none; }
   .facet-panel { border-right: 1px solid var(--line); overflow: auto; padding: 12px 12px 24px; }
@@ -520,7 +532,7 @@
   .empty code { font-family: var(--mono); color: var(--orange); background: var(--raised); padding: 1px 6px; border-radius: 3px; }
 
   /* sessions */
-  .session-body { flex: 1; display: flex; min-height: 0; overflow: hidden; }
+  .session-body { flex: 1; display: flex; min-height: 0; overflow: hidden; position: relative; }
   .panels-scroll { flex: 1; overflow: auto; container-type: inline-size; }
   /* Table of contents — only offered on wide screens (the panels are centred at
      max 1100px, leaving room on the right). Toggle in the session nav row. */
@@ -677,6 +689,7 @@
   .facet-drawer-btn, .facet-backdrop { display: none; }
   @media (max-width: 900px) {
     .db-body { grid-template-columns: 1fr; }
+    .db-body > .topbar { left: 0; }
     .facet-panel { position: fixed; top: 0; left: 0; bottom: 0; z-index: 81; width: min(320px, 86vw); background: var(--bg); border-right: 1px solid var(--line); box-shadow: 18px 0 60px rgba(0, 0, 0, 0.5); transform: translateX(-103%); transition: transform 0.26s cubic-bezier(0.22, 0.61, 0.36, 1); }
     body.facet-drawer .facet-panel { transform: none; }
     .facet-backdrop { display: block; position: fixed; inset: 0; z-index: 80; background: rgba(0, 0, 0, 0.45); opacity: 0; pointer-events: none; transition: opacity 0.26s; }
@@ -805,6 +818,60 @@
     return p.get("shot") === "1" ? { tile: p.get("tile") || null } : null;
   })();
   if (SHOT) { document.documentElement.classList.add("shot"); document.body.classList.add("shot"); }
+
+  // ---- top loading bar (topbar-style) -----------------------------------
+  // A thin bar pinned to the top of the current view's body frame that trickles
+  // up while requests are in flight and completes + fades when they finish. In
+  // the databases view its frame is the results area (right of the facets); in
+  // sessions it's the panels body; in the ledger it sticks to the list top.
+  const Topbar = (() => {
+    let bar, fill, active = 0, prog = 0, trickle = 0, hideT = 0;
+    const hostFor = () => {
+      if (state.tab === "databases") return document.querySelector(".db-body");
+      if (state.tab === "sessions") return $("session-body");
+      if (state.tab === "ledger") return $("view-ledger");
+      return null;
+    };
+    const set = (p) => { prog = p; if (fill) fill.style.width = (p * 100).toFixed(2) + "%"; };
+    function show() {
+      if (SHOT) return;
+      if (++active > 1) return;
+      if (!bar) { bar = document.createElement("div"); bar.className = "topbar"; fill = document.createElement("div"); fill.className = "topbar-fill"; bar.appendChild(fill); }
+      const h = hostFor();
+      if (!h) { active--; return; }
+      // ledger scrolls, so the bar sticks to its top; the other frames don't.
+      if (h.id === "view-ledger") h.insertBefore(bar, h.firstChild); else h.appendChild(bar);
+      clearTimeout(hideT);
+      bar.classList.add("on");
+      set(0.08);
+      clearInterval(trickle);
+      trickle = setInterval(() => { if (prog < 0.9) set(prog + (0.9 - prog) * 0.1); }, 280);
+    }
+    function done() {
+      if (SHOT) return;
+      active = Math.max(0, active - 1);
+      if (active > 0) return;
+      clearInterval(trickle);
+      set(1);
+      hideT = setTimeout(() => { if (bar) bar.classList.remove("on"); set(0); }, 260);
+    }
+    return { show, done };
+  })();
+  // Drive the topbar off every data request: any /api/* fetch shows it, except
+  // background/asset calls (activity pings, headless-shot renders). Assets
+  // (chart.js, favicon…) and the WebSocket aren't fetches to /api/ so they're
+  // ignored. Screenshot mode never shows it.
+  {
+    const _fetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      const url = typeof input === "string" ? input : (input && input.url) || "";
+      const track = !SHOT && url.includes("/api/") && !/\/api\/(activity|shot)/.test(url);
+      if (track) Topbar.show();
+      const p = _fetch(input, init);
+      return track ? p.finally(() => Topbar.done()) : p;
+    };
+  }
+
   let charts = [];
   let tocSpyCleanup = null;
   // A TOC click pins its entry active through the smooth scroll so the spy can't
