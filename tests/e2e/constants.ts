@@ -1,9 +1,12 @@
 import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve } from 'node:path';
 
 export const PORT = 12700;
 export const BASE_URL = `http://127.0.0.1:${PORT}`;
 export const SESSION_ID = 'e2e';
+
+export const REPO_ROOT = resolve(__dirname, '..', '..');
+export const BINARY = join(REPO_ROOT, 'target', 'release', 'muckdb');
 
 export interface E2EState {
   tmpDir: string;

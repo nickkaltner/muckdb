@@ -1,9 +1,7 @@
 import { execFileSync } from 'node:child_process';
 import { rmSync } from 'node:fs';
-import { join, resolve } from 'node:path';
-import { readState } from './constants';
-
-const BINARY = join(resolve(__dirname, '..', '..'), 'target', 'release', 'muckdb');
+import { join } from 'node:path';
+import { readState, BINARY } from './constants';
 
 export default async function globalTeardown(): Promise<void> {
   let state;

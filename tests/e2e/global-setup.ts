@@ -1,12 +1,9 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { PORT, STATE_FILE, E2EState } from './constants';
+import { join } from 'node:path';
+import { PORT, STATE_FILE, E2EState, BINARY } from './constants';
 import { seed } from './fixtures/seed';
-
-const REPO_ROOT = resolve(__dirname, '..', '..');
-const BINARY = join(REPO_ROOT, 'target', 'release', 'muckdb');
 
 function isolatedEnv(tmpDir: string): NodeJS.ProcessEnv {
   return {

@@ -13,6 +13,9 @@ test.describe('cell value filters', () => {
     // Hover a cell whose category is "Alpha", then click its + button.
     // NOTE: the .cellf button lives inside the value <td>, so the cell text is
     // "Alpha" + the button glyph — use a substring match, not an anchored regex.
+    // This is also safe across columns: the seed fixture's category values
+    // (Alpha/Beta/Gamma/Delta/Epsilon) are unique, so no other column's cell
+    // text contains "Alpha".
     const alphaCell = page.locator('table.preview td', { hasText: 'Alpha' }).first();
     await alphaCell.hover();
     await alphaCell.locator('.cellf:not([data-fnot])').click();
