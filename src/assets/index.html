@@ -446,7 +446,9 @@
      lives in a positioned stage so the fluid connection overlay can sit on top. */
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
   .worldmap-wrap.mode-svg .wm-ascii-stage { display: none; }
-  .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; }
+  .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; }
+  /* Looping static video behind the ascii backdrop (the sea texture). */
+  .wm-ascii-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 0.08; }
   .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .wm-ascii-overlay .wm-x, .wm-ascii-overlay .wm-arc, .wm-ascii-overlay .wm-arc-label { pointer-events: auto; }
   .wm-svg-host { width: 100%; }
@@ -3837,12 +3839,13 @@
       wmAscii[aid] = { conns, cellDots, valMode, fv };
       aidAttr = ` data-arcs="${aid}"`;
     }
+    // A looping VHS/TV-static clip sits behind the ASCII backdrop as the sea
+    // texture (the '*' land glyphs render on top of it).
+    const asciiVid = `<video class="wm-ascii-vid" src="/sea-static.mp4" autoplay loop muted playsinline></video>`;
     // The ascii/hi-fi toggle lives in the tile's header actions (mapModeToggle),
-    // excluded from every capture — so the body is just the map + legend. (The
-    // sea static is hi-fi only; over the ASCII backdrop the '*' glyphs are already
-    // the texture, so pixel-noise behind them just clashes.)
+    // excluded from every capture — so the body is just the map + legend.
     return `<div class="worldmap-wrap mode-${mode}">`
-      + `<div class="wm-ascii-stage"${aidAttr}><pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>`
+      + `<div class="wm-ascii-stage"${aidAttr}>${asciiVid}<pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>`
       + `<div class="wm-svg-host" data-dots="${did}"></div>`
       + `</div>${legend}`;
   }

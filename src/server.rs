@@ -80,6 +80,7 @@ pub async fn run() -> Result<()> {
         .route("/favicon.ico", get(favicon_ico))
         .route("/favicon.svg", get(favicon_svg))
         .route("/worldmap.svg", get(worldmap_svg))
+        .route("/sea-static.mp4", get(sea_static_mp4))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -746,6 +747,18 @@ async fn worldmap_svg() -> Response {
             (header::CACHE_CONTROL, "public, max-age=604800"),
         ],
         include_str!("assets/worldmap.svg"),
+    )
+        .into_response()
+}
+
+/// A short looping VHS/TV-static clip used as the sea texture behind the ASCII map.
+async fn sea_static_mp4() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "video/mp4"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_bytes!("assets/sea-static.mp4").as_slice(),
     )
         .into_response()
 }
