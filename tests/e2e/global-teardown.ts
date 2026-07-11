@@ -16,6 +16,7 @@ export default async function globalTeardown(): Promise<void> {
     ...process.env,
     XDG_DATA_HOME: join(state.tmpDir, 'data'),
     XDG_STATE_HOME: join(state.tmpDir, 'state'),
+    MUCKDB_BIND: '127.0.0.1',
   };
   try {
     execFileSync(BINARY, ['--port', String(state.port), '--stop'], { env, stdio: 'pipe' });
