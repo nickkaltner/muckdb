@@ -455,10 +455,10 @@
   /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
      so it never falls back to solid black even if this rule is missing). */
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
-  /* Subtle animated "static" shimmer over the open sea (masked to water). Its
-     strength is per-theme (applyTheme sets --wm-static-opacity; 0 disables it —
-     the dark blocky look is off on light themes, where it reads badly). */
-  .wm-svg .wm-static { opacity: var(--wm-static-opacity, 0.12); pointer-events: none; }
+  /* Looping static video over the open sea (masked to water), same clip + faint
+     opacity as the ascii backdrop. */
+  .wm-svg .wm-static { opacity: 0.08; pointer-events: none; }
+  .wm-svg .wm-sea-vid video { width: 100%; height: 100%; object-fit: cover; }
   /* Data overlay, shared by the hi-fi SVG map and the ascii overlay: markers,
      semi-transparent connection arcs, and labels (top layer, with a
      surface-coloured halo so they stay legible over land/arcs/dots). */
@@ -1158,10 +1158,6 @@
     LABEL_BG_FILL = t.labelBg || "var(--surface)";
     LABEL_BG_ALPHA = t.labelBgAlpha != null ? t.labelBgAlpha : 0.55;
     LINK_ROUND = t.roundLinks !== false;
-    // Sea static: one fine grayscale shimmer over open water. Light themes need
-    // more of it to read (low contrast on pale water); dark themes need less.
-    // Override strength per theme with `seaStatic`.
-    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.35 : 0.1)));
     // How many of the theme's chart colours are curated-categorical (see
     // catColors); themes with a long hand-picked list opt in via catN.
     CAT_N = Math.min(t.catN || CAT_CURATED, t.chart.length);

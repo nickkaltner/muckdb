@@ -1,7 +1,5 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.85 68.05 2300 907" preserveAspectRatio="xMidYMid meet" class="wm-svg">
   <defs>
-    <!-- Fine animated grayscale noise: it has both light and dark speckles, so it reads on any sea (light specks on dark water, dark on light) — one look for every theme. -->
-    <filter id="wm-static" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.35" numOctaves="2" stitchTiles="stitch" result="t"><animate attributeName="seed" values="1;5;9;13;17;21;25;29;33;37;41;45" dur="1.3s" repeatCount="indefinite" calcMode="discrete"/></feTurbulence><feColorMatrix in="t" type="saturate" values="0"/></filter>
     <!-- Sea mask: white everywhere, black over land (currentColor→#000 via the color set here), so the static only shows over open sea. -->
     <mask id="wm-sea" maskUnits="userSpaceOnUse" x="-8.85" y="68.05" width="2300" height="907" style="color:#000"><rect x="-8.85" y="68.05" width="2300" height="907" fill="#fff"/><use href="#polygons" stroke="#000"/></mask>
   </defs>
@@ -263,7 +261,7 @@
     <path d="M747.707,494.89L746.791,495.04L747.061,494.047Z" class="land" id="AG" title="Antigua and Barbuda"/>
     <path d="M695.539,524.119L695.266,524.204L694.475,523.514L695.068,523.381Z" class="land" id="AW" title="Aruba"/>
   </g></g>
-  <rect class="wm-static" x="-8.85" y="68.05" width="2300" height="907" filter="url(#wm-static)" mask="url(#wm-sea)"/>
+  <foreignObject class="wm-static wm-sea-vid" x="-8.85" y="68.05" width="2300" height="907" mask="url(#wm-sea)"><video xmlns="http://www.w3.org/1999/xhtml" src="/sea-static.mp4" autoplay="" loop="" muted="" playsinline=""></video></foreignObject>
   <g id="labels" font-family="Helvetica, sans-serif" fill="#5c5c5c" text-anchor="middle" dominant-baseline="middle">
     <text x="1331.45" y="724.63" font-size="7.28">Zimbabwe</text>
     <text x="1318.41" y="689.27" font-size="11.00">Zambia</text>
