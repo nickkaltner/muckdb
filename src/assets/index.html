@@ -129,8 +129,6 @@
     58%  { opacity: 0.66; transform: scaleY(0.94); box-shadow: 0 0 3px 0 var(--orange); }
     100% { opacity: 0.40; transform: scaleY(0.82); box-shadow: 0 0 0 0 transparent; }
   }
-  .host { font-size: 12px; color: var(--muted); padding: 3px 9px; border: 1px solid var(--line); border-radius: 5px; }
-  .host:hover { color: var(--fg); border-color: var(--orange-dim); text-decoration: none; }
 
   .tabs { height: var(--tabs-h); display: flex; align-items: stretch; padding: 0 10px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--surface), var(--bg)); }
   .tab { font: inherit; font-size: 12px; letter-spacing: 0.16em; text-transform: uppercase; background: none; border: 0; border-bottom: 2px solid transparent; color: var(--muted); padding: 0 16px; cursor: pointer; }
@@ -712,11 +710,10 @@
     <span class="wordmark">muck<span class="db">db</span></span>
     <span class="subtitle">live console</span>
     <span class="spacer"></span>
+    <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
     <button class="kbtn" id="import-btn" title="Import a .muckdb session export">⇪ import</button>
     <input type="file" id="import-file" accept=".muckdb,.zip" hidden>
     <button class="kbtn" id="kbtn" title="Jump to a database, table or session (⌘K / Ctrl-K)">⌕ jump <kbd>⌘K</kbd></button>
-    <span class="conn" id="status"><span class="cursor"></span><span id="status-text">connecting</span></span>
-    <a class="host" id="self-link" href="/">localhost</a>
     <button class="kbtn" id="theme-btn" title="Theme">◐ theme</button>
     <button class="kbtn" id="credits-btn" title="Credits" aria-label="Credits">?</button>
   </header>
@@ -2078,7 +2075,11 @@
     } else if (!c.numeric && c.top && c.top.length) {
       const max = Math.max(1, ...c.top.map((t) => t.count));
       const tf = colFmt(state.selDb, c.name, state.selTable);
-      body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${tf ? applyFmtHtml(tf, t.value) : esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
+      // Stats top-values are whole cell values (for a list column, whole arrays
+      // like "[red, blue]"), so clicking one filters by equality — data-fexact
+      // stops it being treated as list-element containment (which matched nothing
+      // and emptied the page).
+      body = `<div class="toplist">` + c.top.map((t) => `<button class="toprow" data-fcol="${attr(c.name)}" data-fval="${attr(t.value)}" data-fexact="1"><span class="tbar" style="width:${Math.round((t.count / max) * 100)}%"></span><span class="tv">${tf ? applyFmtHtml(tf, t.value) : esc(t.value)}</span><span class="tc">${t.count}</span></button>`).join("") + `</div>`;
     } else { body = '<div class="note">no distribution available.</div>'; }
     return `<div class="stat-card" data-col="${attr(c.name)}"><div class="stat-head"><span class="stat-name">${esc(c.name)}</span><span class="stat-type">${esc(c.col_type)}</span></div>${meta}${body}</div>`;
   }
@@ -2804,7 +2805,9 @@
         swbg: THEMES[n].vars.bg,
       })),
       selectedIndex: names.indexOf(state.theme),
-      onPick: (it) => applyTheme(it.theme),
+      // Persist the choice, then hard-reload so every baked-in colour (charts,
+      // canvas maps, computed styles) is rebuilt cleanly from the new theme.
+      onPick: (it) => { try { localStorage.setItem("muckdb.theme", it.theme); } catch (_) {} location.reload(); },
     });
   }
   // Expand a chart tile into a large overlay for legibility.
@@ -4176,7 +4179,7 @@
   function dropFilters(pred) {
     for (let j = state.filters.length - 1; j >= 0; j--) if (pred(state.filters[j])) state.filters.splice(j, 1);
   }
-  function toggleFilter(column, value) {
+  function toggleFilter(column, value, exact) {
     const i = state.filters.findIndex((f) => f.column === column && f.value === value && !f.negate);
     if (i >= 0) state.filters.splice(i, 1);
     else {
@@ -4184,9 +4187,11 @@
       dropFilters((f) => f.column === column && f.value === value && f.negate);
       // A list facet filters by containment: the row's array must hold the
       // value (the 10.0 facet matches [1, 10], [10] and [10, 400] alike).
+      // `exact` (stats top-values) overrides this — the value is the whole array,
+      // so match it by equality, not element containment.
       const fac = state.facets.find((f) => f.name === column);
       const flt = { column, value };
-      if (fac && fac.list) flt.contains = true;
+      if (!exact && fac && fac.list) flt.contains = true;
       state.filters.push(flt);
     }
     afterFilterChange();
@@ -4479,7 +4484,7 @@
     const facet = ev.target.closest("[data-fcol]");
     if (facet) {
       if (facet.dataset.fnot) { if (facet.dataset.fnull) toggleNotNullFilter(facet.dataset.fcol); else toggleNotFilter(facet.dataset.fcol, facet.dataset.fval); }
-      else if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval);
+      else if (facet.dataset.fnull) toggleNullFilter(facet.dataset.fcol); else toggleFilter(facet.dataset.fcol, facet.dataset.fval, facet.dataset.fexact === "1");
       // A pick from the slide-over drawer dismisses it; a pick inside the
       // "show all" modal keeps it open for multi-select but re-ticks its rows.
       if (facet.closest("#facet-panel")) closeFacetDrawer();
@@ -4757,7 +4762,6 @@
   function tick() { $("sl-clock").textContent = new Date().toLocaleTimeString([], { hour12: false }); }
   setInterval(tick, 1000); tick();
 
-  $("self-link").textContent = location.host;
   $("sl-port").textContent = ":" + (location.port || (location.protocol === "https:" ? "443" : "80"));
 
   // Default page size follows the window height; recompute on resize in auto mode.

@@ -109,6 +109,23 @@ CREATE OR REPLACE VIEW events_heat AS
   GROUP BY hours.hour, hours.h, days.weekday, days.d
   ORDER BY days.d, hours.h;
 
+-- Geographic points for a MAP tile: ~400 customers jittered around 10 cities.
+CREATE OR REPLACE TABLE customers AS
+  WITH cities AS (
+    SELECT row_number() OVER () - 1 AS idx, city, lat, lon FROM (VALUES
+      ('Sydney',-33.87,151.21),('Tokyo',35.68,139.69),('London',51.51,-0.13),
+      ('New York',40.71,-74.01),('Sao Paulo',-23.55,-46.63),('Cape Town',-33.92,18.42),
+      ('Singapore',1.35,103.82),('Los Angeles',34.05,-118.24),('Berlin',52.52,13.40),
+      ('Mumbai',19.08,72.88)) c(city, lat, lon))
+  SELECT g.i AS id, ci.city,
+         round(ci.lat + (random() - 0.5) * 5, 4) AS latitude,
+         round(ci.lon + (random() - 0.5) * 5, 4) AS longitude
+  FROM range(400) g(i) JOIN cities ci ON ci.idx = (hash(g.i) % 10);
+CREATE OR REPLACE VIEW customer_map AS SELECT id, city, latitude, longitude FROM customers;
+-- Running revenue total by day — the shape an AREA chart likes (cumulative over time).
+CREATE OR REPLACE VIEW revenue_cumulative AS
+  SELECT day, round(sum(revenue) OVER (ORDER BY day), 2) AS cumulative_revenue FROM sales_per_day;
+
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 " >/dev/null
@@ -126,8 +143,12 @@ COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/dev/null; done
 "$MUCKDB" format "$DB" temp_c   --suffix '°C' --decimals 1 >/dev/null
 "$MUCKDB" format "$DB" humidity --suffix '%'  --decimals 0 >/dev/null
+"$MUCKDB" format "$DB" cumulative_revenue --currency USD >/dev/null
 
 # ---- session dashboard --------------------------------------------------------
+# Rebuild from scratch so tiles land in this script's order (a pre-existing demo
+# keeps old tile positions and would append new panels out of order).
+"$MUCKDB" session rm "$SESSION" >/dev/null 2>&1 || true
 "$MUCKDB" session create "$SESSION" --title "muckdb demo" >/dev/null
 
 "$MUCKDB" session post "$SESSION" --name intro --title "About this demo" --md "# muckdb demo 🦆
@@ -169,6 +190,10 @@ the [docs](https://github.com/nickkaltner/muckdb#readme), or a deep link straigh
 to this [session dashboard](http://localhost:11000/session/demo/).
 MD
 
+# Section headings (a tile type of their own) group the dashboard and show up as
+# headers in the contents.
+"$MUCKDB" session section "$SESSION" --name sec-sales --title "Sales" >/dev/null
+
 "$MUCKDB" session tile "$SESSION" --name revenue --title "Revenue by region" \
   --db "$DB" --view sales_by_region --chart bar --x region --y revenue --bars solid \
   --xlabel Region --ylabel Revenue \
@@ -190,6 +215,8 @@ MD
   --db "$DB" --view revenue_by_region_category --chart stacked --x region --y hardware,software,services \
   --caption "Stacked bars — each region's total split into Hardware / Software / Services." >/dev/null
 
+"$MUCKDB" session section "$SESSION" --name sec-time --title "Time series" >/dev/null
+
 "$MUCKDB" session tile "$SESSION" --name climate --title "Sensors (regular hourly series)" \
   --db "$DB" --view sensors --chart line --x ts --y temp_c,humidity \
   --event '2026-05-08T00:00|firmware v2' --event '2026-05-21T12:00|heatwave' \
@@ -207,9 +234,16 @@ MD
   --xlabel "Day" --ylabel "Orders" \
   --caption "Continuous over time — gradient bars. One bar per calendar day; they line up on day boundaries regardless of your timezone." >/dev/null
 
+"$MUCKDB" session tile "$SESSION" --name cumulative --title "Cumulative revenue" \
+  --db "$DB" --view revenue_cumulative --chart area --x day --y cumulative_revenue --trend \
+  --xlabel "Day" --ylabel "Cumulative revenue" \
+  --caption "Area chart — a running revenue total over the month; the trendline smooths its climb." >/dev/null
+
 "$MUCKDB" session tile "$SESSION" --name scatter --title "Each event over time" \
   --db "$DB" --view events_points --chart scatter --x ts --y value \
   --caption "Every event as a point — clusters show where activity bunched up." >/dev/null
+
+"$MUCKDB" session section "$SESSION" --name sec-dist --title "Distributions" >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name spread --title "Order value spread by category" \
   --db "$DB" --view amount_spread --chart box --x category --y lo,q1,med,q3,hi --desc note \
@@ -218,6 +252,12 @@ MD
 "$MUCKDB" session tile "$SESSION" --name heat --title "Activity by weekday × hour" \
   --db "$DB" --view events_heat --chart heatmap --x hour --y weekday --value events \
   --caption "A heatmap crosses two categoricals and shades cells by a value — the midday hump shows as a bright column, quieter days as dim rows." >/dev/null
+
+"$MUCKDB" session section "$SESSION" --name sec-geo --title "Geography" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name map --title "Where our customers are" \
+  --db "$DB" --view customer_map --chart map --lat latitude --lon longitude --label city \
+  --caption "A map tile plots lat/long points on an ASCII world map; brighter cells hold more customers. Hover a marker for its city." >/dev/null
 
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
@@ -229,10 +269,15 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Revenue / types** | solid bars                     | categorical buckets → one colour each    |
 | **Orders per day**  | gradient bars on a UTC axis    | continuous over time → gradient          |
 | **Sensors**         | line + event & target markers  | a clean series with annotations          |
+| **Cumulative rev.** | area + trendline               | a running total over time                 |
 | **Top products**    | table (fills, no scroll)       | small result set read in full            |
 | **Each event**      | scatter                        | raw points show where activity bunched   |
 | **Activity heat**   | heatmap (weekday × hour)       | two categoricals × a value → density at a glance |
 | **Value spread**    | box plots on a shared scale    | compare whole distributions, each with a note |
+| **Customers**       | map (lat/long → world map)     | geographic points, brighter = denser      |
+
+Section headers (**Sales**, **Time series**, **Distributions**, **Geography**)
+group the panels and appear in the contents.
 
 Every figure here is backed by a **view** you can open (hit **explore**),
 re-sort, filter, and export — nothing is take-my-word-for-it." >/dev/null

@@ -15,7 +15,10 @@ SELECT i AS id,
        (['Alpha','Beta','Gamma','Delta','Epsilon'])[(i % 5) + 1] AS category,
        (['US','EU','APAC'])[(i % 3) + 1]                        AS region,
        round((i * 7) % 100 + 0.5, 2)                            AS price,
-       TIMESTAMP '2026-01-01 00:00:00' + (i * INTERVAL 6 HOUR)  AS created
+       TIMESTAMP '2026-01-01 00:00:00' + (i * INTERVAL 6 HOUR)  AS created,
+       -- an array column with a unit format; every 4th row is empty, to cover
+       -- empty-list rendering (must show "—", not a bare unit suffix).
+       CASE WHEN i % 4 = 0 THEN CAST([] AS INTEGER[]) ELSE [10, 100] END AS sizes
 FROM range(200) t(i);
 CREATE VIEW widgets_all AS SELECT * FROM widgets;
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
@@ -26,6 +29,9 @@ CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GR
 export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): void {
   // 1. Build the database (this also registers it in the ledger so the daemon can browse it).
   run(binary, env, [dbPath, '-c', CREATE_SQL]);
+
+  // Unit format on the array column, so empty vs non-empty rendering is exercised.
+  run(binary, env, ['format', dbPath, 'sizes', '--suffix', ' Gbps', '--thousands']);
 
   // 2. Build the dashboard session.
   run(binary, env, ['session', 'create', 'e2e', '--title', 'E2E fixtures']);

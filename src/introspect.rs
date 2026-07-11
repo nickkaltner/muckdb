@@ -436,16 +436,26 @@ fn is_scalar_list_type(t: &str) -> bool {
     t.ends_with("[]") && !is_nested_type(t[..t.len() - 2].trim_end())
 }
 
-/// A value filter on a scalar-list column can only sensibly mean containment.
-/// Older clients and saved links may omit the `contains` flag — infer it from
-/// the schema so equality against a list (never true) can't slip through.
+/// An element value filter on a scalar-list column means containment. Older
+/// clients and saved links may omit the `contains` flag — infer it from the
+/// schema. Exception: a *whole-array* value like `[red, blue]` (from the stats
+/// per-column top-values) means equality on the whole list, which the equality
+/// path handles as `CAST(col AS VARCHAR) = '[red, blue]'`; forcing containment
+/// there would test for an element literally named "[red, blue]" and match
+/// nothing. So skip values that are themselves an array literal.
 pub(crate) fn normalize_contains(cols: &[(String, String)], filters: &[Filter]) -> Vec<Filter> {
     filters
         .iter()
         .cloned()
         .map(|mut f| {
+            let whole_array = f
+                .value
+                .as_deref()
+                .map(str::trim)
+                .is_some_and(|v| v.starts_with('[') && v.ends_with(']'));
             if f.value.is_some()
                 && !f.contains
+                && !whole_array
                 && cols
                     .iter()
                     .any(|(n, t)| *n == f.column && is_scalar_list_type(t))
@@ -1442,6 +1452,24 @@ mod tests {
             "list-column filter must become containment"
         );
         assert!(!out[1].contains, "plain column filter stays equality");
+
+        // Regression: a *whole-array* value (from the stats per-column
+        // top-values, e.g. clicking "[red, blue]") means equality on the whole
+        // list — it must NOT be forced to containment (which matched nothing and
+        // collapsed the stats page). The equality path compares CAST(col AS
+        // VARCHAR) to the literal, which does match.
+        let whole = normalize_contains(&cols, &[vf("port_gbps", "[1.0, 10.0]")]);
+        assert!(
+            !whole[0].contains,
+            "whole-array value stays equality, not containment"
+        );
+        let w = build_where(
+            &["port_gbps".to_string()],
+            None,
+            &normalize_contains(&cols, &[vf("port_gbps", "[1.0, 10.0]")]),
+        )
+        .unwrap();
+        assert_eq!(w, "CAST(\"port_gbps\" AS VARCHAR) = '[1.0, 10.0]'");
     }
 
     #[test]

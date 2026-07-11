@@ -35,4 +35,47 @@ test.describe('cell value filters', () => {
     await expect(page.locator('#tp-results')).toHaveText(/160 results/);
     await expect(page.locator('.active-filters .fchip')).toContainText('≠');
   });
+
+  test('active "=" shows a bordered "+", never swaps to "−"', async ({ page }) => {
+    const { dbId } = readState();
+    await page.goto(`/db/${dbId}/widgets/`);
+    await expect(page.locator('#tp-results')).toHaveText(/200 results/);
+
+    const alpha = page.locator('table.preview td', { hasText: 'Alpha' }).first();
+    await alpha.hover();
+    await alpha.locator('.cellf:not([data-fnot])').click();
+    await expect(page.locator('#tp-results')).toHaveText(/40 results/);
+
+    // Re-locate an Alpha cell (the table re-rendered) and inspect its include
+    // button: it stays "+" and gains the active class (bordered), rather than
+    // turning into a "−".
+    const cell = page.locator('table.preview td', { hasText: 'Alpha' }).first();
+    await cell.hover();
+    const plus = cell.locator('.cellf:not([data-fnot])');
+    await expect(plus).toHaveText('+');
+    await expect(plus).toHaveClass(/\bon\b/);
+  });
+
+  test('"=" and "≠" on the same value are mutually exclusive', async ({ page }) => {
+    const { dbId } = readState();
+    await page.goto(`/db/${dbId}/widgets/`);
+    await expect(page.locator('#tp-results')).toHaveText(/200 results/);
+
+    // Apply "= Alpha" → 40 rows, one chip.
+    let alpha = page.locator('table.preview td', { hasText: 'Alpha' }).first();
+    await alpha.hover();
+    await alpha.locator('.cellf:not([data-fnot])').click();
+    await expect(page.locator('#tp-results')).toHaveText(/40 results/);
+    await expect(page.locator('.active-filters .fchip')).toHaveCount(1);
+
+    // Click "≠" on an Alpha cell: it must REPLACE the "=" (not stack both, which
+    // would be contradictory → 0 rows). Result: only "≠ Alpha" → 160 rows.
+    alpha = page.locator('table.preview td', { hasText: 'Alpha' }).first();
+    await alpha.hover();
+    await alpha.locator('.cellf[data-fnot]').click();
+    await expect(page.locator('#tp-results')).toHaveText(/160 results/);
+    const chips = page.locator('.active-filters .fchip');
+    await expect(chips).toHaveCount(1);
+    await expect(chips.first()).toContainText('≠');
+  });
 });
