@@ -437,11 +437,11 @@
   .worldmap-wrap { container-type: inline-size; width: 100%; overflow: hidden; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; }
   .worldmap { font-family: var(--mono); font-size: 0.82cqw; line-height: 1; white-space: pre; margin: 0; color: color-mix(in srgb, var(--fg) 26%, transparent); letter-spacing: 0; cursor: default; }
   .worldmap .wm-x { font-weight: 700; cursor: pointer; }
-  /* ascii / hi-fi map toggle. */
-  .wm-toggle { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
-  .wm-mode { font: inherit; font-size: 10.5px; padding: 2px 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line-soft); border-radius: 5px; cursor: pointer; }
-  .wm-mode:hover { color: var(--fg); border-color: var(--line); }
-  .wm-mode.on { color: var(--ember); border-color: var(--ember); }
+  /* ascii / hi-fi map toggle — lives among the tile's header action buttons
+     (and the zoom bar), so it's excluded from poster/screenshot captures. */
+  .wm-toggle { display: inline-flex; gap: 4px; }
+  .wm-mode.on { color: var(--orange); border-color: var(--orange); }
+  .zoom-actions .wm-mode { font-size: 12px; }
   /* Dual-mode container: show only the active representation. */
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
   .worldmap-wrap.mode-svg .worldmap { display: none; }
@@ -2912,7 +2912,10 @@
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
       if (kind === "heatmap" || kind === "box") layer.querySelector(".zoom-box").classList.add("fit");
-      if (kind === "map") layer.querySelector(".zoom-box").classList.add("mapzoom");
+      if (kind === "map") {
+        layer.querySelector(".zoom-box").classList.add("mapzoom");
+        layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
+      }
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -3333,13 +3336,14 @@
       : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
+    const mapToggle = kind === "map" ? mapModeToggle() : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too).
     const grip = kind === "heatmap" || kind === "box" || kind === "map" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions">${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions">${mapToggle}${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
@@ -3613,12 +3617,23 @@
     const mode = mapMode();
     const did = "wmd" + wmDotSeq++;
     wmDots[did] = dots;
-    const toggle = `<div class="wm-toggle"><button class="wm-mode${mode === "ascii" ? " on" : ""}" data-mapmode="ascii">ascii</button><button class="wm-mode${mode === "svg" ? " on" : ""}" data-mapmode="svg">hi-fi</button></div>`;
-    return toggle
-      + `<div class="worldmap-wrap mode-${mode}">`
+    // The ascii/hi-fi toggle lives in the tile's header actions (see
+    // mapModeToggle), which every capture path excludes — so it never appears in
+    // a poster/screenshot. The body is just the map + legend.
+    return `<div class="worldmap-wrap mode-${mode}">`
       + `<pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre>`
       + `<div class="wm-svg-host" data-dots="${did}"></div>`
       + `</div>${legend}`;
+  }
+  // The ascii/hi-fi map-mode toggle, rendered among a tile's header action
+  // buttons (map tiles only). Excluded from poster/screenshot captures like the
+  // other panel-actions. All toggles share the global mode, so any one flips all.
+  function mapModeToggle() {
+    const m = mapMode();
+    return `<span class="wm-toggle">`
+      + `<button class="panel-act wm-mode${m === "ascii" ? " on" : ""}" data-mapmode="ascii">ascii</button>`
+      + `<button class="panel-act wm-mode${m === "svg" ? " on" : ""}" data-mapmode="svg">hi-fi</button>`
+      + `</span>`;
   }
   const TILE_TABLE_ROWS = 20;
   function miniTable(cols, rows, db, table, shrunk, limit, filtered) {

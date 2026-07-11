@@ -27,6 +27,11 @@ test.describe('map tile', () => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="map"]');
 
+    // The toggle lives in the tile's header actions (excluded from poster /
+    // screenshot captures), not in the map body.
+    await expect(panel.locator('.panel-actions .wm-toggle')).toHaveCount(1);
+    await expect(panel.locator('.panel-body .wm-toggle')).toHaveCount(0);
+
     // Defaults to ASCII: the <pre> map is shown, the SVG host is hidden.
     const wrap = panel.locator('.worldmap-wrap');
     await expect(wrap).toHaveClass(/\bmode-ascii\b/);
