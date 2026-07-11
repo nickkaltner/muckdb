@@ -84,14 +84,11 @@ pub async fn run() -> Result<()> {
         .fallback(get(index))
         .with_state(state);
 
-    // Loopback by default — the console exposes every database muckdb has
-    // touched, so it shouldn't be on the LAN unless deliberately opened up
-    // (MUCKDB_BIND=0.0.0.0, or any specific interface address).
-    let bind: std::net::IpAddr = std::env::var("MUCKDB_BIND")
-        .ok()
-        .and_then(|s| s.parse().ok())
-        .unwrap_or_else(|| std::net::IpAddr::from([127, 0, 0, 1]));
+    let bind = bind_addr();
     let port = facade::resolved_port();
+    if let Some(w) = public_bind_warning() {
+        eprintln!("{w}");
+    }
     let addr = SocketAddr::from((bind, port));
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -99,6 +96,28 @@ pub async fn run() -> Result<()> {
     println!("muckdb daemon listening on http://localhost:{port}");
     axum::serve(listener, app).await.context("server error")?;
     Ok(())
+}
+
+/// The address the daemon binds to: `MUCKDB_BIND` if set and parseable, else
+/// loopback. Loopback by default because the console exposes every database
+/// muckdb has touched; it shouldn't be on the LAN unless deliberately opened up
+/// (`MUCKDB_BIND=0.0.0.0`, or any specific interface address).
+pub fn bind_addr() -> std::net::IpAddr {
+    std::env::var("MUCKDB_BIND")
+        .ok()
+        .and_then(|s| s.parse().ok())
+        .unwrap_or_else(|| std::net::IpAddr::from([127, 0, 0, 1]))
+}
+
+/// A one-line warning when the daemon is (or is about to be) reachable beyond
+/// loopback, so both the spawning CLI and the daemon log flag the exposure.
+pub fn public_bind_warning() -> Option<String> {
+    let addr = bind_addr();
+    (!addr.is_loopback()).then(|| {
+        format!(
+            "muckdb: WARNING binding to {addr} exposes every database muckdb has touched to the network — use a loopback address unless this is deliberate"
+        )
+    })
 }
 
 /// Register `_muckdb._tcp.local.` over mDNS. The returned daemon must be kept

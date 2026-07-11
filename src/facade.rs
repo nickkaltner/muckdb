@@ -106,6 +106,11 @@ pub fn ensure_daemon() -> Result<()> {
         std::thread::sleep(Duration::from_millis(50));
     }
     let _ = child.wait();
+    // Surface a non-loopback bind on the starting terminal too — the daemon's
+    // own warning only reaches its detached log.
+    if let Some(w) = crate::server::public_bind_warning() {
+        eprintln!("{w}");
+    }
     Ok(())
 }
 

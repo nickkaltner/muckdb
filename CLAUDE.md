@@ -16,6 +16,16 @@ UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run wit
 The first `muckdb` call starts the background server automatically. You don't
 need to manage it (`muckdb start` / `--status` / `--stop` / `--display` exist if needed).
 
+**Port.** The daemon defaults to 11000. Override it with `--port <N>` (recorded
+in `MUCKDB_PORT` so the spawned daemon and every later CLI call in the same
+environment agree), or by setting `MUCKDB_PORT` directly — useful for running an
+isolated second instance. (The bind address is set via the `MUCKDB_BIND` env var,
+loopback by default; a non-loopback bind exposes every database muckdb has touched
+and prints a one-line stderr warning.)
+<!-- Keep --port / MUCKDB_PORT documented HERE ONLY (agent-facing). Do NOT add it
+to README.md or the installed skill (src/assets/skill/SKILL.md) — it's an
+internal/testing knob, not something end users or the skill should reach for. -->
+
 ## When to use it
 
 When you've analysed data in duckdb and want to **show the human the result**,
