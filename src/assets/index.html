@@ -448,7 +448,7 @@
   .worldmap-wrap.mode-svg .wm-ascii-stage { display: none; }
   .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; }
   /* Looping static video behind the ascii backdrop (the sea texture). */
-  .wm-ascii-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: 0.08; }
+  .wm-ascii-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: var(--wm-static-opacity, 0.08); }
   .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .wm-ascii-overlay .wm-x, .wm-ascii-overlay .wm-arc, .wm-ascii-overlay .wm-arc-label { pointer-events: auto; }
   .wm-svg-host { width: 100%; }
@@ -457,7 +457,7 @@
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
   /* Looping static video over the open sea (masked to water), same clip + faint
      opacity as the ascii backdrop. */
-  .wm-svg .wm-static { opacity: 0.08; pointer-events: none; }
+  .wm-svg .wm-static { opacity: var(--wm-static-opacity, 0.08); pointer-events: none; }
   .wm-svg .wm-sea-vid video { width: 100%; height: 100%; object-fit: cover; }
   /* Data overlay, shared by the hi-fi SVG map and the ascii overlay: markers,
      semi-transparent connection arcs, and labels (top layer, with a
@@ -1156,8 +1156,14 @@
     ARC_OPACITY = t.arcOpacity != null ? t.arcOpacity : (t.light ? 0.4 : 0.22);
     ARC_GAP = t.arcGap != null ? t.arcGap : 1;
     LABEL_BG_FILL = t.labelBg || "var(--surface)";
-    LABEL_BG_ALPHA = t.labelBgAlpha != null ? t.labelBgAlpha : 0.55;
+    // Light themes get a more opaque (whiter) label pill so arc labels stay
+    // legible over the map + arcs + sea video; dark themes need less.
+    LABEL_BG_ALPHA = t.labelBgAlpha != null ? t.labelBgAlpha : (t.light ? 0.85 : 0.55);
     LINK_ROUND = t.roundLinks !== false;
+    // Sea-static video opacity: the clip is dark, so it shows strongly over pale
+    // water — light themes need it much more transparent than dark ones. Override
+    // per theme with `seaStatic`.
+    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.03 : 0.08)));
     // How many of the theme's chart colours are curated-categorical (see
     // catColors); themes with a long hand-picked list opt in via catN.
     CAT_N = Math.min(t.catN || CAT_CURATED, t.chart.length);
@@ -4129,10 +4135,14 @@
     cbs.afterTitle = () => zoneLabel(tz);
   }
   function chartOpts(scatter, time, stacked, minUnit, offset) {
-    // Major (unit-boundary) ticks get the next unit's format via major.enabled —
-    // so on an hourly axis each midnight reads "Jun 30" in bold instead of a
-    // second anonymous "12AM", and its gridline is drawn stronger.
-    const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? "rgba(255,255,255,0.14)" : "rgba(255,255,255,0.05)");
+    // Grid lines derive from the theme foreground at a low alpha, so they're faint
+    // light lines on dark themes and faint dark lines on light themes (a fixed
+    // white grid is invisible on paper/glacier). Major (unit-boundary) ticks —
+    // e.g. each midnight on an hourly axis — get a slightly stronger line.
+    const fg = resolveColor("var(--fg)");
+    const gridA = (a) => `rgba(${fg[0]}, ${fg[1]}, ${fg[2]}, ${a})`;
+    const gridMinor = gridA(0.07), gridMajor = gridA(0.16);
+    const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? gridMajor : gridMinor);
     const x = time
       ? { type: "time",
           time: Object.assign({
@@ -4142,9 +4152,9 @@
           offset: !!offset, grid: { color: gridCol, offset: !!offset },
           ticks: { autoSkip: true, maxRotation: 0, major: { enabled: true },
             font: (ctx) => (ctx.tick && ctx.tick.major ? { weight: "bold" } : {}) } }
-      : { type: scatter ? "linear" : "category", grid: { color: "rgba(255,255,255,0.05)" } };
+      : { type: scatter ? "linear" : "category", grid: { color: gridMinor } };
     if (stacked) x.stacked = true;
-    const y = { grid: { color: "rgba(255,255,255,0.05)" } };
+    const y = { grid: { color: gridMinor } };
     if (stacked) y.stacked = true;
     return { responsive: true, maintainAspectRatio: false,
       scales: { x, y },
