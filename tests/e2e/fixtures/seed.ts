@@ -27,6 +27,13 @@ CREATE VIEW widgets_all AS SELECT * FROM widgets;
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
 CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GROUP BY 1 ORDER BY 1;
 CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
+-- A connections/flows view: each row is an arc between two fixed cities, for
+-- the map tile's connection rendering (arcs + labels).
+CREATE VIEW widget_flows AS SELECT * FROM (VALUES
+  (-33.87, 151.21, 51.51, -0.13,  'Sydney → London',   120),
+  (51.51,  -0.13,  40.71, -74.01, 'London → New York', 200),
+  (40.71,  -74.01, -33.87, 151.21,'New York → Sydney', 90)
+) f(from_lat, from_lon, to_lat, to_lon, label, gbps);
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -51,6 +58,11 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--db', dbPath, '--view', 'widget_map', '--chart', 'map',
     '--lat', 'latitude', '--lon', 'longitude', '--label', 'category',
     '--caption', 'Widgets by lat/long — hover a marker for its category.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'flows', '--title', 'Flows',
+    '--db', dbPath, '--view', 'widget_flows', '--chart', 'map',
+    '--from-lat', 'from_lat', '--from-lon', 'from_lon', '--to-lat', 'to_lat', '--to-lon', 'to_lon',
+    '--label', 'label', '--value', 'gbps',
+    '--caption', 'Connections drawn as arcs between city pairs.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);

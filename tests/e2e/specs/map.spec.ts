@@ -71,6 +71,55 @@ test.describe('map tile', () => {
     await expect(page.locator('.zoom-overlay .zoom-copyimg')).toBeVisible();
   });
 
+  test('connections map draws arcs (bottom), dots, and labels (top layer)', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="flows"]');
+    // Switch this tile's map to hi-fi (arcs only render on the SVG map).
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+
+    // One arc per connection row (3 in the fixture), plus endpoint dots.
+    await expect(panel.locator('.wm-svg .wm-arcs .wm-arc')).toHaveCount(3);
+    expect(await panel.locator('.wm-svg .wm-dots circle').count()).toBeGreaterThan(0);
+    // Labels for each connection, and they're the LAST group (drawn on top).
+    await expect(panel.locator('.wm-svg .wm-conn-labels .wm-arc-label')).toHaveCount(3);
+    const lastGroupClass = await panel.locator('.wm-svg > g').last().getAttribute('class');
+    expect(lastGroupClass).toBe('wm-conn-labels');
+
+    // Arcs are semi-transparent (a real overlay, not opaque).
+    const op = await panel.locator('.wm-svg .wm-arc').first().evaluate((el) => parseFloat(getComputedStyle(el).strokeOpacity));
+    expect(op).toBeGreaterThan(0);
+    expect(op).toBeLessThan(1);
+
+    // The arc stops short of the endpoints (a margin) — its path start isn't the
+    // raw projected endpoint. Just assert it's a quadratic curve (M…Q…).
+    const d = await panel.locator('.wm-svg .wm-arc').first().getAttribute('d');
+    expect(d).toMatch(/^M[\d.\s-]+Q/);
+
+    // Hovering a label shows the same tooltip as hovering its arc: the label
+    // carries the same data-tip and triggers the shared marker tooltip.
+    const label = panel.locator('.wm-svg .wm-conn-labels .wm-arc-label').first();
+    const labelTip = await label.getAttribute('data-tip');
+    expect(labelTip).toBeTruthy();
+    await label.hover();
+    const tip = page.locator('.wm-tip');
+    await expect(tip).toBeVisible();
+    const labelText = (await label.textContent())!.trim();
+    await expect(tip).toContainText(labelText);
+  });
+
+  test('connections also render as a fluid SVG overlay on the ASCII backdrop', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="flows"]');
+    // ASCII is the default mode; the fluid overlay hydrates over the <pre>.
+    const overlay = panel.locator('.wm-ascii-overlay');
+    await expect(overlay).toBeVisible();
+    await expect(panel.locator('.wm-ascii-stage pre.worldmap')).toBeVisible();
+    await expect(overlay.locator('.wm-arcs .wm-arc')).toHaveCount(3);
+    await expect(overlay.locator('.wm-conn-labels .wm-arc-label')).toHaveCount(3);
+    expect(await overlay.locator('.wm-dots circle').count()).toBeGreaterThan(0);
+  });
+
   test('hi-fi land renders faded, never solid black (self-contained fill)', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="map"]');

@@ -72,7 +72,8 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
-        [--label COL]  (map: per-point label shown in the hover tooltip)
+        [--from-lat COL --from-lon COL --to-lat COL --to-lon COL]  (map: draw each row as a connection/arc between two points)
+        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
@@ -139,7 +140,15 @@ muckdb session rm <name> [--tile TILE]
   the top of the tile switches between the ASCII map and a **hi-fi** SVG world map
   (faded, labelled countries with the same points overlaid); the choice is
   remembered per browser. Both share the same equirectangular projection, so a
-  point lands on the same coastline in either mode.
+  point lands on the same coastline in either mode. **Connections/flows:** give a
+  map four endpoint columns (`--from-lat`/`--from-lon`/`--to-lat`/`--to-lon`,
+  one connection per row) and each row is drawn as a fluid semi-transparent arc
+  between two markers — the same data overlay (markers + arcs + labels) is drawn
+  over the ASCII backdrop or the hi-fi world map. Each arc bows gently and stops
+  just short of its markers (a small margin), and its width/opacity scale with
+  `--value` if given. `--label` names each arc; labels render on a top layer and
+  shift vertically to avoid overlapping (a leader line is drawn when one is
+  moved). Hovering an arc or its label shows the same tooltip.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

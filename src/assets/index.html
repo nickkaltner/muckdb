@@ -442,14 +442,26 @@
   .wm-toggle { display: inline-flex; gap: 4px; }
   .wm-mode.on { color: var(--orange); border-color: var(--orange); }
   .zoom-actions .wm-mode { font-size: 12px; }
-  /* Dual-mode container: show only the active representation. */
+  /* Dual-mode container: show only the active representation. The ascii backdrop
+     lives in a positioned stage so the fluid connection overlay can sit on top. */
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
-  .worldmap-wrap.mode-svg .worldmap { display: none; }
+  .worldmap-wrap.mode-svg .wm-ascii-stage { display: none; }
+  .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; }
+  .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
+  .wm-ascii-overlay .wm-x, .wm-ascii-overlay .wm-arc, .wm-ascii-overlay .wm-arc-label { pointer-events: auto; }
   .wm-svg-host { width: 100%; }
   /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
      so it never falls back to solid black even if this rule is missing). */
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
-  .wm-svg .wm-dots circle.wm-x { cursor: pointer; }
+  /* Data overlay, shared by the hi-fi SVG map and the ascii overlay: markers,
+     semi-transparent connection arcs, and labels (top layer, with a
+     surface-coloured halo so they stay legible over land/arcs/dots). */
+  .wm-dots circle.wm-x { cursor: pointer; }
+  .wm-arcs .wm-arc { fill: none; stroke-linecap: round; cursor: pointer; }
+  .wm-conn-labels .wm-lead { stroke: var(--fg); stroke-opacity: 0.35; stroke-width: 1; }
+  .wm-conn-labels .wm-arc-label { fill: var(--fg); stroke: var(--surface); stroke-linejoin: round; paint-order: stroke; text-anchor: middle; font-family: var(--mono); font-weight: 600; cursor: pointer; }
+  .wm-svg .wm-conn-labels .wm-arc-label { stroke-width: 5; }
+  .wm-ascii-overlay .wm-conn-labels .wm-arc-label { stroke-width: 3; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
   .wm-tip.show { display: block; }
@@ -2919,7 +2931,7 @@
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); return; }
+      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -3384,7 +3396,7 @@
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); return; }
+    if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     applyTileHeight(t.name);
@@ -3516,9 +3528,43 @@
     return mapModePref;
   }
   let wmSvgText = null;        // /worldmap.svg, fetched once
-  const wmDots = {};           // per-render dot markup, consumed on hydrate
+  const wmDots = {};           // per-render overlay markup, consumed on hydrate
+  const wmAscii = {};          // per-render ascii-overlay data, consumed on hydrate
   let wmDotSeq = 0;
-  // Inject the SVG map + its overlay dots into any hi-fi host not yet done.
+  // Draw the fluid connection overlay (markers + arcs + labels) over an ascii
+  // map's <pre> backdrop. Uses the pre's measured pixel box so the overlay lines
+  // up with the landmass; re-runs on resize (the <pre> scales with the panel).
+  function renderAsciiOverlay(stage) {
+    const payload = stage._arcs; if (!payload) return;
+    const pre = stage.querySelector("pre.worldmap"); if (!pre) return;
+    const W = pre.clientWidth, H = pre.clientHeight;
+    if (!W || !H) return;   // hidden (e.g. hi-fi mode) — nothing to draw yet
+    const cellW = W / WM_W, cellH = H / WM_H;
+    const proj = (lat, lon) => [
+      (lon - WM_LON_W) / (WM_LON_E - WM_LON_W) * WM_W * cellW,
+      (WM_LAT_T - lat) / (WM_LAT_T - WM_LAT_B) * WM_H * cellH,
+    ];
+    const fs = Math.max(9, Math.min(15, cellH * 1.5));
+    const dots = connDots(payload.cellDots, proj, { rBase: Math.max(1.2, cellH * 0.18), rSpan: cellH * 0.42 });
+    const ov = connArcs(payload.conns, proj, { valMode: payload.valMode, fv: payload.fv, marginPx: Math.max(6, cellH * 0.9), bowCap: H * 0.5, fontSize: fs, strokeMin: 1, strokeSpan: 2.5 });
+    let svg = stage.querySelector("svg.wm-ascii-overlay");
+    if (!svg) { stage.insertAdjacentHTML("beforeend", '<svg class="wm-ascii-overlay" xmlns="http://www.w3.org/2000/svg"></svg>'); svg = stage.querySelector("svg.wm-ascii-overlay"); }
+    svg.setAttribute("width", W); svg.setAttribute("height", H); svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.innerHTML = `<g class="wm-arcs">${ov.arcs}</g><g class="wm-dots">${dots}</g><g class="wm-conn-labels">${ov.labels}</g>`;
+  }
+  function hydrateAsciiArcs(scope) {
+    (scope || document).querySelectorAll(".wm-ascii-stage[data-arcs]").forEach((stage) => {
+      const id = stage.dataset.arcs;
+      if (wmAscii[id]) { stage._arcs = wmAscii[id]; delete wmAscii[id]; }
+      if (!stage._arcs) return;
+      renderAsciiOverlay(stage);
+      const pre = stage.querySelector("pre.worldmap");
+      if (pre && !stage._ro) { stage._ro = new ResizeObserver(() => renderAsciiOverlay(stage)); stage._ro.observe(pre); }
+    });
+  }
+  // Inject the SVG map + its overlays into any hi-fi host not yet done. Overlays
+  // stack: connection arcs (bottom), point markers, then arc labels (top, so
+  // they're never hidden behind a dot or line).
   async function hydrateMaps(scope) {
     const hosts = [...(scope || document).querySelectorAll(".worldmap-wrap.mode-svg .wm-svg-host:not([data-hydrated])")];
     if (!hosts.length) return;
@@ -3529,13 +3575,77 @@
     }
     hosts.forEach((host) => {
       host.dataset.hydrated = "1";
-      const dots = wmDots[host.dataset.dots] || "";
+      const payload = wmDots[host.dataset.dots] || {};
       delete wmDots[host.dataset.dots];
       if (!wmSvgText) { host.innerHTML = '<div class="note">hi-fi map unavailable.</div>'; return; }
       host.innerHTML = wmSvgText;
       const svg = host.querySelector("svg");
-      if (svg) svg.insertAdjacentHTML("beforeend", '<g class="wm-dots">' + dots + "</g>");
+      if (svg) {
+        let g = "";
+        if (payload.arcs) g += '<g class="wm-arcs">' + payload.arcs + "</g>";
+        g += '<g class="wm-dots">' + (payload.dots || "") + "</g>";
+        if (payload.labels) g += '<g class="wm-conn-labels">' + payload.labels + "</g>";
+        svg.insertAdjacentHTML("beforeend", g);
+      }
     });
+  }
+  // Marker circles for the data overlay. proj maps (lat,lon)→[x,y] in the target
+  // coordinate space (hi-fi SVG units, or ascii-overlay pixels).
+  function connDots(cellDots, proj, cfg) {
+    return cellDots.map((d) => {
+      const p = proj(d.lat, d.lon);
+      const fill = mixColors('var(--ember)', 55 + d.t * 45, 'var(--surface)');
+      return `<circle class="wm-x" cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="${(cfg.rBase + d.t * cfg.rSpan).toFixed(1)}" style="fill:${fill}" data-tip="${d.tip}"/>`;
+    }).join("");
+  }
+  // Connection arcs + labels for the data overlay. Each arc is a quadratic bowed
+  // upward and trimmed a small margin off both ends (De Casteljau) so it stops
+  // short of its markers while its end tangents still point at them. Labels sit
+  // on a top layer and nudge vertically to clear one another (a leader line is
+  // drawn when one is moved). proj maps (lat,lon)→[x,y]; cfg scales to the space.
+  function connArcs(conns, proj, cfg) {
+    if (!conns.length) return { arcs: "", labels: "" };
+    const cvs = conns.map((c) => c.v).filter((v) => isFinite(v));
+    const clo = cvs.length ? Math.min(...cvs) : 0, chi = cvs.length ? Math.max(...cvs) : 1, cspan = chi - clo || 1;
+    const stroke = mixColors('var(--ember)', 100, 'var(--surface)');
+    const lerp = (a, b, t) => [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t];
+    const labelParts = [];
+    let arcs = "";
+    conns.forEach((cn) => {
+      const A = proj(cn.alat, cn.alon), B = proj(cn.blat, cn.blon);
+      const dx = B[0] - A[0], dy = B[1] - A[1], len = Math.hypot(dx, dy) || 1;
+      const mx = (A[0] + B[0]) / 2, my = (A[1] + B[1]) / 2;
+      let px = -dy / len, py = dx / len;
+      if (py > 0) { px = -px; py = -py; }                    // bow upward
+      const bow = Math.min(len * 0.18, cfg.bowCap);
+      const Q = [mx + px * bow, my + py * bow];
+      const t0 = Math.min(0.2, cfg.marginPx / len), t1 = 1 - t0;   // ~const px margin
+      const a1 = lerp(A, Q, t1), b1 = lerp(Q, B, t1), p1 = lerp(a1, b1, t1);
+      const s = t0 / t1;
+      const S = lerp(lerp(A, a1, s), lerp(a1, p1, s), s), C = lerp(a1, p1, s), E = p1;
+      const tt = (cfg.valMode && isFinite(cn.v)) ? (cn.v - clo) / cspan : 0.5;
+      const w = (cfg.strokeMin + tt * cfg.strokeSpan).toFixed(2), op = (0.3 + tt * 0.35).toFixed(2);
+      const tip = attr(`<div class="wm-tip-sub">${esc(cn.label || "connection")}${cfg.valMode && isFinite(cn.v) ? ` · ${esc(cfg.fv(cn.v))}` : ""}</div>`);
+      arcs += `<path class="wm-arc wm-x" d="M${S[0].toFixed(1)} ${S[1].toFixed(1)}Q${C[0].toFixed(1)} ${C[1].toFixed(1)} ${E[0].toFixed(1)} ${E[1].toFixed(1)}" style="stroke:${stroke};stroke-width:${w};stroke-opacity:${op}" data-tip="${tip}"/>`;
+      if (cn.label) {
+        const apx = 0.25 * A[0] + 0.5 * Q[0] + 0.25 * B[0], apy = 0.25 * A[1] + 0.5 * Q[1] + 0.25 * B[1];
+        labelParts.push({ text: cn.label, ax: apx, ay: apy, tip });
+      }
+    });
+    const FS = cfg.fontSize, placed = [];
+    const labels = labelParts.map((L) => {
+      const w = Math.max(FS * 1.5, L.text.length * FS * 0.56), h = FS * 1.15;
+      const x = L.ax, y0 = L.ay - h * 0.7;
+      const hits = (yy) => placed.some((b) => Math.abs(x - b.x) < (w + b.w) / 2 && Math.abs(yy - b.y) < (h + b.h) / 2);
+      let y = y0;
+      if (hits(y)) { outer: for (let step = 1; step <= 16; step++) { for (const dir of [-1, 1]) { const yy = y0 + dir * step * h * 0.92; if (!hits(yy)) { y = yy; break outer; } } } }
+      placed.push({ x, y, w, h });
+      const moved = Math.abs(y - y0) > h * 0.5;
+      const leader = moved ? `<line class="wm-lead" x1="${L.ax.toFixed(1)}" y1="${L.ay.toFixed(1)}" x2="${x.toFixed(1)}" y2="${(y + h * 0.32).toFixed(1)}"/>` : "";
+      // The label carries the same data-tip as its arc — hover either for the tip.
+      return leader + `<text class="wm-arc-label wm-x" x="${x.toFixed(1)}" y="${y.toFixed(1)}" font-size="${FS}" data-tip="${L.tip}">${esc(L.text)}</text>`;
+    }).join("");
+    return { arcs, labels };
   }
   function mapHtml(cols, rows, spec, db, table) {
     const lc = cols.map((c) => String(c).toLowerCase());
@@ -3545,40 +3655,65 @@
     };
     const latI = findCol(spec.lat, ["lat", "latitude"]);
     const lonI = findCol(spec.lon, ["lon", "lng", "long", "longitude"]);
-    if (latI < 0 || lonI < 0) return '<div class="note">map tile needs latitude &amp; longitude columns — pass --lat/--lon, or name them lat/latitude and lon/lng/longitude.</div>';
+    // Connection endpoints (a "flows" map): each row is an arc between two points.
+    const fLatI = findCol(spec.from_lat, ["from_lat", "src_lat", "origin_lat"]);
+    const fLonI = findCol(spec.from_lon, ["from_lon", "src_lon", "origin_lon"]);
+    const tLatI = findCol(spec.to_lat, ["to_lat", "dst_lat", "dest_lat"]);
+    const tLonI = findCol(spec.to_lon, ["to_lon", "dst_lon", "dest_lon"]);
+    const connMode = fLatI >= 0 && fLonI >= 0 && tLatI >= 0 && tLonI >= 0;
+    const ptMode = latI >= 0 && lonI >= 0;
+    if (!connMode && !ptMode) return '<div class="note">map tile needs latitude &amp; longitude columns (--lat/--lon) or connection columns (--from-lat/--from-lon/--to-lat/--to-lon).</div>';
     const valI = spec.value ? cols.indexOf(spec.value) : -1;
     const valMode = valI >= 0;
+    const ptValMode = valMode && ptMode && !connMode;   // value colours point cells
     const labelI = spec.label ? cols.indexOf(spec.label) : -1;
+    const f = valMode ? colFmt(db, spec.value, table) : null;
+    const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
+    const valid = (lat, lon) => isFinite(lat) && isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+    // Flatten rows into a point set (one point per row, or the two endpoints of
+    // each connection) and, in connection mode, an arc list.
+    const pts = [];       // { lat, lon, v, label }
+    const conns = [];     // { alat, alon, blat, blon, label, v }
+    rows.forEach((r) => {
+      const lb = labelI >= 0 && r[labelI] != null ? String(r[labelI]) : "";
+      if (connMode) {
+        const alat = Number(r[fLatI]), alon = Number(r[fLonI]), blat = Number(r[tLatI]), blon = Number(r[tLonI]);
+        if (!valid(alat, alon) || !valid(blat, blon)) return;
+        const v = valMode ? Number(r[valI]) : NaN;
+        conns.push({ alat, alon, blat, blon, label: lb, v });
+        pts.push({ lat: alat, lon: alon, v: NaN, label: "" });
+        pts.push({ lat: blat, lon: blon, v: NaN, label: "" });
+      } else {
+        const lat = Number(r[latI]), lon = Number(r[lonI]);
+        if (!valid(lat, lon)) return;
+        pts.push({ lat, lon, v: valMode ? Number(r[valI]) : NaN, label: lb });
+      }
+    });
     // One entry per grid cell: point count, summed --value, and the tally of
     // --label values that landed in it (for the hover tooltip).
     const cells = new Map();
     let plotted = 0;
-    rows.forEach((r) => {
-      const lat = Number(r[latI]), lon = Number(r[lonI]);
-      if (!isFinite(lat) || !isFinite(lon) || lat < -90 || lat > 90 || lon < -180 || lon > 180) return;
-      const c = Math.max(0, Math.min(WM_W - 1, Math.floor((lon - WM_LON_W) / (WM_LON_E - WM_LON_W) * WM_W)));
-      const row = Math.max(0, Math.min(WM_H - 1, Math.floor((WM_LAT_T - lat) / (WM_LAT_T - WM_LAT_B) * WM_H)));
+    pts.forEach((p) => {
+      const c = Math.max(0, Math.min(WM_W - 1, Math.floor((p.lon - WM_LON_W) / (WM_LON_E - WM_LON_W) * WM_W)));
+      const row = Math.max(0, Math.min(WM_H - 1, Math.floor((WM_LAT_T - p.lat) / (WM_LAT_T - WM_LAT_B) * WM_H)));
       const k = row * WM_W + c;
       let e = cells.get(k);
       if (!e) { e = { n: 0, sum: 0, slat: 0, slon: 0, labels: new Map() }; cells.set(k, e); }
       e.n++;
-      e.slat += lat; e.slon += lon;   // for the hi-fi dot's true centroid
-      if (valMode) { const v = Number(r[valI]); if (isFinite(v)) e.sum += v; }
-      if (labelI >= 0) { const lb = r[labelI] == null ? "" : String(r[labelI]); if (lb) e.labels.set(lb, (e.labels.get(lb) || 0) + 1); }
+      e.slat += p.lat; e.slon += p.lon;   // for the hi-fi dot's true centroid
+      if (ptValMode && isFinite(p.v)) e.sum += p.v;
+      if (p.label) e.labels.set(p.label, (e.labels.get(p.label) || 0) + 1);
       plotted++;
     });
     if (!cells.size) return '<div class="note">no rows had a valid latitude/longitude to plot.</div>';
-    const intensity = (e) => valMode ? e.sum / e.n : e.n;
+    const intensity = (e) => ptValMode ? e.sum / e.n : e.n;
     const vals = [...cells.values()].map(intensity);
     const lo = Math.min(...vals), hi = Math.max(...vals), span = hi - lo || 1;
-    const f = valMode ? colFmt(db, spec.value, table) : null;
-    const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
-    // Build a cell's rich tooltip: coords, count, aggregate value, then the
-    // labels of its points (top few). Labels are esc()'d here so the stored
-    // markup is safe to inject into the tooltip element with innerHTML.
+    // Rich tooltip for a marker: coords, count, aggregate value, then the labels
+    // of its points. esc()'d so it's safe to inject into the tooltip element.
     const tipFor = (e, clat, clon) => {
       let h = `<div class="wm-tip-head">~${clat}°, ${clon}°</div>`;
-      h += `<div class="wm-tip-sub">${e.n.toLocaleString()} point${e.n > 1 ? "s" : ""}${valMode ? ` · avg ${esc(fv(e.sum / e.n))}` : ""}</div>`;
+      h += `<div class="wm-tip-sub">${e.n.toLocaleString()} point${e.n > 1 ? "s" : ""}${ptValMode ? ` · avg ${esc(fv(e.sum / e.n))}` : ""}</div>`;
       if (e.labels.size) {
         const items = [...e.labels.entries()].sort((a, b) => b[1] - a[1]);
         h += '<ul class="wm-tip-list">' + items.slice(0, 8).map(([lb, c]) => `<li><span class="wm-tip-lb">${esc(lb)}</span>${c > 1 ? `<span class="wm-tip-c">×${c}</span>` : ""}</li>`).join("") + "</ul>";
@@ -3586,43 +3721,65 @@
       }
       return h;
     };
+    // Per-cell marker data (centroid lon/lat, intensity, tooltip), shared by the
+    // hi-fi dot layer and the ascii-overlay dot layer.
+    const cellDots = [];
+    for (const [k, e] of cells) {
+      const crow = Math.floor(k / WM_W), ccol = k % WM_W;
+      const clat = Math.round(WM_LAT_T - (crow + 0.5) / WM_H * (WM_LAT_T - WM_LAT_B));
+      const clon = Math.round(WM_LON_W + (ccol + 0.5) / WM_W * (WM_LON_E - WM_LON_W));
+      cellDots.push({ lon: e.slon / e.n, lat: e.slat / e.n, t: (intensity(e) - lo) / span, tip: attr(tipFor(e, clat, clon)) });
+    }
+    // ASCII backdrop: the landmass, with an 'x' at each marker cell for a POINTS
+    // map. A connections map keeps the ascii purely as a background layer — its
+    // markers/arcs/labels are drawn as a fluid SVG overlay on top (identical to
+    // the hi-fi data layer, just projected into the <pre>'s pixel box).
     const lines = WORLD_MAP.split("\n");
-    let out = "", dots = "";
+    let out = "";
     for (let row = 0; row < WM_H; row++) {
       const src = lines[row] || "";
       for (let c = 0; c < WM_W; c++) {
-        const k = row * WM_W + c;
-        const e = cells.get(k);
-        if (e) {
+        const e = cells.get(row * WM_W + c);
+        if (e && !connMode) {
           const t = (intensity(e) - lo) / span;
           const clat = Math.round(WM_LAT_T - (row + 0.5) / WM_H * (WM_LAT_T - WM_LAT_B));
           const clon = Math.round(WM_LON_W + (c + 0.5) / WM_W * (WM_LON_E - WM_LON_W));
           const fill = mixColors('var(--ember)', 55 + t * 45, 'var(--surface)');
-          const tip = attr(tipFor(e, clat, clon));
-          out += `<span class="wm-x" style="color:${fill}" data-tip="${tip}">x</span>`;
-          // Hi-fi overlay: place the dot at the cell's TRUE centroid (mean of its
-          // points' lat/lon), projected onto the SVG's equirectangular viewBox —
-          // NOT the coarse ASCII cell centre, so markers don't snap to characters.
-          const cx = wmSvgX(e.slon / e.n).toFixed(1);
-          const cy = wmSvgY(e.slat / e.n).toFixed(1);
-          dots += `<circle class="wm-x" cx="${cx}" cy="${cy}" r="${(4 + t * 6).toFixed(1)}" style="fill:${fill}" data-tip="${tip}"/>`;
+          out += `<span class="wm-x" style="color:${fill}" data-tip="${attr(tipFor(e, clat, clon))}">x</span>`;
         } else {
           out += c < src.length && src[c] === "*" ? "*" : " ";
         }
       }
       out += "\n";
     }
+    // Hi-fi data layer: markers + (for a connections map) arcs & labels, in the
+    // amcharts SVG projection. The same builders feed the ascii overlay below.
+    const hiProj = (lat, lon) => [wmSvgX(lon), wmSvgY(lat)];
+    const dots = connDots(cellDots, hiProj, { rBase: 4, rSpan: 6 });
+    const hiOv = connMode
+      ? connArcs(conns, hiProj, { valMode, fv, marginPx: 12, bowCap: 120, fontSize: 21, strokeMin: 1.5, strokeSpan: 4 })
+      : { arcs: "", labels: "" };
     const wmGrad = `linear-gradient(90deg, ${mixColors('var(--ember)', 55, 'var(--surface)')}, ${mixColors('var(--ember)', 100, 'var(--surface)')})`;
-    const legend = `<div class="wm-legend"><span class="wm-lg-label">${valMode ? esc(spec.value) : "points / cell"}</span><span>${esc(fv(lo))}</span><span class="wm-grad" style="background:${wmGrad}"></span><span>${esc(fv(hi))}</span><span class="wm-count">${plotted.toLocaleString()} plotted · ${cells.size} cells</span></div>`;
+    const legendMetric = connMode ? "endpoints / cell" : (ptValMode ? esc(spec.value) : "points / cell");
+    const connCount = connMode ? `<span class="wm-count">${conns.length.toLocaleString()} connection${conns.length === 1 ? "" : "s"}</span>` : "";
+    const legend = `<div class="wm-legend"><span class="wm-lg-label">${legendMetric}</span><span>${esc(fv(lo))}</span><span class="wm-grad" style="background:${wmGrad}"></span><span>${esc(fv(hi))}</span>${connCount}<span class="wm-count">${plotted.toLocaleString()} plotted · ${cells.size} cells</span></div>`;
     const land = mixColors('var(--fg)', 26, 'transparent');
     const mode = mapMode();
     const did = "wmd" + wmDotSeq++;
-    wmDots[did] = dots;
-    // The ascii/hi-fi toggle lives in the tile's header actions (see
-    // mapModeToggle), which every capture path excludes — so it never appears in
-    // a poster/screenshot. The body is just the map + legend.
+    wmDots[did] = { arcs: hiOv.arcs, dots, labels: hiOv.labels };
+    // The ascii <pre> sits in a positioned stage. A connections map stashes its
+    // overlay data (keyed by data-arcs) for hydrateAsciiArcs to draw a fluid SVG
+    // layer over the backdrop once the <pre> is measured.
+    let aidAttr = "";
+    if (connMode) {
+      const aid = "wma" + wmDotSeq++;
+      wmAscii[aid] = { conns, cellDots, valMode, fv };
+      aidAttr = ` data-arcs="${aid}"`;
+    }
+    // The ascii/hi-fi toggle lives in the tile's header actions (mapModeToggle),
+    // excluded from every capture — so the body is just the map + legend.
     return `<div class="worldmap-wrap mode-${mode}">`
-      + `<pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre>`
+      + `<div class="wm-ascii-stage"${aidAttr}><pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>`
       + `<div class="wm-svg-host" data-dots="${did}"></div>`
       + `</div>${legend}`;
   }
@@ -4544,6 +4701,7 @@
       });
       document.querySelectorAll(".wm-mode").forEach((b) => b.classList.toggle("on", b.dataset.mapmode === mode));
       if (mode === "svg") hydrateMaps(document);
+      else hydrateAsciiArcs(document);
       return;
     }
     const wdn = ev.target.closest("[data-widen]");

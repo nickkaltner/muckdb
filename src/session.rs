@@ -40,8 +40,20 @@ pub struct Chart {
     pub lat: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub lon: Option<String>,
+    /// Map tiles: connection endpoints (`--from-lat`/`--from-lon`/`--to-lat`/
+    /// `--to-lon`). When all four are set, each row is drawn as a semi-transparent
+    /// arc between the two points (with the endpoints plotted as markers).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_lat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_lon: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_lat: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_lon: Option<String>,
     /// Map tiles: an optional per-point label column (`--label`) surfaced in the
-    /// hover tooltip so each marker names its points.
+    /// hover tooltip so each marker names its points. For a connections map it
+    /// labels each arc (drawn on top, nudged to avoid overlap).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub label: Option<String>,
     /// Heatmap cell value column (`--value`); with `--x` and the first `--y`
@@ -637,6 +649,16 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     if let Some(l) = &chart.label {
         check("--label", l)?;
     }
+    for (flag, col) in [
+        ("--from-lat", &chart.from_lat),
+        ("--from-lon", &chart.from_lon),
+        ("--to-lat", &chart.to_lat),
+        ("--to-lon", &chart.to_lon),
+    ] {
+        if let Some(c) = col {
+            check(flag, c)?;
+        }
+    }
     if chart.kind == "map" {
         // A map needs latitude and longitude: explicit --lat/--lon, else a
         // column named lat/latitude and lon/lng/long/longitude (case-insensitive).
@@ -646,11 +668,16 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
                     .iter()
                     .any(|c| cands.iter().any(|n| c.eq_ignore_ascii_case(n)))
         };
-        if !auto(&chart.lat, &["lat", "latitude"])
-            || !auto(&chart.lon, &["lon", "lng", "long", "longitude"])
-        {
+        let has_points = auto(&chart.lat, &["lat", "latitude"])
+            && auto(&chart.lon, &["lon", "lng", "long", "longitude"]);
+        // A connections map instead takes four endpoint columns.
+        let has_conns = auto(&chart.from_lat, &["from_lat", "src_lat", "origin_lat"])
+            && auto(&chart.from_lon, &["from_lon", "src_lon", "origin_lon"])
+            && auto(&chart.to_lat, &["to_lat", "dst_lat", "dest_lat"])
+            && auto(&chart.to_lon, &["to_lon", "dst_lon", "dest_lon"]);
+        if !has_points && !has_conns {
             bail!(
-                "--chart map needs latitude and longitude columns: pass --lat COL --lon COL, or name them lat/latitude and lon/lng/longitude\ncolumns: {}",
+                "--chart map needs point columns (--lat COL --lon COL, or lat/latitude & lon/lng/longitude) or connection columns (--from-lat --from-lon --to-lat --to-lon)\ncolumns: {}",
                 cols.join(", ")
             );
         }
@@ -841,6 +868,10 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     x: p.get("x").map(str::to_string),
                     lat: p.get("lat").map(str::to_string),
                     lon: p.get("lon").map(str::to_string),
+                    from_lat: p.get("from-lat").map(str::to_string),
+                    from_lon: p.get("from-lon").map(str::to_string),
+                    to_lat: p.get("to-lat").map(str::to_string),
+                    to_lon: p.get("to-lon").map(str::to_string),
                     label: p.get("label").map(str::to_string),
                     value: p.get("value").map(str::to_string),
                     no_values: p.get("no-values").is_some(),
@@ -1030,6 +1061,10 @@ mod tests {
             y: vec!["country".into()],
             lat: None,
             lon: None,
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
             label: None,
             value: Some("sites".into()),
             no_values: false,
@@ -1059,6 +1094,10 @@ mod tests {
             y: vec![],
             lat: Some("latitude".into()),
             lon: Some("longitude".into()),
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
             label: Some("city".into()),
             value: None,
             no_values: false,

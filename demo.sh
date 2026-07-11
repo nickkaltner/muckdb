@@ -122,6 +122,23 @@ CREATE OR REPLACE TABLE customers AS
          round(ci.lon + (random() - 0.5) * 5, 4) AS longitude
   FROM range(400) g(i) JOIN cities ci ON ci.idx = (hash(g.i) % 10);
 CREATE OR REPLACE VIEW customer_map AS SELECT id, city, latitude, longitude FROM customers;
+-- Named city coordinates, reused as connection endpoints for a "flows" map.
+CREATE OR REPLACE TABLE city_pts AS SELECT * FROM (VALUES
+  ('Sydney',-33.87,151.21),('Tokyo',35.68,139.69),('London',51.51,-0.13),
+  ('New York',40.71,-74.01),('Sao Paulo',-23.55,-46.63),('Cape Town',-33.92,18.42),
+  ('Singapore',1.35,103.82),('Los Angeles',34.05,-118.24),('Berlin',52.52,13.40),
+  ('Mumbai',19.08,72.88)) c(city, lat, lon);
+-- Backbone links between cities: each row is a connection (two endpoints), drawn
+-- as a semi-transparent arc on the hi-fi map with a capacity-weighted width.
+CREATE OR REPLACE VIEW network_flows AS
+  WITH pairs(src, dst, gbps) AS (VALUES
+    ('Singapore','Tokyo',120),('Singapore','Mumbai',90),('Singapore','Sydney',75),
+    ('London','New York',200),('London','Berlin',140),('London','Cape Town',60),
+    ('New York','Los Angeles',110),('New York','Sao Paulo',80),
+    ('Tokyo','Los Angeles',95),('Mumbai','London',70))
+  SELECT p.src AS from_city, p.dst AS to_city, p.src || ' → ' || p.dst AS label, p.gbps,
+         s.lat AS from_lat, s.lon AS from_lon, d.lat AS to_lat, d.lon AS to_lon
+  FROM pairs p JOIN city_pts s ON s.city = p.src JOIN city_pts d ON d.city = p.dst;
 -- Running revenue total by day — the shape an AREA chart likes (cumulative over time).
 CREATE OR REPLACE VIEW revenue_cumulative AS
   SELECT day, round(sum(revenue) OVER (ORDER BY day), 2) AS cumulative_revenue FROM sales_per_day;
@@ -144,6 +161,7 @@ for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/de
 "$MUCKDB" format "$DB" temp_c   --suffix '°C' --decimals 1 >/dev/null
 "$MUCKDB" format "$DB" humidity --suffix '%'  --decimals 0 >/dev/null
 "$MUCKDB" format "$DB" cumulative_revenue --currency USD >/dev/null
+"$MUCKDB" format "$DB" gbps --suffix ' Gbps' --thousands >/dev/null
 
 # ---- session dashboard --------------------------------------------------------
 # Rebuild from scratch so tiles land in this script's order (a pre-existing demo
@@ -258,6 +276,12 @@ MD
 "$MUCKDB" session tile "$SESSION" --name map --title "Where our customers are" \
   --db "$DB" --view customer_map --chart map --lat latitude --lon longitude --label city \
   --caption "A map tile plots lat/long points on an ASCII world map; brighter cells hold more customers. Hover a marker for its city." >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name flows --title "Backbone flows between cities" \
+  --db "$DB" --view network_flows --chart map \
+  --from-lat from_lat --from-lon from_lon --to-lat to_lat --to-lon to_lon \
+  --label label --value gbps \
+  --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map — with the line weight scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping each other; hover an arc or its label for the details." >/dev/null
 
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
