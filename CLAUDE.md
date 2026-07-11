@@ -192,7 +192,10 @@ label at each day boundary.
 
 **Links — `--link` / `--link-title`.** Turn a column's cells into hyperlinks
 (rendered in the rows view, query results and session `table` tiles; visible in
-the schema tab's format column). Both flags take a **template** with the same
+the schema tab's format column). **Add a link to every column where it makes
+sense, as routinely as you format numeric columns** — any id/uuid/slug/reference
+that maps to an admin portal, ticket, repo, PR, dashboard or object store turns a
+flat table into a launchpad. Both flags take a **template** with the same
 substitution system:
 
 ```sh
@@ -266,6 +269,9 @@ breaks the tile out of the centred column so every column is visible.
   `--title`/`--xlabel`/`--ylabel` — an unlabelled panel isn't done.
 - **Format numeric columns before posting tiles.** Set a `muckdb format` for every
   money/duration/rate/count column a panel will show — see "Column display formats".
+- **Link id/reference columns** in the same pass — add a `--link` to every column
+  that identifies or references something openable (uuid → admin portal, ticket →
+  tracker, repo/PR, object key → storage), so its cells are clickable.
 - **Markdown for narrative, charts for data.** Lead with a markdown summary tile
   (prose + a markdown table of the key figures), then supporting chart tiles.
   Never dump raw rows into chat — summarise in a markdown panel and put the data

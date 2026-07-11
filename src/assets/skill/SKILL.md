@@ -387,6 +387,15 @@ render `HH:mm` with a bold date label at each day boundary.
 
 ### Links: `--link` and `--link-title` — turn a column into a hyperlink
 
+**Add a link to every column where it makes sense — do this as routinely as you
+format numeric columns.** Any column that identifies or references something a
+human would want to open belongs behind a `--link`: ids/uuids/slugs that map to
+an admin portal, a ticket, a repo, a PR, a profile, a dashboard, an S3 object, a
+build. A clickable id turns a flat table into a launchpad into the real systems,
+and it costs one `muckdb format` per column. When you build a table's formats,
+ask of each column "does this point at something openable?" and wire the link if
+so.
+
 Point a column at an external system (an admin portal, a dashboard, a ticket
 tracker) and its cells become clickable links in the rows view, query results
 and session `table` tiles. Both flags are **templates** sharing one
@@ -486,6 +495,10 @@ muckdb session screenshot pond-analysis --tile species --out species.png
   panel will display, so values render as `$1,234.56 USD` / `42 ms` / `12.5%`
   everywhere — see "Column display formats" above. Treat it as a standard step, not
   an afterthought.
+- **Link id/reference columns.** In the same pass, add a `--link` to every column
+  that identifies or references something openable (uuid → admin portal, ticket
+  id → tracker, repo/PR, object key → storage, etc.), so its cells are clickable —
+  see "Links" above. A table of bare ids is a dead end; linked ids are a launchpad.
 - **Markdown for narrative, charts for data.** Lead with a markdown summary tile
   (prose + a markdown table of the key figures), then supporting chart tiles.
   Never dump raw rows into chat — summarise in markdown, evidence in a chart/view
