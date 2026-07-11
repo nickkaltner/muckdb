@@ -1766,6 +1766,11 @@
       const s = JSON.stringify(v);
       const scalars = Array.isArray(v) && v.every((x) => typeof x !== "object" || x === null);
       let label;
+      if (scalars && !v.length) {
+        // Empty list: a muted placeholder, never the format prefix/suffix (an
+        // empty array must not render as a bare " Gbps").
+        return `<td class="null">—</td>`;
+      }
       if (scalars) {
         // Inline, the affix wraps the whole list once — "1, 10, 100 Gbps" —
         // rather than repeating after every element (the overlay does that),
