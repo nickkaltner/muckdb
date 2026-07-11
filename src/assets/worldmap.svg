@@ -1,6 +1,7 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="-8.85 68.05 2300 907" preserveAspectRatio="xMidYMid meet" class="wm-svg">
   <defs>
-    <filter id="wm-static" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.28" numOctaves="2" stitchTiles="stitch" result="t"><animate attributeName="seed" values="1;4;7;10;13;16;19;22" dur="0.9s" repeatCount="indefinite" calcMode="discrete"/></feTurbulence><feColorMatrix in="t" type="saturate" values="0"/></filter>
+    <!-- Fine animated grayscale noise: it has both light and dark speckles, so it reads on any sea (light specks on dark water, dark on light) — one look for every theme. -->
+    <filter id="wm-static" x="0" y="0" width="100%" height="100%"><feTurbulence type="fractalNoise" baseFrequency="0.35" numOctaves="2" stitchTiles="stitch" result="t"><animate attributeName="seed" values="1;5;9;13;17;21;25;29;33;37;41;45" dur="1.3s" repeatCount="indefinite" calcMode="discrete"/></feTurbulence><feColorMatrix in="t" type="saturate" values="0"/></filter>
     <!-- Sea mask: white everywhere, black over land (currentColor→#000 via the color set here), so the static only shows over open sea. -->
     <mask id="wm-sea" maskUnits="userSpaceOnUse" x="-8.85" y="68.05" width="2300" height="907" style="color:#000"><rect x="-8.85" y="68.05" width="2300" height="907" fill="#fff"/><use href="#polygons" stroke="#000"/></mask>
   </defs>

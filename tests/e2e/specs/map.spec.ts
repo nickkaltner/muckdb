@@ -145,6 +145,8 @@ test.describe('map tile', () => {
   });
 
   test('the hi-fi sea has a subtle animated static layer, masked to open water', async ({ page }) => {
+    // A dark theme so the sea static is enabled (light themes default it off).
+    await page.addInitScript(() => { try { localStorage.setItem('muckdb.theme', 'carbon'); } catch (_) {} });
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="map"]');
     await panel.locator('.wm-mode[data-mapmode="svg"]').click();
@@ -155,7 +157,18 @@ test.describe('map tile', () => {
     const stat = panel.locator('.wm-svg .wm-static');
     await expect(stat).toHaveAttribute('mask', /wm-sea/);
     const op = await stat.evaluate((el) => parseFloat(getComputedStyle(el).opacity));
-    expect(op).toBeGreaterThan(0);
-    expect(op).toBeLessThan(0.2);   // subtle
+    expect(op).toBeGreaterThan(0);      // on for dark themes
+    expect(op).toBeLessThan(0.6);       // still subtle
   });
+
+  test('the sea static is stronger on light themes (low-contrast grey needs it)', async ({ page }) => {
+    await page.addInitScript(() => { try { localStorage.setItem('muckdb.theme', 'paper'); } catch (_) {} });
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="map"]');
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+    const op = await panel.locator('.wm-svg .wm-static').evaluate((el) => parseFloat(getComputedStyle(el).opacity));
+    expect(op).toBeGreaterThan(0.2);   // boosted on light themes so it reads
+  });
+
 });
