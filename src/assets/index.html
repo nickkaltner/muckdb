@@ -116,6 +116,7 @@
   .credits-lines .cl { font-size: 12px; color: var(--muted); letter-spacing: 0.08em; opacity: 0; animation: cr-rise .5s ease both; }
   .credits-lines .cl.head { font-size: 10px; letter-spacing: 0.3em; color: var(--faint); text-transform: uppercase; }
   .credits-lines .cl.name { font-size: 18px; font-weight: 700; color: var(--orange); letter-spacing: 0.14em; }
+  .credits-lines .cl.foot { font-size: 10.5px; letter-spacing: 0.04em; color: var(--faint); line-height: 1.5; margin-top: 10px; padding-top: 10px; border-top: 1px solid var(--line-soft); font-style: italic; }
   @keyframes cr-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
   .titlebar { height: var(--titlebar-h); display: flex; align-items: center; gap: 14px; padding: 0 18px; border-bottom: 1px solid var(--line); background: linear-gradient(180deg, var(--raised), var(--surface)); box-shadow: var(--hi); }
@@ -428,6 +429,19 @@
   .worldmap-wrap { container-type: inline-size; width: 100%; overflow: hidden; padding: 10px 12px; background: var(--surface); border: 1px solid var(--line-soft); border-radius: 6px; }
   .worldmap { font-family: var(--mono); font-size: 0.82cqw; line-height: 1; white-space: pre; margin: 0; color: color-mix(in srgb, var(--fg) 26%, transparent); letter-spacing: 0; cursor: default; }
   .worldmap .wm-x { font-weight: 700; cursor: pointer; }
+  /* ascii / hi-fi map toggle. */
+  .wm-toggle { display: flex; justify-content: flex-end; gap: 4px; margin-bottom: 6px; }
+  .wm-mode { font: inherit; font-size: 10.5px; padding: 2px 9px; background: var(--surface); color: var(--muted); border: 1px solid var(--line-soft); border-radius: 5px; cursor: pointer; }
+  .wm-mode:hover { color: var(--fg); border-color: var(--line); }
+  .wm-mode.on { color: var(--ember); border-color: var(--ember); }
+  /* Dual-mode container: show only the active representation. */
+  .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
+  .worldmap-wrap.mode-svg .worldmap { display: none; }
+  .wm-svg-host { width: 100%; }
+  .wm-svg { display: block; width: 100%; height: auto; }
+  .wm-svg .wm-countries .c { fill: color-mix(in srgb, var(--fg) 8%, transparent); stroke: color-mix(in srgb, var(--fg) 18%, transparent); stroke-width: 0.4; }
+  .wm-svg .wm-labels .l { fill: color-mix(in srgb, var(--fg) 34%, transparent); font-family: var(--mono); font-size: 6px; text-anchor: middle; dominant-baseline: middle; pointer-events: none; }
+  .wm-svg .wm-dots circle.wm-x { cursor: pointer; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
   .wm-tip.show { display: block; }
@@ -2891,7 +2905,7 @@
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -3355,7 +3369,7 @@
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); return; }
     slot.style.height = "300px";
     slot.innerHTML = "<canvas></canvas>";
     applyTileHeight(t.name);
@@ -3471,6 +3485,37 @@
   const WORLD_MAP = "                                                  * ***********        *************                                                                                                            \n                                             ************    *************************                **** ***                                    ***                                           \n                               ***   *      *** ******    ***************************                                              **                 *** *                                     \n                              ****        *  ***                  *******************                                        **             ****************               *                    \n            **                   *******     ** **********          ****************                         ***             *      *************************************************          *\n**      ***************************   ***  ****** **   * ****       ***********                         *************   *  ************ ********************************************************\n  **   ********************************************   ******        ******          *****             *****  ******  ***************************************************************************\n        **************************************       ****   *        ****                          ******  **************************************************************************** ******  \n          ****        ************************        *****  *                                     ** ****  *****************************************************************    **  **         \n           *             ************************      ********                              **     ** **  **************************************************************          ****         \n                         * *************************  ************                         ** **   ************************************************************************        **           \n                             *********************************** *                           *   ************************************************************************** *                   \n                               ******************************     **                          ****************************************************************************                      \n                              ****************************** *                                 ******** *******     *****************************************************                       \n                              *****************************                                ******     *** *****  **   ***********************************************                           \n                              **************************                                   *****        *  *  *************************************************    *                            \n                               *************************                                        ******             *********************************************   **   ***                     \n                                 *********************                                     ***********             *********************************************     *                          \n                                  * ************  ***                                      **********************************************************************                               \n                                   * *******        *                                    ************************* *******  ************************************                                \n                                       *****          *                                 *************************** ******** *      *************************** *                               \n                                        ****    **    *                                ***************************** ***********     *********   ********                                       \n                                         ********     * *** *                          *****************************  ********         ******     ******* *     *                               \n                                              *****                                    ******************************  *****           ****         ******      *                               \n                                                 **                                    ********************************                 ***           ****        *                             \n                                                   *    *******                          **********************************              *              *        *                              \n                                                       **********                         ********************************                 *         *        *   *                             \n                                                       **************                                ********************                          ** *      **                                 \n                                                     ****************                                ******************                              **   ***** *** *                           \n                                                     *******************                             *****************                                **   ***  *     ** *                      \n                                                     ***********************                          ***************                                  *         *       *****                  \n                                                      ***********************                          **************                                      **             *** *                 \n                                                      **********************                           ***************                                                                *         \n                                                       ********************                            ***************    *                                          ****  **                   \n                                                         ******************                           ***************   ***                                       ******** ***                 *\n                                                           ****************                            ************     **                                       **************                 \n                                                           ***************                              ***********    ***                                   *******************                \n                                                          ************                                  **********                                           *********************              \n                                                          ************                                   ********                                            *********************              \n                                                          ***********                                     ******                                              ********************              \n                                                          *********                                       **                                                 ***        *********               \n                                                         *********                                                                                                         *****                \n                                                         ******                                                                                                                              *  \n                                                        ******                                                                                                                *            *    \n                                                        ****                                                                                                                             **     \n                                                        ****                                                                                                                                    \n                                                        ***     *                                                                                                                               \n                                                          ***                                                                                                                                   ";
   const WM_W = 192, WM_H = 48;
   const WM_LON_W = -180, WM_LON_E = 180, WM_LAT_T = 84, WM_LAT_B = -56;
+  // The hi-fi SVG map (/worldmap.svg) shares these bounds and uses viewBox
+  // 0 0 1000 389, so a point projects to cx=(lon+180)/360*1000, cy=(84-lat)/140*389.
+  const WM_SVG_W = 1000, WM_SVG_H = 389;
+  // Map render mode ("ascii" | "svg"), global + persisted; toggled per map tile.
+  let mapModePref = null;
+  function mapMode() {
+    if (mapModePref === null) {
+      try { mapModePref = localStorage.getItem("muckdb.mapmode") === "svg" ? "svg" : "ascii"; } catch (_) { mapModePref = "ascii"; }
+    }
+    return mapModePref;
+  }
+  let wmSvgText = null;        // /worldmap.svg, fetched once
+  const wmDots = {};           // per-render dot markup, consumed on hydrate
+  let wmDotSeq = 0;
+  // Inject the SVG map + its overlay dots into any hi-fi host not yet done.
+  async function hydrateMaps(scope) {
+    const hosts = [...(scope || document).querySelectorAll(".worldmap-wrap.mode-svg .wm-svg-host:not([data-hydrated])")];
+    if (!hosts.length) return;
+    if (wmSvgText === null) {
+      try { const r = await fetch("/worldmap.svg"); wmSvgText = r.ok ? await r.text() : ""; } catch (_) { wmSvgText = ""; }
+    }
+    hosts.forEach((host) => {
+      host.dataset.hydrated = "1";
+      const dots = wmDots[host.dataset.dots] || "";
+      delete wmDots[host.dataset.dots];
+      if (!wmSvgText) { host.innerHTML = '<div class="note">hi-fi map unavailable.</div>'; return; }
+      host.innerHTML = wmSvgText;
+      const svg = host.querySelector("svg");
+      if (svg) svg.insertAdjacentHTML("beforeend", '<g class="wm-dots">' + dots + "</g>");
+    });
+  }
   function mapHtml(cols, rows, spec, db, table) {
     const lc = cols.map((c) => String(c).toLowerCase());
     const findCol = (explicit, cands) => {
@@ -3520,7 +3565,7 @@
       return h;
     };
     const lines = WORLD_MAP.split("\n");
-    let out = "";
+    let out = "", dots = "";
     for (let row = 0; row < WM_H; row++) {
       const src = lines[row] || "";
       for (let c = 0; c < WM_W; c++) {
@@ -3530,7 +3575,13 @@
           const t = (intensity(e) - lo) / span;
           const clat = Math.round(WM_LAT_T - (row + 0.5) / WM_H * (WM_LAT_T - WM_LAT_B));
           const clon = Math.round(WM_LON_W + (c + 0.5) / WM_W * (WM_LON_E - WM_LON_W));
-          out += `<span class="wm-x" style="color:${mixColors('var(--ember)', 55 + t * 45, 'var(--surface)')}" data-tip="${attr(tipFor(e, clat, clon))}">x</span>`;
+          const fill = mixColors('var(--ember)', 55 + t * 45, 'var(--surface)');
+          const tip = attr(tipFor(e, clat, clon));
+          out += `<span class="wm-x" style="color:${fill}" data-tip="${tip}">x</span>`;
+          // same cell, projected onto the SVG viewBox for the hi-fi overlay
+          const cx = ((c + 0.5) / WM_W * WM_SVG_W).toFixed(1);
+          const cy = ((row + 0.5) / WM_H * WM_SVG_H).toFixed(1);
+          dots += `<circle class="wm-x" cx="${cx}" cy="${cy}" r="${(1.4 + t * 2.4).toFixed(1)}" style="fill:${fill}" data-tip="${tip}"/>`;
         } else {
           out += c < src.length && src[c] === "*" ? "*" : " ";
         }
@@ -3540,7 +3591,15 @@
     const wmGrad = `linear-gradient(90deg, ${mixColors('var(--ember)', 55, 'var(--surface)')}, ${mixColors('var(--ember)', 100, 'var(--surface)')})`;
     const legend = `<div class="wm-legend"><span class="wm-lg-label">${valMode ? esc(spec.value) : "points / cell"}</span><span>${esc(fv(lo))}</span><span class="wm-grad" style="background:${wmGrad}"></span><span>${esc(fv(hi))}</span><span class="wm-count">${plotted.toLocaleString()} plotted · ${cells.size} cells</span></div>`;
     const land = mixColors('var(--fg)', 26, 'transparent');
-    return `<div class="worldmap-wrap"><pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>${legend}`;
+    const mode = mapMode();
+    const did = "wmd" + wmDotSeq++;
+    wmDots[did] = dots;
+    const toggle = `<div class="wm-toggle"><button class="wm-mode${mode === "ascii" ? " on" : ""}" data-mapmode="ascii">ascii</button><button class="wm-mode${mode === "svg" ? " on" : ""}" data-mapmode="svg">hi-fi</button></div>`;
+    return toggle
+      + `<div class="worldmap-wrap mode-${mode}">`
+      + `<pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre>`
+      + `<div class="wm-svg-host" data-dots="${did}"></div>`
+      + `</div>${legend}`;
   }
   const TILE_TABLE_ROWS = 20;
   function miniTable(cols, rows, db, table, shrunk, limit, filtered) {
@@ -4438,6 +4497,20 @@
     const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
     const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
+    const mm = ev.target.closest("[data-mapmode]");
+    if (mm) {
+      const mode = mm.dataset.mapmode === "svg" ? "svg" : "ascii";
+      mapModePref = mode;
+      try { localStorage.setItem("muckdb.mapmode", mode); } catch (_) {}
+      // Flip every rendered map (dashboard + any open zoom) to the new mode.
+      document.querySelectorAll(".worldmap-wrap").forEach((w) => {
+        w.classList.toggle("mode-svg", mode === "svg");
+        w.classList.toggle("mode-ascii", mode !== "svg");
+      });
+      document.querySelectorAll(".wm-mode").forEach((b) => b.classList.toggle("on", b.dataset.mapmode === mode));
+      if (mode === "svg") hydrateMaps(document);
+      return;
+    }
     const wdn = ev.target.closest("[data-widen]");
     if (wdn) {
       const n = wdn.dataset.widen;
@@ -4903,6 +4976,7 @@
         ${line("", "created by", 0.9)}
         ${line("name", "NICK KALTNER", 1.2)}
         ${line("", "muckdb v__MUCKDB_VERSION__", 1.7)}
+        ${line("foot", "If you like any of the ideas in this application,<br>please give me a shout out or credit in your app.", 2.2)}
       </div>
     </div>`;
     layer.hidden = false;

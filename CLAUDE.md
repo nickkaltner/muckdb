@@ -135,7 +135,11 @@ muckdb session rm <name> [--tile TILE]
   `x` shaded by how many points fall in it, or by the average of `--value` when
   given. Don't pre-aggregate — pass the raw points (one row each); the tile bins
   them into cells itself. `--label COL` names each point in a rich hover tooltip
-  (coords, count, value, and the labels of the points in that cell).
+  (coords, count, value, and the labels of the points in that cell). A toggle at
+  the top of the tile switches between the ASCII map and a **hi-fi** SVG world map
+  (faded, labelled countries with the same points overlaid); the choice is
+  remembered per browser. Both share the same equirectangular projection, so a
+  point lands on the same coastline in either mode.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

@@ -23,6 +23,34 @@ test.describe('map tile', () => {
     expect(tipZ).toBeGreaterThanOrEqual(overlayZ);
   });
 
+  test('hi-fi toggle swaps the ASCII map for the SVG map', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="map"]');
+
+    // Defaults to ASCII: the <pre> map is shown, the SVG host is hidden.
+    const wrap = panel.locator('.worldmap-wrap');
+    await expect(wrap).toHaveClass(/\bmode-ascii\b/);
+    await expect(panel.locator('.worldmap')).toBeVisible();
+    await expect(panel.locator('.wm-svg')).toHaveCount(0);
+
+    // Flip to hi-fi → the SVG map hydrates with one dot per plotted cell.
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(wrap).toHaveClass(/\bmode-svg\b/);
+    await expect(panel.locator('.wm-mode[data-mapmode="svg"]')).toHaveClass(/\bon\b/);
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+    const dots = panel.locator('.wm-svg .wm-dots circle.wm-x');
+    expect(await dots.count()).toBeGreaterThan(0);
+
+    // The preference persists: a fresh load comes up in hi-fi mode.
+    await page.reload();
+    await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-svg\b/);
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+
+    // Flip back to ASCII for later tests / other viewers.
+    await panel.locator('.wm-mode[data-mapmode="ascii"]').click();
+    await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-ascii\b/);
+  });
+
   test('expanded map shrinks to its content (no full-height whitespace)', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     await page.locator('.panel[data-tile="map"] [data-zoom]').click();

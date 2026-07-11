@@ -79,6 +79,7 @@ pub async fn run() -> Result<()> {
         .route("/html2canvas.js", get(html2canvas_js))
         .route("/favicon.ico", get(favicon_ico))
         .route("/favicon.svg", get(favicon_svg))
+        .route("/worldmap.svg", get(worldmap_svg))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -713,6 +714,19 @@ async fn favicon_svg() -> Response {
             (header::CACHE_CONTROL, "public, max-age=604800"),
         ],
         include_str!("assets/favicon.svg"),
+    )
+        .into_response()
+}
+
+/// The hi-fidelity world map (equirectangular Natural Earth countries) that the
+/// map tile's "hi-fi" toggle overlays points onto. Fetched once on demand.
+async fn worldmap_svg() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "image/svg+xml"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_str!("assets/worldmap.svg"),
     )
         .into_response()
 }
