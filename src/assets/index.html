@@ -455,6 +455,9 @@
   /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
      so it never falls back to solid black even if this rule is missing). */
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
+  /* Land opacity is per-theme (applyTheme sets --wm-land-opacity) — light themes
+     need more so the coastlines read against the pale sea (more map contrast). */
+  .wm-svg #land { opacity: var(--wm-land-opacity, 0.12); }
   /* Looping static video over the open sea (masked to water), same clip + faint
      opacity as the ascii backdrop. */
   .wm-svg .wm-static { opacity: var(--wm-static-opacity, 0.08); pointer-events: none; }
@@ -1163,7 +1166,9 @@
     // Sea-static video opacity: the clip is dark, so it shows strongly over pale
     // water — light themes need it much more transparent than dark ones. Override
     // per theme with `seaStatic`.
-    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.03 : 0.08)));
+    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.06 : 0.08)));
+    // Land opacity: light themes need more contrast so coastlines read on pale sea.
+    root.setProperty("--wm-land-opacity", String(t.light ? 0.22 : 0.12));
     // How many of the theme's chart colours are curated-categorical (see
     // catColors); themes with a long hand-picked list opt in via catN.
     CAT_N = Math.min(t.catN || CAT_CURATED, t.chart.length);
@@ -4141,8 +4146,8 @@
     // themes get a stronger mix (they need more to show over pale panels). Major
     // (unit-boundary) ticks — e.g. each midnight on an hourly axis — are stronger.
     const isLight = !!(THEMES[state.theme] && THEMES[state.theme].light);
-    const gridMinor = mixColors("var(--fg)", isLight ? 22 : 9, "var(--surface)");
-    const gridMajor = mixColors("var(--fg)", isLight ? 38 : 18, "var(--surface)");
+    const gridMinor = mixColors("var(--fg)", isLight ? 8 : 7, "var(--surface)");
+    const gridMajor = mixColors("var(--fg)", isLight ? 15 : 14, "var(--surface)");
     const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? gridMajor : gridMinor);
     const x = time
       ? { type: "time",
