@@ -199,6 +199,11 @@ for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/de
   --link 'https://tracker.example.com/{value}' --link-title 'open {value}' >/dev/null
 "$MUCKDB" format "$DB" sid --table pipeline_timeline \
   --link 'https://ci.example.com/builds/{value}' --link-title 'build {value} · {step}' >/dev/null
+# Show the incident timeline in the viewer's LOCAL zone (timestamps are UTC in the
+# db; without a --tz they render in UTC). The hover readout then also shows the
+# UTC instant so a local-time axis stays unambiguous.
+"$MUCKDB" format "$DB" started --table incident_timeline --tz local >/dev/null
+"$MUCKDB" format "$DB" ended   --table incident_timeline --tz local >/dev/null
 
 # ---- session dashboard --------------------------------------------------------
 # Rebuild from scratch so tiles land in this script's order (a pre-existing demo
@@ -334,7 +339,7 @@ MD
   --lane system --label phase --start started --end ended \
   --color severity \
   --event '2026-05-01 14:18|outage declared' --event '2026-05-01 14:41|resolved' \
-  --caption "The same tile on an absolute time axis: each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover any bar for its exact window, details, and a clickable ticket link." >/dev/null
+  --caption "The same tile on an absolute time axis, shown in your local zone (a --tz local format on the column; the db stores UTC). Each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover the plot for the time (local + UTC); hover any bar for its window, details, and a clickable ticket link." >/dev/null
 
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary

@@ -539,10 +539,9 @@
     pointer-events: none; opacity: 0; }
   .tl-cursor.show { opacity: 0.9; }
   .tl-axis-row { display: grid; grid-template-columns: var(--tl-gutter) 1fr; margin-top: 2px; }
-  .tl-axis { position: relative; height: 16px; border-top: 1px solid var(--line-soft); }
-  .tl-tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
-  .tl-tick:first-child { transform: none; }
-  .tl-tick:last-child { transform: translateX(-100%); }
+  .tl-axis { position: relative; height: 20px; border-top: 1px solid var(--line-soft); }
+  .tl-tick-mark { position: absolute; top: 0; width: 0; height: 4px; border-left: 1px solid var(--faint); }
+  .tl-tick { position: absolute; top: 6px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
   .tl-tip-cat { color: var(--muted); font-weight: 400; }
   .tl-tip-sep { border-top: 1px solid var(--line-soft); margin: 4px 0; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
@@ -3587,6 +3586,17 @@
       (isFinite(Number(v)) && !/[-:T]/.test(String(v).trim())));
   }
   function tlFmtTime(t, pay) { return pay.numeric ? tlFmtDur(t) : tlFmtAbs(t, pay.startFmt); }
+  // The follow-the-cursor readout: like tlFmtTime, but when the axis is shifted to
+  // a non-UTC zone (a --tz format on the start column) it also appends the UTC
+  // instant, so a local-time timeline stays unambiguous on hover.
+  function tlFmtTimeHover(t, pay) {
+    if (pay.numeric) return tlFmtDur(t);
+    const primary = tlFmtAbs(t, pay.startFmt);
+    const tz = pay.startFmt && pay.startFmt.tz;
+    if (!tz || String(tz).toLowerCase() === "utc") return primary; // already UTC
+    const utc = new Date(t).toISOString().slice(0, 16).replace("T", " ");
+    return primary + " · " + utc + " UTC";
+  }
 
   function tlTip(b, cols, rows, spec, db, table, fmtT, fmtDur) {
     const row = rows[b.ri];
@@ -3695,9 +3705,10 @@
     const legendHtml = (ci >= 0 && cats.length)
       ? `<div class="tl-legend">${cats.map((c, i) => `<span class="tl-leg"><i style="background:${catCols[i % catCols.length]}"></i>${esc(c)}</span>`).join("")}</div>`
       : "";
-    const ticks = [];
-    for (let i = 0; i <= 4; i++) { const t = t0 + (span * i) / 4; ticks.push(`<span class="tl-tick" style="left:${(i / 4) * 100}%">${esc(fmtT(t))}</span>`); }
-    const axisHtml = `<div class="tl-axis">${ticks.join("")}</div>`;
+    // The bottom axis is drawn at hydrate time (renderTimelineAxis) where the
+    // pixel width is known: it picks a "nice" regular step sized so labels never
+    // overlap, and places tick marks on those round boundaries.
+    const axisHtml = `<div class="tl-axis"></div>`;
     // Overlay payload (deps + events) for hydrateTimelines().
     const id = "tl" + (++tlSeq);
     const barById = {}; bars.forEach((b) => { if (b.id) barById[b.id] = b; });
@@ -3814,12 +3825,58 @@
     const rd = headPlot.querySelector(".tl-head-readout");
     if (rd) rd.style.top = (nRows * TL_EV_LH) + "px";
   }
+  // "Nice" axis steps in seconds (1s … 1y); the absolute axis multiplies by 1000
+  // to work in ms. Ticks land on multiples of the chosen step so they read as
+  // regular round intervals.
+  const TL_NICE_SECS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+    7200, 14400, 21600, 43200, 86400, 172800, 604800, 1209600, 2592000, 7776000, 31536000];
+  function tlNiceStep(rawUnit, numeric) {
+    const unit = numeric ? 1 : 1000; // rawUnit is seconds (numeric) or ms (absolute)
+    const rawSecs = rawUnit / unit;
+    for (const s of TL_NICE_SECS) if (s >= rawSecs) return s * unit;
+    const last = TL_NICE_SECS[TL_NICE_SECS.length - 1];
+    return Math.ceil(rawSecs / last) * last * unit;
+  }
+  // Bottom axis: regularly-spaced tick marks + labels, with the step sized to the
+  // measured width so labels can never overlap.
+  function renderTimelineAxis(axisEl, pay) {
+    if (!axisEl) return;
+    const W = axisEl.clientWidth; if (!W) return;
+    const span = pay.t1 - pay.t0;
+    if (!(span > 0)) { axisEl.innerHTML = ""; return; }
+    const CW = 6.6; // ~char width of the tick font (mono 10.5px)
+    const lblW = tlFmtTime(pay.t1, pay).length * CW + 16; // est. label width + gap
+    const maxTicks = Math.max(2, Math.floor(W / lblW));
+    const step = tlNiceStep(span / maxTicks, pay.numeric);
+    const first = Math.ceil(pay.t0 / step) * step;
+    // A tick MARK on every regular interval; a LABEL only where it clears the
+    // previously drawn one (greedy), so labels can never overlap however wide.
+    let html = "", lastRight = -Infinity;
+    for (let v = first; v <= pay.t1 + step * 1e-3; v += step) {
+      const x = ((v - pay.t0) / span) * W;
+      html += `<span class="tl-tick-mark" style="left:${x.toFixed(1)}px"></span>`;
+      const label = tlFmtTime(v, pay);
+      const lw = label.length * CW;
+      // Edge-aware alignment so the first/last labels never clip off the ends.
+      let left, tf;
+      if (x < lw / 2) { tf = "translateX(0)"; left = x; }
+      else if (x > W - lw / 2) { tf = "translateX(-100%)"; left = x - lw; }
+      else { tf = "translateX(-50%)"; left = x - lw / 2; }
+      if (left >= lastRight + 6) {
+        html += `<span class="tl-tick" style="left:${x.toFixed(1)}px;transform:${tf}">${esc(label)}</span>`;
+        lastRight = left + lw;
+      }
+    }
+    axisEl.innerHTML = html;
+  }
   function hydrateTimelines(scope) {
     (scope || document).querySelectorAll(".tl-plot[data-tl]").forEach((plot) => {
       const pay = tlPayloads[plot.dataset.tl]; if (!pay) return;
       plot._tlPay = pay;
-      const headPlot = plot.closest(".tl-wrap") && plot.closest(".tl-wrap").querySelector(".tl-head-plot");
-      const draw = () => { renderTimelineOverlay(plot, pay); renderTimelineHead(headPlot, pay); };
+      const wrap = plot.closest(".tl-wrap");
+      const headPlot = wrap && wrap.querySelector(".tl-head-plot");
+      const axisEl = wrap && wrap.querySelector(".tl-axis");
+      const draw = () => { renderTimelineOverlay(plot, pay); renderTimelineHead(headPlot, pay); renderTimelineAxis(axisEl, pay); };
       draw();
       if (window.ResizeObserver && !plot._tlRO) { plot._tlRO = new ResizeObserver(draw); plot._tlRO.observe(plot); }
       const cursor = plot.querySelector(".tl-cursor");
@@ -3836,10 +3893,14 @@
           const t = pay.t0 + (pay.t1 - pay.t0) * fx;
           if (readout) {
             const hw = headPlot.clientWidth || rect.width, x = fx * hw;
-            readout.textContent = tlFmtTime(t, pay);
-            readout.style.left = Math.max(2, Math.min(x, hw - 4)) + "px";
-            readout.style.transform = x > hw - 60 ? "translateX(-100%)" : "none";
+            readout.textContent = tlFmtTimeHover(t, pay);
             readout.classList.add("show");
+            // Centre the pill on the cursor, then clamp to its MEASURED width so it
+            // never runs off either edge (absolute-time text is far wider than a
+            // duration — a fixed flip threshold clipped it).
+            readout.style.transform = "none";
+            const w = readout.offsetWidth;
+            readout.style.left = Math.max(2, Math.min(x - w / 2, hw - w - 2)) + "px";
           }
         });
         plot.addEventListener("mouseleave", () => {

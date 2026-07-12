@@ -42,6 +42,13 @@ CREATE VIEW deploy_timeline AS SELECT * FROM (VALUES
   ('deploy', 'push',     40.0,  70.0, 'ok',     's3', 's1'),
   ('deploy', 'migrate',  70.0,  95.0, 'failed', 's4', 's3')
 ) t(lane, task, t0, t1, status, sid, parent);
+
+-- An absolute-time timeline (UTC in the db); a --tz local format shifts its axis
+-- to local time, and the hover readout then also shows the UTC instant.
+CREATE VIEW ts_timeline AS SELECT * FROM (VALUES
+  ('api', 'outage',   TIMESTAMP '2026-05-01 14:00:00', TIMESTAMP '2026-05-01 14:30:00'),
+  ('db',  'failover', TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:25:00')
+) t(sys, phase, started, ended);
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -86,6 +93,14 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--color', 'status', '--id', 'sid', '--depends-on', 'parent',
     '--event', '50|cutover',
     '--caption', 'A Gantt-style timeline: lanes stack overlapping bars into sublanes; colour = status.']);
+  // An absolute-time timeline in local zone — regression coverage for the UTC
+  // hover readout and the tz-aware axis.
+  run(binary, env, ['format', dbPath, 'started', '--table', 'ts_timeline', '--tz', 'local']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'timeline-ts', '--title', 'Incident (local tz)',
+    '--db', dbPath, '--view', 'ts_timeline', '--chart', 'timeline',
+    '--lane', 'sys', '--label', 'phase', '--start', 'started', '--end', 'ended',
+    '--event', '2026-05-01 14:15|escalated',
+    '--caption', 'Absolute-time timeline shown in local zone; hover shows UTC too.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);
