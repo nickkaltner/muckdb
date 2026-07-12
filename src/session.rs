@@ -712,6 +712,78 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             "--chart box needs --x (the box label) and --y with exactly five columns, in order: min,q1,median,q3,max (aggregate in the view, e.g. min(v), quantile_cont(v,0.25), median(v), quantile_cont(v,0.75), max(v))"
         );
     }
+    if chart.kind == "timeline" {
+        // Core columns must be named and must exist.
+        let lane = chart
+            .lane
+            .as_deref()
+            .context("--chart timeline needs --lane <column> (the row / resource label)")?;
+        check("--lane", lane)?;
+        let label = chart
+            .label
+            .as_deref()
+            .context("--chart timeline needs --label <column> (the bar text)")?;
+        check("--label", label)?;
+        let start = chart
+            .start
+            .as_deref()
+            .context("--chart timeline needs --start <column>")?;
+        check("--start", start)?;
+        match (&chart.end, &chart.duration) {
+            (Some(_), Some(_)) => {
+                bail!("--chart timeline takes either --end or --duration, not both")
+            }
+            (None, None) => bail!(
+                "--chart timeline needs --end <column> or --duration <column> (numeric seconds)"
+            ),
+            (Some(e), None) => check("--end", e)?,
+            (None, Some(d)) => check("--duration", d)?,
+        }
+        for (flag, col) in [
+            ("--color", &chart.color),
+            ("--id", &chart.id),
+            ("--depends-on", &chart.depends_on),
+        ] {
+            if let Some(c) = col {
+                check(flag, c)?;
+            }
+        }
+        // Start and end must agree on type: both numeric (relative seconds) or
+        // both temporal (timestamps/dates). A mismatch is almost always a bug.
+        let col_type = |name: &str| -> Option<String> {
+            rows.iter().find_map(|r| {
+                let cn = r.get("column_name").and_then(Value::as_str)?;
+                if cn == name {
+                    r.get("column_type")
+                        .and_then(Value::as_str)
+                        .map(str::to_ascii_uppercase)
+                } else {
+                    None
+                }
+            })
+        };
+        let is_temporal =
+            |t: &str| t.contains("TIMESTAMP") || t.contains("DATE") || t.contains("TIME");
+        let is_numeric = |t: &str| {
+            [
+                "INT", "DEC", "DOUBLE", "FLOAT", "REAL", "HUGEINT", "NUMERIC", "BIGINT",
+            ]
+            .iter()
+            .any(|k| t.contains(k))
+        };
+        if let Some(end) = chart.end.as_deref()
+            && let (Some(st), Some(et)) = (col_type(start), col_type(end))
+        {
+            let st_temporal = is_temporal(&st) && !is_numeric(&st);
+            let et_temporal = is_temporal(&et) && !is_numeric(&et);
+            if st_temporal != et_temporal {
+                bail!(
+                    "--chart timeline: --start ({start}: {st}) and --end ({end}: {et}) must both be \
+                     numeric (relative seconds) or both be timestamps"
+                );
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1034,11 +1106,12 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip\n                       \
                  --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
+                 --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
                  [--desc COL]  (box: a per-box note column, shown beside each plot)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
@@ -1305,5 +1378,88 @@ mod tests {
         assert_eq!(read_md("real\nnewline").unwrap(), "real\nnewline"); // untouched
         assert_eq!(read_md("trailing\\").unwrap(), "trailing\\");
         assert_eq!(read_md("\\x unknown").unwrap(), "\\x unknown");
+    }
+
+    // ---- timeline validation (needs the `duckdb` CLI) --------------------
+    fn duckdb_ok() -> bool {
+        std::process::Command::new("duckdb")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    }
+    fn run_sql(db: &str, sql: &str) {
+        let out = std::process::Command::new("duckdb")
+            .arg(db)
+            .arg("-c")
+            .arg(sql)
+            .output()
+            .expect("run duckdb");
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    #[test]
+    fn timeline_validation_requires_core_flags() {
+        if !duckdb_ok() {
+            eprintln!("skipping timeline_validation_requires_core_flags: no duckdb");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("muckdb-tl-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("tl.duckdb");
+        let dbs = db.to_str().unwrap();
+        // Build a spans table with the columns a timeline uses.
+        run_sql(
+            dbs,
+            "CREATE TABLE spans AS SELECT 'web' AS lane, 'deploy' AS task, \
+             0.0 AS t0, 10.0 AS t1, 'ok' AS status, 'a' AS sid, NULL AS pids",
+        );
+        let mk = |chart: Chart| validate_tile(dbs, Some("spans"), None, &chart);
+        let base = || Chart {
+            kind: "timeline".into(),
+            x: None,
+            y: vec![],
+            lat: None,
+            lon: None,
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
+            label: Some("task".into()),
+            value: None,
+            no_values: false,
+            desc: None,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+            lane: Some("lane".into()),
+            start: Some("t0".into()),
+            end: Some("t1".into()),
+            duration: None,
+            color: None,
+            id: None,
+            depends_on: None,
+        };
+        // Missing --lane fails.
+        let mut c = base();
+        c.lane = None;
+        assert!(mk(c).is_err());
+        // Both --end and --duration fails.
+        let mut c = base();
+        c.duration = Some("t1".into());
+        assert!(mk(c).is_err());
+        // Neither --end nor --duration fails.
+        let mut c = base();
+        c.end = None;
+        assert!(mk(c).is_err());
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
