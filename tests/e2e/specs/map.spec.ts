@@ -118,6 +118,30 @@ test.describe('map tile', () => {
     await expect(tip).toContainText(labelText);
   });
 
+  test('connections map: hovering an endpoint marker names the routes through it', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="flows"]');
+    await panel.locator('.wm-mode[data-mapmode="svg"]').click();
+    await expect(panel.locator('.wm-svg')).toBeVisible();
+
+    // Endpoint markers used to carry only coordinates; now each inherits its
+    // connection's --label, so a marker's tooltip names the routes through it
+    // (the fixture labels are "A → B") rather than being nameless.
+    const dots = panel.locator('.wm-svg .wm-dots circle.wm-x');
+    const n = await dots.count();
+    expect(n).toBeGreaterThan(0);
+    let named = -1;
+    for (let i = 0; i < n; i++) {
+      const tip = await dots.nth(i).getAttribute('data-tip');
+      if (tip && tip.includes('→')) { named = i; break; }
+    }
+    expect(named).toBeGreaterThanOrEqual(0);
+    await dots.nth(named).hover();
+    const tip = page.locator('.wm-tip');
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText('→');
+  });
+
   test('connections also render as a fluid SVG overlay on the ASCII backdrop', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="flows"]');

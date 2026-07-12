@@ -4541,8 +4541,11 @@
         if (!valid(alat, alon) || !valid(blat, blon)) return;
         const v = valMode ? Number(r[valI]) : NaN;
         conns.push({ alat, alon, blat, blon, label: lb, v });
-        pts.push({ lat: alat, lon: alon, v: NaN, label: "" });
-        pts.push({ lat: blat, lon: blon, v: NaN, label: "" });
+        // Both endpoints inherit the connection's --label, so hovering a marker
+        // lists the routes that pass through it (naming the places at each end)
+        // rather than showing bare coordinates.
+        pts.push({ lat: alat, lon: alon, v: NaN, label: lb });
+        pts.push({ lat: blat, lon: blon, v: NaN, label: lb });
       } else {
         const lat = Number(r[latI]), lon = Number(r[lonI]);
         if (!valid(lat, lon)) return;
