@@ -3320,11 +3320,41 @@
     });
     return new ClipboardItem({ "image/png": p, "text/html": html });
   }
-  // html2canvas onclone hook: drop the transient pulse/enter animation classes,
-  // whose keyframes use color-mix() (unparseable by html2canvas) and would be
-  // captured mid-animation anyway.
-  function stripPulse(doc) {
+  // Convert every `color(srgb r g b [/ a])` occurrence in a CSS value string to
+  // an `rgba()` html2canvas can parse. Chrome serialises a computed `color-mix()`
+  // value as `color(srgb …)`, which html2canvas rejects ("unsupported color
+  // function 'color'"), breaking the poster / copy-image export.
+  function srgbToRgba(str) {
+    return str.replace(/color\(srgb\s+([^)]+)\)/gi, (m, inner) => {
+      const [rgbPart, aPart] = inner.split("/");
+      const c = rgbPart.trim().split(/\s+/).map(Number);
+      if (c.length < 3 || c.some((n) => Number.isNaN(n))) return m;
+      const to255 = (x) => Math.round(Math.max(0, Math.min(1, x)) * 255);
+      const a = aPart !== undefined ? Number(aPart) : 1;
+      return `rgba(${to255(c[0])}, ${to255(c[1])}, ${to255(c[2])}, ${Number.isNaN(a) ? 1 : a})`;
+    });
+  }
+  // html2canvas onclone hook: (1) drop the transient pulse/enter animation
+  // classes (their keyframes use color-mix() and they'd be captured mid-animation
+  // anyway), and (2) resolve any computed `color(srgb …)` values — how the browser
+  // serialises the app's many `color-mix()` styles — to `rgba()`, since html2canvas
+  // can't parse the `color()` function. Without (2) any dashboard containing a
+  // color-mix'd element (timeline bands, map/heatmap legends, …) fails to export.
+  const CAPTURE_COLOR_PROPS = [
+    "color", "backgroundColor", "backgroundImage", "borderTopColor",
+    "borderRightColor", "borderBottomColor", "borderLeftColor", "outlineColor",
+    "boxShadow", "fill", "stroke",
+  ];
+  function sanitizeForCapture(doc) {
     doc.querySelectorAll(".updated, .enter").forEach((el) => el.classList.remove("updated", "enter"));
+    const win = doc.defaultView || window;
+    doc.querySelectorAll("*").forEach((el) => {
+      const cs = win.getComputedStyle(el);
+      for (const prop of CAPTURE_COLOR_PROPS) {
+        const v = cs[prop];
+        if (v && v.indexOf("color(") !== -1) el.style[prop] = srgbToRgba(v);
+      }
+    });
   }
   // Rasterize one panel to a PNG blob in the browser via html2canvas. The
   // action buttons are dropped from the capture and the app background is
@@ -3341,7 +3371,7 @@
       useCORS: true,
       logging: false,
       ignoreElements: (el) => el.classList && el.classList.contains("panel-actions"),
-      onclone: stripPulse,
+      onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
     }));
@@ -3359,7 +3389,7 @@
       useCORS: true,
       logging: false,
       ignoreElements: (e) => e.classList && (e.classList.contains("panel-actions") || e.classList.contains("panel-grip") || e.classList.contains("tile-filter")),
-      onclone: stripPulse,
+      onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
     }));
