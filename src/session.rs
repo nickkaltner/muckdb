@@ -822,6 +822,36 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             );
         }
     }
+    if chart.kind == "sequence" {
+        // One row per message: --from, --to and --label (the message text) are
+        // required; every optional column flag must exist if named.
+        let from = chart
+            .from_participant
+            .as_deref()
+            .context("--chart sequence needs --from <column> (the source participant)")?;
+        check("--from", from)?;
+        let to = chart
+            .to_participant
+            .as_deref()
+            .context("--chart sequence needs --to <column> (the destination participant)")?;
+        check("--to", to)?;
+        chart
+            .label
+            .as_deref()
+            .context("--chart sequence needs --label <column> (the message text)")?;
+        // (--label column existence is validated generically above.)
+        for (flag, col) in [
+            ("--message-type", &chart.message_type),
+            ("--from-type", &chart.from_type),
+            ("--to-type", &chart.to_type),
+            ("--group", &chart.group),
+            ("--group-branch", &chart.group_branch),
+        ] {
+            if let Some(c) = col {
+                check(flag, c)?;
+            }
+        }
+    }
     Ok(())
 }
 
@@ -1152,12 +1182,13 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip\n                       \
                  --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
+                 --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
                  [--desc COL]  (box: a per-box note column, shown beside each plot)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
@@ -1612,6 +1643,87 @@ mod tests {
         let mut c = base();
         c.end = None;
         c.duration = Some("t1".into());
+        assert!(mk(c).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn sequence_validation_requires_core_flags() {
+        if !duckdb_ok() {
+            eprintln!("skipping sequence_validation_requires_core_flags: no duckdb");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("muckdb-seq-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("seq.duckdb");
+        let dbs = db.to_str().unwrap();
+        run_sql(
+            dbs,
+            "CREATE TABLE calls AS SELECT 'gateway' AS src, 'auth' AS dst, \
+             'POST /login' AS msg, 'sync' AS mtype, 'actor' AS st, 'database' AS dt, \
+             'loop:retry' AS grp, 'ok' AS branch",
+        );
+        let mk = |chart: Chart| validate_tile(dbs, Some("calls"), None, &chart);
+        let base = || Chart {
+            kind: "sequence".into(),
+            x: None,
+            y: vec![],
+            lat: None,
+            lon: None,
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
+            label: Some("msg".into()),
+            value: None,
+            no_values: false,
+            desc: None,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+            lane: None,
+            start: None,
+            end: None,
+            duration: None,
+            color: None,
+            id: None,
+            depends_on: None,
+            from_participant: Some("src".into()),
+            to_participant: Some("dst".into()),
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
+        };
+        // A fully-specified valid spec passes.
+        assert!(mk(base()).is_ok());
+        // Missing --from / --to / --label each fail.
+        let mut c = base();
+        c.from_participant = None;
+        assert!(mk(c).is_err());
+        let mut c = base();
+        c.to_participant = None;
+        assert!(mk(c).is_err());
+        let mut c = base();
+        c.label = None;
+        assert!(mk(c).is_err());
+        // A bad column name fails (the generic check + "did you mean").
+        let mut c = base();
+        c.from_participant = Some("nope".into());
+        assert!(mk(c).is_err());
+        // All optional columns, valid, pass.
+        let mut c = base();
+        c.message_type = Some("mtype".into());
+        c.from_type = Some("st".into());
+        c.to_type = Some("dt".into());
+        c.group = Some("grp".into());
+        c.group_branch = Some("branch".into());
         assert!(mk(c).is_ok());
         std::fs::remove_dir_all(&dir).ok();
     }
