@@ -985,6 +985,16 @@
   // A TOC click pins its entry active through the smooth scroll so the spy can't
   // briefly flip to the panel above as the scroll settles.
   let tocPinName = null, tocPinUntil = 0;
+  // A tile "anchor" in the URL hash (#t=<name>): the scroll spy keeps it pointing
+  // at the tile you're reading, so a reload (e.g. a theme switch, which reloads
+  // the page) restores you to the same panel. Captured at boot, consumed once by
+  // the first renderPanels so live updates don't yank the scroll position.
+  function tileFromHash() {
+    const h = location.hash || "";
+    if (h.indexOf("#t=") !== 0) return null;
+    try { return decodeURIComponent(h.slice(3)); } catch (_) { return null; }
+  }
+  let pendingScrollHash = tileFromHash();
 
   // ---- themes -----------------------------------------------------------
   // Each theme sets the base CSS variables (gradients/derived vars recompute
@@ -3130,6 +3140,19 @@
       return loadTileChart(t);
     }).filter(Boolean);
     if (SHOT) Promise.allSettled(loads).then(markShotReady);
+    // Restore scroll position from the URL hash on the first render after a load
+    // (e.g. a theme reload). Consumed once so live updates don't move the reader.
+    // Scroll now for a rough landing, then again once charts finish sizing.
+    if (pendingScrollHash && !SHOT) {
+      const target = pendingScrollHash;
+      pendingScrollHash = null;
+      const restore = () => {
+        const p = document.querySelector(`#panels [data-tile="${cssEsc(target)}"]`);
+        if (p) p.scrollIntoView({ block: "start" });
+      };
+      restore();
+      Promise.allSettled(loads).then(() => requestAnimationFrame(restore));
+    }
   }
   // ---- panel trash (persisted on the tile in the session JSON) ----------
   // Optimistic: flip the flag locally and re-render at once, then tell the
@@ -3217,6 +3240,15 @@
       let active = panels[0];
       for (const p of panels) { if (p.getBoundingClientRect().top <= line) active = p; else break; }
       if (active && items[active.dataset.tile]) setTocActive(active.dataset.tile);
+      // Keep the URL hash pointing at the tile in view (replaceState so it never
+      // pollutes history and doesn't disturb the SPA path router, which ignores
+      // the hash). This is what a theme reload reads back to restore position.
+      if (active && active.dataset.tile && !SHOT) {
+        const want = "#t=" + encodeURIComponent(active.dataset.tile);
+        if (location.hash !== want) {
+          history.replaceState(history.state, "", location.pathname + location.search + want);
+        }
+      }
     };
     let raf = 0;
     const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; update(); }); };
