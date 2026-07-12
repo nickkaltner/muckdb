@@ -550,6 +550,10 @@
   .seq-part-lbl { fill: var(--fg); font-size: 12px; }
   .seq-life { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
   .seq-line { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  /* Participant-glyph strokes (actor body, boundary bars) — the same subtle
+     outline colour the filled shapes (box/cylinder/circle) use, so each icon
+     is one consistent colour rather than half --line, half --fg. */
+  .seq-glyph { stroke: var(--line); stroke-width: 1.2; fill: none; }
   .seq-line.reply { stroke-dasharray: 5 4; }
   .seq-head { fill: var(--fg); stroke: none; }
   .seq-head-open { stroke: var(--fg); stroke-width: 1.4; fill: none; }
@@ -3509,7 +3513,7 @@
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
     const wide = !!state.tileWide[t.name];
-    const widenBtn = kind === "table" || kind === "timeline" || kind === "sequence"
+    const widenBtn = kind === "table" || kind === "timeline"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
@@ -4148,13 +4152,13 @@
       lifeSvg += `<line class="seq-life" x1="${x}" y1="${SEQ_HEAD_H + 2}" x2="${x}" y2="${bottomY}"/>`;
       if (ty === "actor") {
         headSvg += `<circle class="seq-part" cx="${x}" cy="16" r="7"/>`
-          + `<path class="seq-line" d="M${x},23 v13 M${x - 9},29 h18 M${x},36 l-8,10 M${x},36 l8,10"/>`;
+          + `<path class="seq-glyph" d="M${x},23 v13 M${x - 9},29 h18 M${x},36 l-8,10 M${x},36 l8,10"/>`;
       } else if (ty === "database") {
         headSvg += `<path class="seq-part" d="M${x - 26},14 v22 a26,7 0 0 0 52,0 v-22"/>`
           + `<ellipse class="seq-part" cx="${x}" cy="14" rx="26" ry="7"/>`;
       } else if (ty === "boundary") {
-        headSvg += `<line class="seq-line" x1="${x - 30}" y1="10" x2="${x - 30}" y2="42"/>`
-          + `<line class="seq-line" x1="${x - 30}" y1="26" x2="${x - 14}" y2="26"/>`
+        headSvg += `<line class="seq-glyph" x1="${x - 30}" y1="10" x2="${x - 30}" y2="42"/>`
+          + `<line class="seq-glyph" x1="${x - 30}" y1="26" x2="${x - 14}" y2="26"/>`
           + `<circle class="seq-part" cx="${x}" cy="26" r="14"/>`;
       } else {
         const bw = Math.min(SEQ_COL_W - 24, Math.max(70, p.length * 8 + 16));

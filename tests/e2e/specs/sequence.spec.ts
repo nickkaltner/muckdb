@@ -29,8 +29,8 @@ test.describe('sequence tile', () => {
     // Autonumber badges.
     await expect(panel.locator('.seq-num').first()).toBeVisible();
 
-    // Full-width toggle offered.
-    await expect(panel.locator('[data-widen]')).toHaveCount(1);
+    // No full-width toggle — the diagram sizes to its participants intrinsically.
+    await expect(panel.locator('[data-widen]')).toHaveCount(0);
   });
 
   test('message hover shows a rich tooltip with core fields + a formatted link, escaping HTML', async ({ page }) => {

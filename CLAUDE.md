@@ -204,7 +204,8 @@ muckdb session rm <name> [--tile TILE]
   Every sequence tile gets a **mermaid** button that copies a mermaid.js
   `sequenceDiagram` to the clipboard — since mermaid has no database/boundary
   shape, those export as `participant` with a preceding `%% database`/
-  `%% boundary` comment (`actor` exports as `actor`).
+  `%% boundary` comment (`actor` exports as `actor`). Keep to **~6
+  participants** (fixed-width columns); split a larger flow into several tiles.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

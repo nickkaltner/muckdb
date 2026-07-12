@@ -479,6 +479,10 @@ so control it with `ORDER BY`.
 - **Participant order = first appearance.** A participant's lifeline is added
   the first time it shows up as a `--from` or `--to` value; there's no
   separate participant list to maintain.
+- **Keep it to ~6 participants.** The tile lays participants out in fixed-width
+  columns, so about six is what fits legibly across a panel before lifelines
+  crowd. If a flow touches more, split it into several sequence tiles by
+  sub-flow (e.g. one per request path) rather than cramming them into one.
 - **Participant type = the type on the row where it first appears.** If
   `gateway` first shows up with `--from-type participant`, it's drawn as a
   plain participant even if a later row (inconsistently) tags it `actor` —
