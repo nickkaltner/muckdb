@@ -75,7 +75,7 @@ CREATE OR REPLACE TABLE pipeline AS SELECT * FROM (VALUES
   ('runner-2', 'unit tests',95.0, 180.0, 'ok',      'p3', 'p2'),
   ('runner-2', 'lint',      95.0, 130.0, 'warn',    'p4', 'p2'),   -- overlaps unit tests
   ('runner-1', 'package',  180.0, 210.0, 'ok',      'p5', 'p3'),
-  ('runner-1', 'deploy',   220.0, 270.0, 'failed',  'p6', 'p5')  -- starts 10s after package ends (visible dep gap)
+  ('runner-2', 'deploy',   220.0, 270.0, 'failed',  'p6', 'p5')  -- in runner-2: dep connector crosses lanes, starts 10s after package ends
 ) t(resource, step, t0, t1, outcome, sid, parent);
 
 -- An incident timeline on an absolute time axis: phases per system, with
