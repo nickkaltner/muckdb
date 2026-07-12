@@ -489,7 +489,9 @@ can't nest another frame inside it. Contiguous rows with the same `--group`
 value merge into one frame; a new value (or a gap) closes the current frame
 and opens the next. Use `--group-branch` to add else/and compartments inside
 a frame without starting a new one (e.g. an `alt` with a `valid`/`expired`
-branch, still one frame).
+branch, still one frame). A `--group` value whose `kind` isn't one of
+`loop|opt|alt|par` renders as a generic frame in the diagram but exports as a
+mermaid `loop` frame.
 
 **Mermaid export.** Every sequence tile gets a **mermaid** toolbar button that
 copies a valid mermaid.js `sequenceDiagram` to the clipboard — paste it

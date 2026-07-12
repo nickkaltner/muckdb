@@ -67,4 +67,22 @@ test.describe('sequence tile', () => {
     expect(text).toMatch(/\n\s*alt token valid/); // the group frame
     expect(text).toMatch(/\n\s*end/);
   });
+
+  test('a loop group with a changing group-branch exports valid mermaid (no else/and)', async ({ page, context }) => {
+    await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="sequence-loop"]');
+    await expect(panel).toBeVisible();
+    await panel.locator('[data-mermaid]').click();
+    // The toast confirms the copy — the primary gate for this regression.
+    await expect(page.locator('#toast')).toContainText('mermaid');
+    const text = await page.evaluate(() => navigator.clipboard.readText());
+    expect(text).toMatch(/\n\s*loop retry/);
+    expect(text).toMatch(/\n\s*end/);
+    // mermaid only allows `else` inside alt and `and` inside par — a loop frame
+    // must never emit either compartment keyword, even though --group-branch
+    // changes on every row here.
+    expect(text).not.toMatch(/\n\s*else\b/);
+    expect(text).not.toMatch(/\n\s*and\b/);
+  });
 });

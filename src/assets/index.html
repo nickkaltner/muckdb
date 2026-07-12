@@ -4047,7 +4047,7 @@
       `${esc(m.from)} → ${esc(m.to)}`,
       `type: ${esc(m.type)}`,
     ];
-    const shown = new Set([spec.from_participant, spec.to_participant, spec.label, spec.message_type].filter(Boolean));
+    const shown = new Set([spec.from_participant, spec.to_participant, spec.label, spec.message_type, spec.from_type, spec.to_type, spec.group, spec.group_branch].filter(Boolean));
     const extra = [];
     cols.forEach((c, i) => {
       if (shown.has(c)) return;
@@ -4257,7 +4257,11 @@
       } else if (curRaw && gbi >= 0) {
         const br = r[gbi] != null ? String(r[gbi]) : null;
         if (br && br !== curBranch) {
-          lines.push(`  ${curKind === "par" ? "and" : "else"} ${seqCollapseWs(br)}`);
+          // mermaid only allows `else` inside alt and `and` inside par —
+          // any other frame kind (loop/opt/unknown-coerced-to-loop) just
+          // continues with no compartment line when the branch changes.
+          if (curKind === "alt") lines.push(`  else ${seqCollapseWs(br)}`);
+          else if (curKind === "par") lines.push(`  and ${seqCollapseWs(br)}`);
           curBranch = br;
         }
       }

@@ -62,6 +62,16 @@ CREATE VIEW messages AS SELECT * FROM (VALUES
   (6,'gateway','cache','ping','lost','participant','participant',NULL,NULL,'t-6','timeout')
 ) t(seq,src,dst,msg,mtype,st,dt,grp,branch,trace,note)
 ORDER BY seq;
+
+-- A loop-group fixture whose --group-branch CHANGES within the frame — regression
+-- coverage for the seqToMermaid bug where a loop/opt frame incorrectly emitted an
+-- alt/par-only 'else'/'and' compartment line on a branch change (invalid mermaid).
+CREATE VIEW msgs_loop AS SELECT * FROM (VALUES
+  (1,'client','server','attempt','loop:retry','try1'),
+  (2,'client','server','attempt','loop:retry','try2'),
+  (3,'client','server','attempt','loop:retry','try3')
+) t(seq,src,dst,msg,grp,branch)
+ORDER BY seq;
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -131,4 +141,9 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--from-type', 'st', '--to-type', 'dt', '--group', 'grp', '--group-branch', 'branch',
     '--autonumber',
     '--caption', 'A sequence diagram: participant types, arrow kinds, a self-message, an alt group.']);
+
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'sequence-loop', '--title', 'Retry loop',
+    '--db', dbPath, '--view', 'msgs_loop', '--chart', 'sequence',
+    '--from', 'src', '--to', 'dst', '--label', 'msg', '--group', 'grp', '--group-branch', 'branch',
+    '--caption', 'A loop frame whose group-branch changes mid-frame — must export valid mermaid (no else/and).']);
 }
