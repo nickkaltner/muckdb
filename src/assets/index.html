@@ -1173,7 +1173,7 @@
     LINK_ROUND = t.roundLinks !== false;
     // Sea-static video opacity. On light themes the dark clip is inverted (see the
     // .wm-light CSS) so it lightens rather than darkens, and can run a touch stronger.
-    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.16 : 0.08)));
+    root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.1 : 0.08)));
     // Land opacity: light themes need more contrast so coastlines read on pale sea.
     root.setProperty("--wm-land-opacity", String(t.light ? 0.22 : 0.12));
     // Mark light themes so the sea-static video can be inverted + contrast-boosted
