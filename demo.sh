@@ -66,6 +66,28 @@ WHERE random() < 0.012
   + 0.06 * pow(sin((m % 1440)/1440.0 * pi()), 2)   -- daily hump
         * (0.15 + (hash(m // 1440) % 100)/110.0);  -- per-day intensity
 
+-- A CI/deploy pipeline for a relative-seconds Gantt: several lanes, an overlap
+-- (build/test run concurrently → sublane), colour by outcome, and a dependency
+-- chain (checkout → build → {test, package} → deploy).
+CREATE OR REPLACE TABLE pipeline AS SELECT * FROM (VALUES
+  ('runner-1', 'checkout',  0.0,   12.0, 'ok',      'p1', NULL),
+  ('runner-1', 'build',     12.0,  95.0, 'ok',      'p2', 'p1'),
+  ('runner-2', 'unit tests',95.0, 180.0, 'ok',      'p3', 'p2'),
+  ('runner-2', 'lint',      95.0, 130.0, 'warn',    'p4', 'p2'),   -- overlaps unit tests
+  ('runner-1', 'package',  180.0, 210.0, 'ok',      'p5', 'p3'),
+  ('runner-1', 'deploy',   210.0, 260.0, 'failed',  'p6', 'p5')
+) t(resource, step, t0, t1, outcome, sid, parent);
+
+-- An incident timeline on an absolute time axis: phases per system, with
+-- colour by severity and event markers for the key moments.
+CREATE OR REPLACE TABLE incident AS SELECT * FROM (VALUES
+  ('api',      'elevated errors', TIMESTAMP '2026-05-01 14:02:00', TIMESTAMP '2026-05-01 14:18:00', 'warning'),
+  ('api',      'outage',          TIMESTAMP '2026-05-01 14:18:00', TIMESTAMP '2026-05-01 14:41:00', 'critical'),
+  ('database', 'failover',        TIMESTAMP '2026-05-01 14:22:00', TIMESTAMP '2026-05-01 14:35:00', 'critical'),
+  ('oncall',   'investigate',     TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:30:00', 'info'),
+  ('oncall',   'mitigate',        TIMESTAMP '2026-05-01 14:30:00', TIMESTAMP '2026-05-01 14:41:00', 'info')
+) t(system, phase, started, ended, severity);
+
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
@@ -142,6 +164,13 @@ CREATE OR REPLACE VIEW network_flows AS
 -- Running revenue total by day — the shape an AREA chart likes (cumulative over time).
 CREATE OR REPLACE VIEW revenue_cumulative AS
   SELECT day, round(sum(revenue) OVER (ORDER BY day), 2) AS cumulative_revenue FROM sales_per_day;
+
+-- Timeline (Gantt-style) views: one row per bar, lane/label/start/end plus
+-- optional colour, id and depends-on columns for connectors.
+CREATE OR REPLACE VIEW pipeline_timeline AS
+  SELECT resource, step, t0, t1, outcome, sid, parent FROM pipeline;
+CREATE OR REPLACE VIEW incident_timeline AS
+  SELECT system, phase, started, ended, severity FROM incident ORDER BY started;
 
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
@@ -283,6 +312,22 @@ MD
   --label label --value gbps \
   --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map (whose sea gently shimmers), taking the shorter way round the globe when that wraps the date line, with opacity scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping; hover an arc or its label for details." >/dev/null
 
+"$MUCKDB" session section "$SESSION" --name sec-timeline --title "Timelines" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name pipeline --title "CI/CD pipeline (relative seconds)" \
+  --db "$DB" --view pipeline_timeline --chart timeline \
+  --lane resource --label step --start t0 --end t1 \
+  --color outcome --id sid --depends-on parent \
+  --event '95|tests start' \
+  --caption "A Gantt-style pipeline on a 0→seconds axis: lanes are runners, bars are steps; lint overlaps unit tests so it stacks into a sublane; right-angle connectors show the dependency chain and colour encodes the step outcome." >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name incident --title "Incident timeline (absolute time)" \
+  --db "$DB" --view incident_timeline --chart timeline \
+  --lane system --label phase --start started --end ended \
+  --color severity \
+  --event '2026-05-01 14:18|outage declared' --event '2026-05-01 14:41|resolved' \
+  --caption "The same tile on an absolute time axis: each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover any bar for its exact window and details." >/dev/null
+
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
 
@@ -299,8 +344,10 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Activity heat**   | heatmap (weekday × hour)       | two categoricals × a value → density at a glance |
 | **Value spread**    | box plots on a shared scale    | compare whole distributions, each with a note |
 | **Customers**       | map (lat/long → world map)     | geographic points, brighter = denser      |
+| **CI pipeline**     | timeline (relative seconds)    | tasks over time, sublanes for overlap, dep arrows |
+| **Incident**        | timeline (absolute time)       | phases per system, severity colour, event markers |
 
-Section headers (**Sales**, **Time series**, **Distributions**, **Geography**)
+Section headers (**Sales**, **Time series**, **Distributions**, **Geography**, **Timelines**)
 group the panels and appear in the contents.
 
 Every figure here is backed by a **view** you can open (hit **explore**),
