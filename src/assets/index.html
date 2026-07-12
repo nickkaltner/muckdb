@@ -4197,6 +4197,11 @@
     const id = name.replace(/[^A-Za-z0-9_]/g, "_").replace(/^_+|_+$/g, "") || "p";
     return { id, alias: id !== name };
   }
+  // Collapse embedded newlines/runs of whitespace to a single space — used for
+  // any text emitted verbatim into a mermaid line (labels, aliases, branches).
+  function seqCollapseWs(v) {
+    return String(v ?? "").replace(/\s*\n\s*/g, " ");
+  }
   // Generate a valid mermaid `sequenceDiagram` document from the same rows/spec.
   // db/boundary participants map to `participant` with a preceding %% comment
   // (mermaid has no such shape); arrows map sync/reply/async/lost →
@@ -4214,14 +4219,24 @@
 
     const { order, typeOf } = seqParticipants(cols, rows, spec);
     const idOf = {};
+    const usedIds = new Set();
     order.filter((n) => n !== "").forEach((n) => {
-      const { id, alias } = seqMermaidId(n);
+      let { id, alias } = seqMermaidId(n);
+      if (usedIds.has(id)) {
+        // Two distinct participant names sanitized to the same id (or both
+        // fell back to "p") — disambiguate deterministically.
+        let i = 2;
+        while (usedIds.has(`${id}_${i}`)) i++;
+        id = `${id}_${i}`;
+        alias = true;
+      }
+      usedIds.add(id);
       idOf[n] = id;
       const ty = typeOf[n] || "participant";
       if (ty === "database") lines.push("  %% database");
       else if (ty === "boundary") lines.push("  %% boundary");
       const kw = ty === "actor" ? "actor" : "participant";
-      lines.push(alias ? `  ${kw} ${id} as ${n}` : `  ${kw} ${id}`);
+      lines.push(alias ? `  ${kw} ${id} as ${seqCollapseWs(n)}` : `  ${kw} ${id}`);
     });
 
     let curRaw = null, curKind = null, curBranch = null;
@@ -4235,21 +4250,21 @@
         if (raw) {
           const g = seqGroup(raw);
           curKind = g.kind === "group" ? "loop" : g.kind; // unknown kind → a loop frame
-          lines.push(`  ${curKind} ${g.label}`);
+          lines.push(`  ${curKind} ${seqCollapseWs(g.label)}`);
           curRaw = raw;
           curBranch = gbi >= 0 && r[gbi] != null ? String(r[gbi]) : null;
         }
       } else if (curRaw && gbi >= 0) {
         const br = r[gbi] != null ? String(r[gbi]) : null;
         if (br && br !== curBranch) {
-          lines.push(`  ${curKind === "par" ? "and" : "else"} ${br}`);
+          lines.push(`  ${curKind === "par" ? "and" : "else"} ${seqCollapseWs(br)}`);
           curBranch = br;
         }
       }
       const ty = mti >= 0 ? seqType(r[mti]) : "sync";
       const indent = curRaw ? "    " : "  ";
-      const label = String(r[lbi] ?? "").replace(/\s*\n\s*/g, " ");
-      lines.push(`${indent}${idOf[from] || seqMermaidId(from).id}${arrow[ty]}${idOf[to] || seqMermaidId(to).id}: ${label}`);
+      const label = seqCollapseWs(r[lbi] ?? "");
+      lines.push(`${indent}${idOf[from]}${arrow[ty]}${idOf[to]}: ${label}`);
     });
     close();
     return lines.join("\n") + "\n";
