@@ -14,6 +14,10 @@
     --fg: #ece4d8; --muted: #a99b88; --faint: #71675c;
     --amber: #ffb851; --orange: #ff7d22; --ember: #df531c; --orange-dim: #b85a1a;
     --teal: #4bc4b6; --ok: #9bb56e; --fail: #e0614a; --on-accent: #14171b;
+    /* Timeline event-marker style — one themeable source of truth shared by the
+       marker line crossing the lanes AND its leader in the head band, so they
+       always match. Override any of these per-theme via THEMES.<t>.vars. */
+    --tl-marker-color: var(--anno-event, var(--teal)); --tl-marker-width: 1.2; --tl-marker-dash: 4 3; --tl-marker-opacity: 0.85;
     /* gradients — the polish */
     --grad-accent: linear-gradient(135deg, var(--amber), var(--orange) 55%, var(--ember));
     --grad-panel: linear-gradient(180deg, rgba(255,206,150,0.045), rgba(255,206,150,0) 58%);
@@ -521,11 +525,10 @@
      live hover-time readout live here, so nothing overprints the bars. */
   .tl-head { display: grid; grid-template-columns: var(--tl-gutter) 1fr; }
   .tl-head-plot { position: relative; min-height: 16px; }
+  .tl-head-ov { position: absolute; inset: 0; pointer-events: none; overflow: visible; }
   .tl-ev-lab { position: absolute; font-size: 10px; line-height: 13px; white-space: nowrap;
     padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--surface) 85%, transparent);
     pointer-events: none; }
-  .tl-ev-lead { position: absolute; width: 0; border-left: 1px dashed var(--anno-event, var(--teal));
-    opacity: 0.55; pointer-events: none; }
   .tl-head-readout { position: absolute; font-size: 10.5px; line-height: 14px; color: var(--orange);
     background: var(--surface); border: 1px solid var(--orange-dim); border-radius: 3px;
     padding: 0 4px; white-space: nowrap; pointer-events: none; opacity: 0; }
@@ -1194,7 +1197,8 @@
   // theme's grad-panel/hi) fall back to the :root defaults when not provided.
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
     "on-accent", "mist", "orange", "amber", "ember", "orange-dim", "teal", "ok", "fail", "glow", "grad-panel", "hi",
-    "selection", "anno-target", "anno-threshold", "anno-event"];
+    "selection", "anno-target", "anno-threshold", "anno-event",
+    "tl-marker-color", "tl-marker-width", "tl-marker-dash", "tl-marker-opacity"];
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.hearth;
     state.theme = THEMES[name] ? name : "hearth";
@@ -3706,7 +3710,7 @@
       .filter((e) => isFinite(e.frac) && e.frac >= -0.001 && e.frac <= 1.001);
     tlPayloads[id] = { t0, t1, numeric, startFmt, deps, events, totalH };
     return `<div class="tl-wrap">${legendHtml}
-      <div class="tl-head"><div></div><div class="tl-head-plot"><span class="tl-head-readout"></span></div></div>
+      <div class="tl-head"><div></div><div class="tl-head-plot"><svg class="tl-head-ov" xmlns="http://www.w3.org/2000/svg"></svg><span class="tl-head-readout"></span></div></div>
       <div class="tl" style="height:${totalH}px">
         <div class="tl-gutter" style="height:${totalH}px">${gutterHtml}</div>
         <div class="tl-plot" data-tl="${id}" style="height:${totalH}px">
@@ -3719,13 +3723,27 @@
     </div>`;
   }
 
+  // The one source of truth for how an --event marker is drawn — shared by the
+  // marker line crossing the lanes (renderTimelineOverlay) and its leader in the
+  // head band (renderTimelineHead) so they're always identical. Themeable via the
+  // --tl-marker-* CSS vars; colour falls back to the --anno-event/--teal chain.
+  function tlMarkerStyle() {
+    let color = cssVar("--tl-marker-color");
+    if (!color || color.indexOf("var(") >= 0) color = cssVar("--anno-event") || cssVar("--teal") || "#4bc4b6";
+    return {
+      color,
+      width: cssVar("--tl-marker-width") || "1.2",
+      dash: cssVar("--tl-marker-dash") || "4 3",
+      opacity: cssVar("--tl-marker-opacity") || "0.85",
+    };
+  }
   function renderTimelineOverlay(plot, pay) {
     const svg = plot.querySelector("svg.tl-overlay"); if (!svg) return;
     const W = plot.clientWidth, H = pay.totalH; if (!W) return;
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.setAttribute("width", W); svg.setAttribute("height", H);
     const line = cssVar("--muted") || "#9b958a";
-    const evCol = cssVar("--anno-event") || cssVar("--teal") || "#b8b2a6";
+    const m = tlMarkerStyle();
     const deps = pay.deps.map((d) => {
       const x1 = d.fromFrac * W, y1 = d.fromY, x2 = d.toFrac * W, y2 = d.toY;
       const mx = (x1 + x2) / 2;
@@ -3736,7 +3754,7 @@
     // band above the lanes (see renderTimelineHead) so they never overprint bars.
     const events = pay.events.map((e) => {
       const x = (Math.max(0, Math.min(1, e.frac)) * W).toFixed(1);
-      return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${evCol}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
+      return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
     }).join("");
     svg.innerHTML = `<g class="tl-deps">${deps}</g><g class="tl-events">${events}</g>`;
   }
@@ -3748,7 +3766,7 @@
   function renderTimelineHead(headPlot, pay) {
     if (!headPlot) return;
     const W = headPlot.clientWidth; if (!W) return;
-    const evCol = cssVar("--anno-event") || cssVar("--teal") || "#4bc4b6";
+    const m = tlMarkerStyle();
     const evs = pay.events
       .map((e) => ({ x: Math.max(0, Math.min(1, e.frac)) * W, label: e.label || "" }))
       .filter((e) => e.label)
@@ -3765,19 +3783,31 @@
     const nRows = rowEnds.length;
     const height = (nRows + 1) * TL_EV_LH + 4; // + a reserved row for the readout
     headPlot.style.height = height + "px";
-    const readout = headPlot.querySelector(".tl-head-readout");
-    let html = "";
+    // Drop previous label chips; keep the svg overlay + readout nodes.
+    headPlot.querySelectorAll(".tl-ev-lab").forEach((n) => n.remove());
+    // Leaders: SVG lines drawn with the SAME marker style as the plot line, so the
+    // marker reads as one continuous dashed line from the label down through the
+    // lanes.
+    const svg = headPlot.querySelector("svg.tl-head-ov");
+    if (svg) {
+      svg.setAttribute("viewBox", `0 0 ${W} ${height}`);
+      svg.setAttribute("width", W); svg.setAttribute("height", height);
+      svg.innerHTML = evs.map((e) => {
+        const ly = e.row * TL_EV_LH + TL_EV_LH - 3;
+        return `<line x1="${e.x.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${e.x.toFixed(1)}" y2="${height}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
+      }).join("");
+    }
     evs.forEach((e) => {
-      const top = e.row * TL_EV_LH;
-      html += `<div class="tl-ev-lab" style="left:${e.left.toFixed(1)}px;top:${top}px;color:${evCol}">${esc(e.label)}</div>`;
-      const ly = top + TL_EV_LH - 3;
-      html += `<div class="tl-ev-lead" style="left:${e.x.toFixed(1)}px;top:${ly.toFixed(1)}px;height:${(height - ly).toFixed(1)}px"></div>`;
+      const lab = document.createElement("div");
+      lab.className = "tl-ev-lab";
+      lab.style.left = e.left.toFixed(1) + "px";
+      lab.style.top = (e.row * TL_EV_LH) + "px";
+      lab.style.color = m.color;
+      lab.textContent = e.label;
+      headPlot.appendChild(lab);
     });
-    // Re-attach the (preserved) readout node so mousemove keeps its reference.
-    headPlot.innerHTML = html;
-    headPlot.appendChild(readout || (() => { const s = document.createElement("span"); s.className = "tl-head-readout"; return s; })());
     const rd = headPlot.querySelector(".tl-head-readout");
-    rd.style.top = (nRows * TL_EV_LH) + "px";
+    if (rd) rd.style.top = (nRows * TL_EV_LH) + "px";
   }
   function hydrateTimelines(scope) {
     (scope || document).querySelectorAll(".tl-plot[data-tl]").forEach((plot) => {
