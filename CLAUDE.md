@@ -68,13 +68,17 @@ muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
         [--from-lat COL --from-lon COL --to-lat COL --to-lon COL]  (map: draw each row as a connection/arc between two points)
-        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label)
+        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label; timeline: the text drawn in each bar)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
+        [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
+        [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
+        [--color COL]  (timeline: colour bars by this category value, adds a legend)
+        [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -108,7 +112,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -153,6 +157,32 @@ muckdb session rm <name> [--tile TILE]
   its label shows the same tooltip. Themes control the arc look (opacity, connect-
   gap, arc-vs-straight, label-pill fill) — see the `arcOpacity`/`arcGap`/
   `roundLinks`/`labelBg` theme keys.
+- **`timeline`** lays each view row out as a **bar** on a shared time axis, grouped
+  into labelled **lanes** — muckdb's Gantt / OpenTelemetry-trace / incident view.
+  One row = one bar; lane order follows first appearance (control with `ORDER BY`).
+  Required: `--lane` (the row/resource, labelled in the left gutter), `--label`
+  (text in the bar), `--start`, and exactly one of `--end`/`--duration`
+  (`--duration` is numeric **seconds**). Optional: `--color COL` colours bars by a
+  category and adds a legend (default is one palette colour per lane); `--id` +
+  `--depends-on` (comma-separated parent ids) draw right-angle dependency
+  connectors that cross lanes; `--event 'X|label'` adds dashed markers.
+  **The axis is auto-detected:** numeric start/end → a relative-seconds axis
+  (`0s`, `2m 15s`); timestamp/date → an absolute axis. **Naive timestamps are
+  UTC and the axis shows the UTC wall-clock by default — not auto-local.** Set
+  `muckdb format <db> <startcol> --tz local` (or an IANA zone) to shift the axis to
+  that zone; the hover readout then also shows the UTC instant. The bottom axis
+  draws tick marks on regular round intervals sized to the width and drops any
+  label that would overlap. Overlapping bars in a lane stack into **sublanes**
+  automatically. Markers show their labels in a band **above** the lanes (with a
+  small triangle at the top of each), stacked if they'd collide, and are a distinct
+  colour from the orange hover cursor (theme via the `--tl-marker-color/-width/-dash/-opacity`
+  CSS vars). Hover anywhere for a cursor + time (local **and** UTC when `--tz` is
+  set); hover a bar for a tooltip with label/lane/start→end/duration/category
+  **plus every other row column** through its format — so a `--link` on an
+  id/reference column becomes a clickable link in the tooltip. Supports the
+  full-width toggle like tables. Shape the view as one row per bar; put a
+  `--color` category, `--id`/`--depends-on`, and any extra tooltip columns in the
+  SELECT.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.
