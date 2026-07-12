@@ -1202,6 +1202,7 @@
     // legible over the map + arcs + sea video; dark themes need less.
     LABEL_BG_ALPHA = t.labelBgAlpha != null ? t.labelBgAlpha : (t.light ? 0.85 : 0.55);
     LINK_ROUND = t.roundLinks !== false;
+    TL_DEP_OPACITY = t.depOpacity != null ? t.depOpacity : (t.light ? 0.6 : 0.5);
     // Sea-static video opacity. On light themes the dark clip is inverted (see the
     // .wm-light CSS) so it lightens rather than darkens, and can run a touch stronger.
     root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.1 : 0.08)));
@@ -3681,7 +3682,50 @@
     </div>`;
   }
 
-  function hydrateTimelines(_scope) { /* overlay hydration added in Task 4 */ }
+  function renderTimelineOverlay(plot, pay) {
+    const svg = plot.querySelector("svg.tl-overlay"); if (!svg) return;
+    const W = plot.clientWidth, H = pay.totalH; if (!W) return;
+    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    const line = cssVar("--muted") || "#9b958a";
+    const evCol = cssVar("--anno-event") || cssVar("--teal") || "#b8b2a6";
+    const deps = pay.deps.map((d) => {
+      const x1 = d.fromFrac * W, y1 = d.fromY, x2 = d.toFrac * W, y2 = d.toY;
+      const mx = (x1 + x2) / 2;
+      return `<path d="M${x1.toFixed(1)} ${y1} H${mx.toFixed(1)} V${y2} H${x2.toFixed(1)}" fill="none" stroke="${line}" stroke-width="1" opacity="${TL_DEP_OPACITY}"/>` +
+        `<circle cx="${x2.toFixed(1)}" cy="${y2}" r="2.2" fill="${line}" opacity="${TL_DEP_OPACITY}"/>`;
+    }).join("");
+    const events = pay.events.map((e) => {
+      const x = (e.frac * W).toFixed(1);
+      return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${evCol}" stroke-width="1.2" stroke-dasharray="4 3"/>` +
+        (e.label ? `<text x="${(+x + 3)}" y="11" class="tl-ev-label">${esc(e.label)}</text>` : "");
+    }).join("");
+    svg.innerHTML = `<g class="tl-deps">${deps}</g><g class="tl-events">${events}</g>`;
+  }
+  function hydrateTimelines(scope) {
+    (scope || document).querySelectorAll(".tl-plot[data-tl]").forEach((plot) => {
+      const pay = tlPayloads[plot.dataset.tl]; if (!pay) return;
+      plot._tlPay = pay;
+      const draw = () => renderTimelineOverlay(plot, pay);
+      draw();
+      if (window.ResizeObserver && !plot._tlRO) { plot._tlRO = new ResizeObserver(draw); plot._tlRO.observe(plot); }
+      const cursor = plot.querySelector(".tl-cursor");
+      const readout = cursor && cursor.querySelector(".tl-readout");
+      if (cursor && !plot._tlCursor) {
+        plot._tlCursor = true;
+        plot.addEventListener("mousemove", (ev) => {
+          const rect = plot.getBoundingClientRect();
+          const fx = (ev.clientX - rect.left) / rect.width;
+          if (fx < 0 || fx > 1) { cursor.classList.remove("show"); return; }
+          cursor.style.left = (fx * 100) + "%";
+          cursor.classList.add("show");
+          const t = pay.t0 + (pay.t1 - pay.t0) * fx;
+          if (readout) { readout.textContent = tlFmtTime(t, pay); readout.style.left = fx > 0.85 ? "auto" : "4px"; readout.style.right = fx > 0.85 ? "4px" : "auto"; }
+        });
+        plot.addEventListener("mouseleave", () => cursor.classList.remove("show"));
+      }
+    });
+  }
 
   // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
   // SHARED scale so boxes compare directly. --x names each box; --y is five
@@ -3817,6 +3861,8 @@
   //                 of its markers. Themes override with `arcGap`.
   let ARC_OPACITY = 0.22;
   const ARC_OPACITY_RANGE = 0.28;
+  // Timeline dependency-connector opacity. Themes override with `depOpacity`.
+  let TL_DEP_OPACITY = 0.5;
   let ARC_GAP = 1;
   // Arc-label pill: a very subtle rounded background so labels stay legible over
   // the map. Fill colour + alpha are per-theme (themes set labelBg / labelBgAlpha).
