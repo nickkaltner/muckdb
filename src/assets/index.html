@@ -3572,6 +3572,30 @@
   }
   function tlFmtTime(t, pay) { return pay.numeric ? tlFmtDur(t) : tlFmtAbs(t, pay.startFmt); }
 
+  function tlTip(b, cols, rows, spec, db, table, fmtT, fmtDur) {
+    const row = rows[b.ri];
+    const core = [];
+    core.push(`<b>${esc(b.label)}</b>` + (b.cat != null ? ` <span class="tl-tip-cat">[${esc(spec.color)}: ${esc(b.cat)}]</span>` : ""));
+    core.push(`lane: ${esc(b.lane)}`);
+    core.push(`${esc(fmtT(b.s))} → ${esc(fmtT(b.e))} (${esc(fmtDur(b.s, b.e))})`);
+    const shown = new Set([spec.lane, spec.label, spec.start, spec.end, spec.duration].filter(Boolean));
+    const extra = [];
+    cols.forEach((c, i) => {
+      if (shown.has(c)) return;
+      const v = row[i]; if (v === null || v === undefined || v === "") return;
+      const f = colFmt(db, c, table);
+      let disp = f ? applyFmtHtml(f, v) : esc(typeof v === "object" ? JSON.stringify(v) : String(v));
+      if (f && f.link) {
+        const href = linkSubst(f.link, v, row, cols, true);
+        const txt = f.link_title ? linkSubst(f.link_title, v, row, cols, false) : disp;
+        disp = `<a href="${attr(href)}" target="_blank" rel="noopener">${txt}</a>`;
+      }
+      extra.push(`${esc(c)}: ${disp}`);
+    });
+    const extraHtml = extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : "";
+    return `${core.join("<br>")}${extraHtml}`;
+  }
+
   function timelineHtml(cols, rows, spec, db, table) {
     const li = cols.indexOf(spec.lane), bi = cols.indexOf(spec.label), si = cols.indexOf(spec.start);
     const ei = spec.end ? cols.indexOf(spec.end) : -1;
@@ -3640,11 +3664,11 @@
     const startFmt = colFmt(db, spec.start, table);
     const fmtT = (t) => numeric ? tlFmtDur(t) : tlFmtAbs(t, startFmt);
     const fmtDur = (a, b) => numeric ? tlFmtDur(b - a) : tlFmtDur((b - a) / 1000);
-    // Bars. (Rich tooltip is added in a later task; core fields go in title=.)
+    // Bars, with a rich delegated tooltip (wm-x + data-tip; see wmTooltip()).
     const barsHtml = bars.map((b) => {
       const l = frac(b.s) * 100, w = Math.max(0.4, (frac(b.e) - frac(b.s)) * 100);
-      const title = `${b.label}\n${b.lane}\n${fmtT(b.s)} → ${fmtT(b.e)} (${fmtDur(b.s, b.e)})`;
-      return `<div class="tl-bar" data-tlid="${attr(b.id || "")}" title="${attr(title)}"
+      const tip = tlTip(b, cols, rows, spec, db, table, fmtT, fmtDur);
+      return `<div class="tl-bar wm-x" data-tlid="${attr(b.id || "")}" data-tip="${attr(tip)}"
         style="left:${l}%;width:${w}%;top:${b.topPx}px;height:${TL_BAR_H}px;background:${b.color}">
         <span class="tl-bar-label">${esc(b.label)}</span></div>`;
     }).join("");

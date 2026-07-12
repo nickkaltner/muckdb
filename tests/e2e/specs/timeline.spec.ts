@@ -45,4 +45,14 @@ test.describe('timeline tile', () => {
     await expect(cursor).toHaveClass(/\bshow\b/);
     await expect(panel.locator('.tl-readout')).not.toBeEmpty();
   });
+
+  test('bar hover shows a rich tooltip with core fields and extra columns', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="timeline"]');
+    await panel.locator('.tl-bar', { hasText: 'migrate' }).hover();
+    const tip = page.locator('.wm-tip');
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText('lane: deploy');
+    await expect(tip).toContainText('status: failed');  // colour category, an extra column
+  });
 });
