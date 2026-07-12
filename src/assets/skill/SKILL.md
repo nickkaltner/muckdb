@@ -184,16 +184,23 @@ muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
-        [--label COL]  (map: per-point label shown in the hover tooltip; timeline: the text drawn in each bar)
+        [--label COL]  (map: per-point label shown in the hover tooltip; timeline: the text drawn in each bar; sequence: the message text)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
         [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
         [--color COL]  (timeline: colour bars by this category value, adds a legend)
         [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
+        [--chart sequence]  (sequence diagram — service comms; one row per message)
+        [--from COL] [--to COL]  (sequence: source/destination participant; --from == --to is a self-message; message text = --label)
+        [--message-type COL]  (sequence: sync (default) | reply | async | lost)
+        [--from-type COL] [--to-type COL]  (sequence: participant (default) | actor | database | boundary)
+        [--group COL]  (sequence: 'kind:label' — loop|opt|alt|par; contiguous equal values = one frame)
+        [--group-branch COL]  (sequence: else/and compartment label within a frame)
+        [--autonumber]  (sequence: number the messages)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -245,7 +252,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -299,6 +306,10 @@ muckdb session rm <name> [--tile TILE]
     into labelled lanes — muckdb's Gantt / trace / incident view. See the
     dedicated **Timeline** section below for the full flag set and worked
     examples.
+  - **`sequence`** to show **interactions between microservices** — one row
+    per message, drawn as an arrow between two participant lifelines. See the
+    dedicated **Sequence** section below for the full flag set and a worked
+    example.
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid
@@ -435,6 +446,77 @@ launchpad — set it in the same pass as your other formats:
 ```sh
 muckdb format ci.db sid --table pipeline_tl \
   --link 'https://ci.example.com/builds/{value}' --link-title 'build {value} · {step}'
+```
+
+## Sequence tiles (service comms / request-response / trace narrative)
+
+A `sequence` tile shows **interactions between microservices** — request/
+response, async fan-out, retries, fallbacks — as a classic UML sequence
+diagram: one vertical **lifeline** per participant, one horizontal **arrow**
+per message. **One row = one message.** Shape the view so each row is a
+message in the flow it sends/receives; message order follows the row order,
+so control it with `ORDER BY`.
+
+**Flags:**
+
+| Flag | Required | Meaning |
+|:-----|:--------:|:--------|
+| `--from COL` | yes | Source participant. |
+| `--to COL` | yes | Destination participant. `--from == --to` on a row draws a **self-message**. |
+| `--label COL` | yes | The message text drawn on the arrow. |
+| `--message-type COL` | no | Arrow kind: `sync` (default, solid) \| `reply` (dashed) \| `async` (open head) \| `lost` (dead-ends with an `x`). |
+| `--from-type COL` / `--to-type COL` | no | Participant shape: `participant` (default) \| `actor` \| `database` \| `boundary`. |
+| `--group COL` | no | `'kind:label'` where `kind` ∈ `loop \| opt \| alt \| par` — wraps contiguous rows sharing the same value in one labelled frame. |
+| `--group-branch COL` | no | Names an else/and compartment **within** the current frame (an `alt`'s else-branch, a `par`'s and-branch). |
+| `--autonumber` | no | Numbers the messages 1, 2, 3… down the lifelines. |
+| `--title` / `--caption` / `--xlabel` | no | As other charts (caption still required). |
+
+**Ordering rules:**
+
+- **Message order = row order** — the diagram lays arrows out top-to-bottom in
+  the order the view returns them, so `ORDER BY` the column that carries the
+  real sequence (a timestamp, a step counter).
+- **Participant order = first appearance.** A participant's lifeline is added
+  the first time it shows up as a `--from` or `--to` value; there's no
+  separate participant list to maintain.
+- **Participant type = the type on the row where it first appears.** If
+  `gateway` first shows up with `--from-type participant`, it's drawn as a
+  plain participant even if a later row (inconsistently) tags it `actor` —
+  keep a participant's type consistent across rows.
+
+**Groups are single-level in this version** — a `loop`/`opt`/`alt`/`par` frame
+can't nest another frame inside it. Contiguous rows with the same `--group`
+value merge into one frame; a new value (or a gap) closes the current frame
+and opens the next. Use `--group-branch` to add else/and compartments inside
+a frame without starting a new one (e.g. an `alt` with a `valid`/`expired`
+branch, still one frame).
+
+**Mermaid export.** Every sequence tile gets a **mermaid** toolbar button that
+copies a valid mermaid.js `sequenceDiagram` to the clipboard — paste it
+straight into a mermaid live editor or a markdown doc that renders mermaid.
+One mapping caveat: **mermaid has no database or boundary participant
+shape**, so `database`/`boundary` participants export as plain `participant`
+with a preceding `%% database` / `%% boundary` comment marking what they
+really are; `actor` exports as mermaid's `actor` (its one distinct shape).
+
+**Worked example** — a login flow across gateway/auth/orders, with an `alt`
+frame for the valid-vs-expired-token branches:
+
+```sh
+muckdb ~/data/trace.duckdb -c "
+  CREATE OR REPLACE VIEW login_flow AS SELECT * FROM (VALUES
+    (1,'user','gateway','GET /orders','sync','actor','participant',NULL,NULL),
+    (2,'gateway','auth','verify','sync','participant','boundary','alt:token valid','valid'),
+    (3,'auth','db','SELECT session','sync','boundary','database','alt:token valid','valid'),
+    (4,'gateway','orders','list orders','sync','participant','participant','alt:token valid','valid'),
+    (5,'gateway','user','401','reply','participant','actor','alt:token valid','expired')
+  ) t(seq,src,dst,msg,mtype,st,dt,grp,branch)
+  ORDER BY seq;"
+
+muckdb session tile trace --name login --db ~/data/trace.duckdb --view login_flow \
+  --chart sequence --from src --to dst --label msg --message-type mtype \
+  --from-type st --to-type dt --group grp --group-branch branch --autonumber \
+  --caption "Login flow across gateway/auth/orders — click 'mermaid' to export."
 ```
 
 ## Column display formats (units, currency, decimals) — set them, always

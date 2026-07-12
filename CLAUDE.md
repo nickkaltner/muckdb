@@ -68,17 +68,23 @@ muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
         [--from-lat COL --from-lon COL --to-lat COL --to-lon COL]  (map: draw each row as a connection/arc between two points)
-        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label; timeline: the text drawn in each bar)
+        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label; timeline: the text drawn in each bar; sequence: the message text)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
         [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
         [--color COL]  (timeline: colour bars by this category value, adds a legend)
         [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
+        [--from COL] [--to COL]  (sequence: source/destination participant; --from == --to is a self-message; message text = --label)
+        [--message-type COL]  (sequence: sync (default) | reply | async | lost)
+        [--from-type COL] [--to-type COL]  (sequence: participant (default) | actor | database | boundary)
+        [--group COL]  (sequence: 'kind:label' — loop|opt|alt|par; contiguous equal values = one frame)
+        [--group-branch COL]  (sequence: else/and compartment label within a frame)
+        [--autonumber]  (sequence: number the messages)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -112,7 +118,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -183,6 +189,22 @@ muckdb session rm <name> [--tile TILE]
   full-width toggle like tables. Shape the view as one row per bar; put a
   `--color` category, `--id`/`--depends-on`, and any extra tooltip columns in the
   SELECT.
+- **`sequence`** shows **interactions between microservices** as a UML
+  sequence diagram — one row per message, drawn as an arrow between two
+  participant lifelines. Required: `--from`/`--to` (source/destination
+  participant; `--from == --to` is a self-message) and `--label` (the message
+  text). Optional: `--message-type` (`sync` default | `reply` | `async` |
+  `lost`); `--from-type`/`--to-type` (`participant` default | `actor` |
+  `database` | `boundary`); `--group 'kind:label'` (`loop`/`opt`/`alt`/`par` —
+  contiguous rows with the same value become one frame) plus `--group-branch`
+  for an else/and compartment inside that frame (groups are single-level, no
+  nesting); `--autonumber` numbers the messages. Message order follows row
+  order (`ORDER BY`); participant order follows first appearance, and a
+  participant's type is fixed by the type on the row where it first appears.
+  Every sequence tile gets a **mermaid** button that copies a mermaid.js
+  `sequenceDiagram` to the clipboard — since mermaid has no database/boundary
+  shape, those export as `participant` with a preceding `%% database`/
+  `%% boundary` comment (`actor` exports as `actor`).
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.
