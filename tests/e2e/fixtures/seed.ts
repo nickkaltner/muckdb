@@ -49,6 +49,19 @@ CREATE VIEW ts_timeline AS SELECT * FROM (VALUES
   ('api', 'outage',   TIMESTAMP '2026-05-01 14:00:00', TIMESTAMP '2026-05-01 14:30:00'),
   ('db',  'failover', TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:25:00')
 ) t(sys, phase, started, ended);
+
+-- Sequence diagram fixture: one row per message, each participant type, all four
+-- arrow kinds, a self-message, and an alt/else group. 'trace' carries a --link
+-- format (tooltip-link coverage); 'note' carries a hostile value (XSS coverage).
+CREATE VIEW messages AS SELECT * FROM (VALUES
+  (1,'user','gateway','GET /orders','sync','actor','participant',NULL,NULL,'t-1','<img src=x onerror=alert(1)>'),
+  (2,'gateway','auth','verify','sync','participant','boundary','alt:token valid','valid','t-2','ok'),
+  (3,'auth','db','SELECT session','sync','boundary','database','alt:token valid','valid','t-3','ok'),
+  (4,'gateway','user','401','reply','participant','actor','alt:token valid','expired','t-4','denied'),
+  (5,'orders','orders','retry','async','participant','participant',NULL,NULL,'t-5','backoff'),
+  (6,'gateway','cache','ping','lost','participant','participant',NULL,NULL,'t-6','timeout')
+) t(seq,src,dst,msg,mtype,st,dt,grp,branch,trace,note)
+ORDER BY seq;
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -104,4 +117,18 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);
+
+  // A --link format on the sequence fixture's `trace` column, scoped to `messages`
+  // — tooltip-link coverage. `note` (seeded above with a hostile value) has no
+  // format, so it renders as plain escaped text (XSS coverage).
+  run(binary, env, [
+    'format', dbPath, 'trace', '--table', 'messages',
+    '--link', 'https://trace.example.test/{value}',
+  ]);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'sequence', '--title', 'Service comms',
+    '--db', dbPath, '--view', 'messages', '--chart', 'sequence',
+    '--from', 'src', '--to', 'dst', '--label', 'msg', '--message-type', 'mtype',
+    '--from-type', 'st', '--to-type', 'dt', '--group', 'grp', '--group-branch', 'branch',
+    '--autonumber',
+    '--caption', 'A sequence diagram: participant types, arrow kinds, a self-message, an alt group.']);
 }
