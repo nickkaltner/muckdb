@@ -499,6 +499,37 @@
   .bx-med-val { font-size: 11.5px; color: var(--muted); text-align: right; }
   .bx-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; }
   .bx-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 3px; }
+  /* ---- timeline (Gantt-like) tile -------------------------------------- */
+  .tl-wrap { --tl-gutter: 148px; padding: 6px 4px 2px; }
+  .tl-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; padding: 2px 4px 10px; font-size: 11.5px; color: var(--muted); }
+  .tl-leg { display: inline-flex; align-items: center; gap: 6px; }
+  .tl-leg i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
+  .tl { display: grid; grid-template-columns: var(--tl-gutter) 1fr; }
+  .tl-gutter { position: relative; }
+  .tl-lane-label { position: absolute; left: 0; right: 8px; display: flex; align-items: center;
+    font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    border-top: 1px solid var(--line-soft); padding-right: 6px; }
+  .tl-plot { position: relative; overflow: hidden; border-left: 1px solid var(--line); }
+  .tl-band { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line-soft); }
+  .tl-band.alt { background: color-mix(in srgb, var(--fg) 3%, transparent); }
+  .tl-bar { position: absolute; border-radius: 3px; overflow: hidden; box-sizing: border-box;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.18); cursor: default; display: flex; align-items: center; }
+  .tl-bar-label { font-size: 11px; line-height: 1; padding: 0 6px; color: var(--on-accent, #14171b);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+  .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
+  .tl-overlay .tl-ev-label { font-size: 10px; fill: var(--muted); }
+  .tl-cursor { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--muted);
+    pointer-events: none; opacity: 0; }
+  .tl-cursor.show { opacity: 0.85; }
+  .tl-readout { position: absolute; top: 0; left: 4px; font-size: 10.5px; color: var(--fg);
+    background: var(--surface); border: 1px solid var(--line-soft); border-radius: 3px; padding: 1px 4px; white-space: nowrap; }
+  .tl-axis-row { display: grid; grid-template-columns: var(--tl-gutter) 1fr; margin-top: 2px; }
+  .tl-axis { position: relative; height: 16px; border-top: 1px solid var(--line-soft); }
+  .tl-tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
+  .tl-tick:first-child { transform: none; }
+  .tl-tick:last-child { transform: translateX(-100%); }
+  .tl-tip-cat { color: var(--muted); font-weight: 400; }
+  .tl-tip-sep { border-top: 1px solid var(--line-soft); margin: 4px 0; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -2961,7 +2992,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "timeline") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
@@ -2970,6 +3001,7 @@
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
+      if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -3381,7 +3413,7 @@
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
     const wide = !!state.tileWide[t.name];
-    const widenBtn = kind === "table"
+    const widenBtn = kind === "table" || kind === "timeline"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
@@ -3390,7 +3422,7 @@
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too).
-    const grip = kind === "heatmap" || kind === "box" || kind === "map" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions">${mapToggle}${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -3435,6 +3467,7 @@
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
+    if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
     // the space around (and, for a doughnut, inside) the circle.
@@ -3503,6 +3536,153 @@
     const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad" style="background:${hmGrad}"></span><span>${esc(fv(hi))}</span></div>`;
     return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
   }
+  // ---- timeline (Gantt-like) tile ---------------------------------------
+  // Bars over a shared time axis, grouped into labelled lanes; overlaps stack
+  // into sublanes. Start/end are numeric (relative seconds) or timestamps —
+  // auto-detected. Dependency connectors, --event markers and a hover cursor
+  // are drawn by hydrateTimelines() over an SVG overlay (see below).
+  const TL_ROW_H = 26, TL_BAR_H = 18, TL_LANE_PAD = 6;
+  let tlSeq = 0;
+  const tlPayloads = {};   // per-render overlay payloads, consumed on hydrate
+
+  function tlFmtDur(s) {
+    s = Math.round(Number(s));
+    if (!isFinite(s)) return "—";
+    const neg = s < 0 ? "-" : ""; s = Math.abs(s);
+    if (s < 60) return neg + s + "s";
+    const m = Math.floor(s / 60), sec = s % 60;
+    if (m < 60) return neg + (sec ? `${m}m ${String(sec).padStart(2, "0")}s` : `${m}m`);
+    const h = Math.floor(m / 60), mm = m % 60;
+    return neg + `${h}h ${String(mm).padStart(2, "0")}m`;
+  }
+  function tlFmtAbs(t, fmt) {
+    if (fmt && (fmt.tz || fmt.epoch)) {
+      const r = fmtTs(fmt, new Date(t).toISOString());
+      if (r) return r[0] + (r[1] ? " " + r[1] : "");
+    }
+    const d = new Date(t);
+    return isFinite(d.getTime()) ? d.toISOString().slice(0, 16).replace("T", " ") : "—";
+  }
+  // Numeric (relative-seconds) axis if every start value parses as a finite
+  // number and doesn't look like a date/time (no '-' or ':' or 'T').
+  function tlIsNumeric(vals) {
+    return vals.every((v) => v == null || v === "" ||
+      (isFinite(Number(v)) && !/[-:T]/.test(String(v).trim())));
+  }
+  function tlFmtTime(t, pay) { return pay.numeric ? tlFmtDur(t) : tlFmtAbs(t, pay.startFmt); }
+
+  function timelineHtml(cols, rows, spec, db, table) {
+    const li = cols.indexOf(spec.lane), bi = cols.indexOf(spec.label), si = cols.indexOf(spec.start);
+    const ei = spec.end ? cols.indexOf(spec.end) : -1;
+    const dgi = spec.duration ? cols.indexOf(spec.duration) : -1;
+    if (li < 0 || bi < 0 || si < 0 || (ei < 0 && dgi < 0)) {
+      return '<div class="note">timeline needs --lane, --label, --start and --end or --duration.</div>';
+    }
+    const numeric = tlIsNumeric(rows.map((r) => r[si]));
+    const toT = (v) => numeric ? Number(v) : parseTs(v);
+    const idi = spec.id ? cols.indexOf(spec.id) : -1;
+    const depi = spec.depends_on ? cols.indexOf(spec.depends_on) : -1;
+    const ci = spec.color ? cols.indexOf(spec.color) : -1;
+    const bars = [];
+    rows.forEach((r, ri) => {
+      const s = toT(r[si]);
+      let e = ei >= 0 ? toT(r[ei])
+        : s + (numeric ? Number(r[dgi]) : Number(r[dgi]) * 1000);
+      if (!isFinite(s) || !isFinite(e)) return;
+      if (e < s) e = s;
+      bars.push({
+        ri, lane: r[li] == null ? "" : String(r[li]),
+        label: r[bi] == null ? "" : String(r[bi]), s, e,
+        id: idi >= 0 && r[idi] != null ? String(r[idi]) : null,
+        deps: depi >= 0 && r[depi] != null
+          ? String(r[depi]).split(",").map((x) => x.trim()).filter(Boolean) : [],
+        cat: ci >= 0 && r[ci] != null ? String(r[ci]) : null,
+      });
+    });
+    if (!bars.length) return '<div class="note">no timeline rows.</div>';
+    const t0 = Math.min(...bars.map((b) => b.s));
+    const t1max = Math.max(...bars.map((b) => b.e));
+    const t1 = t1max > t0 ? t1max : t0 + 1;
+    const span = t1 - t0;
+    const frac = (t) => (t - t0) / span;
+    // Lanes in first-appearance order.
+    const laneOrder = [], laneMap = {};
+    bars.forEach((b) => { if (!(b.lane in laneMap)) { laneMap[b.lane] = []; laneOrder.push(b.lane); } laneMap[b.lane].push(b); });
+    // Colours: category (with legend) or per-lane palette.
+    const laneCols = catColors(laneOrder.length);
+    let cats = null, catCols = null, catIdx = null;
+    if (ci >= 0) {
+      cats = [...new Set(bars.filter((b) => b.cat != null).map((b) => b.cat))];
+      catCols = catColors(Math.max(1, cats.length));
+      catIdx = Object.fromEntries(cats.map((c, i) => [c, i]));
+    }
+    const barColor = (b, laneIndex) =>
+      (ci >= 0 && b.cat != null && b.cat in catIdx) ? catCols[catIdx[b.cat] % catCols.length]
+        : laneCols[laneIndex % laneCols.length];
+    // Layout: greedy sublane packing per lane; assign each bar a top px.
+    let y = 0; const laneRows = [];
+    laneOrder.forEach((lane, laneIndex) => {
+      const list = laneMap[lane].slice().sort((a, b) => a.s - b.s);
+      const subEnds = [];
+      list.forEach((b) => {
+        let sl = subEnds.findIndex((end) => end <= b.s);
+        if (sl < 0) { sl = subEnds.length; subEnds.push(b.e); } else subEnds[sl] = b.e;
+        b.sub = sl;
+      });
+      const subCount = Math.max(1, subEnds.length);
+      const top = y, height = subCount * TL_ROW_H + TL_LANE_PAD * 2;
+      list.forEach((b) => { b.topPx = top + TL_LANE_PAD + b.sub * TL_ROW_H; b.color = barColor(b, laneIndex); });
+      laneRows.push({ lane, top, height });
+      y += height;
+    });
+    const totalH = y;
+    const startFmt = colFmt(db, spec.start, table);
+    const fmtT = (t) => numeric ? tlFmtDur(t) : tlFmtAbs(t, startFmt);
+    const fmtDur = (a, b) => numeric ? tlFmtDur(b - a) : tlFmtDur((b - a) / 1000);
+    // Bars. (Rich tooltip is added in a later task; core fields go in title=.)
+    const barsHtml = bars.map((b) => {
+      const l = frac(b.s) * 100, w = Math.max(0.4, (frac(b.e) - frac(b.s)) * 100);
+      const title = `${b.label}\n${b.lane}\n${fmtT(b.s)} → ${fmtT(b.e)} (${fmtDur(b.s, b.e)})`;
+      return `<div class="tl-bar" data-tlid="${attr(b.id || "")}" title="${attr(title)}"
+        style="left:${l}%;width:${w}%;top:${b.topPx}px;height:${TL_BAR_H}px;background:${b.color}">
+        <span class="tl-bar-label">${esc(b.label)}</span></div>`;
+    }).join("");
+    const gutterHtml = laneRows.map((lr) =>
+      `<div class="tl-lane-label" style="top:${lr.top}px;height:${lr.height}px" title="${attr(lr.lane)}">${esc(lr.lane)}</div>`).join("");
+    const bandsHtml = laneRows.map((lr, i) =>
+      `<div class="tl-band${i % 2 ? " alt" : ""}" style="top:${lr.top}px;height:${lr.height}px"></div>`).join("");
+    const legendHtml = (ci >= 0 && cats.length)
+      ? `<div class="tl-legend">${cats.map((c, i) => `<span class="tl-leg"><i style="background:${catCols[i % catCols.length]}"></i>${esc(c)}</span>`).join("")}</div>`
+      : "";
+    const ticks = [];
+    for (let i = 0; i <= 4; i++) { const t = t0 + (span * i) / 4; ticks.push(`<span class="tl-tick" style="left:${(i / 4) * 100}%">${esc(fmtT(t))}</span>`); }
+    const axisHtml = `<div class="tl-axis">${ticks.join("")}</div>`;
+    // Overlay payload (deps + events) for hydrateTimelines().
+    const id = "tl" + (++tlSeq);
+    const barById = {}; bars.forEach((b) => { if (b.id) barById[b.id] = b; });
+    const deps = [];
+    bars.forEach((b) => b.deps.forEach((pid) => {
+      const p = barById[pid];
+      if (p) deps.push({ fromFrac: frac(p.e), fromY: p.topPx + TL_BAR_H / 2, toFrac: frac(b.s), toY: b.topPx + TL_BAR_H / 2 });
+    }));
+    const events = (spec.events || []).map((m) => ({ frac: frac(toT(m.value)), label: m.label || "" }))
+      .filter((e) => isFinite(e.frac) && e.frac >= -0.001 && e.frac <= 1.001);
+    tlPayloads[id] = { t0, t1, numeric, startFmt, deps, events, totalH };
+    return `<div class="tl-wrap">${legendHtml}
+      <div class="tl" style="height:${totalH}px">
+        <div class="tl-gutter" style="height:${totalH}px">${gutterHtml}</div>
+        <div class="tl-plot" data-tl="${id}" style="height:${totalH}px">
+          ${bandsHtml}${barsHtml}
+          <svg class="tl-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+          <div class="tl-cursor"><span class="tl-readout"></span></div>
+        </div>
+      </div>
+      <div class="tl-axis-row"><div></div>${axisHtml}</div>
+    </div>`;
+  }
+
+  function hydrateTimelines(_scope) { /* overlay hydration added in Task 4 */ }
+
   // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
   // SHARED scale so boxes compare directly. --x names each box; --y is five
   // columns in order min,q1,median,q3,max (aggregated in the view); --desc

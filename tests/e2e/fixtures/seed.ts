@@ -34,6 +34,14 @@ CREATE VIEW widget_flows AS SELECT * FROM (VALUES
   (51.51,  -0.13,  40.71, -74.01, 'London → New York', 200),
   (40.71,  -74.01, -33.87, 151.21,'New York → Sydney', 90)
 ) f(from_lat, from_lon, to_lat, to_lon, label, gbps);
+-- Timeline (Gantt) fixture: a small deploy pipeline on a relative-seconds axis
+-- with two lanes, an overlap (→ sublane), a colour category, and a dependency.
+CREATE VIEW deploy_timeline AS SELECT * FROM (VALUES
+  ('build',  'compile',   0.0,  40.0, 'ok',     's1', NULL),
+  ('build',  'lint',      5.0,  30.0, 'ok',     's2', NULL),   -- overlaps compile → sublane
+  ('deploy', 'push',     40.0,  70.0, 'ok',     's3', 's1'),
+  ('deploy', 'migrate',  70.0,  95.0, 'failed', 's4', 's3')
+) t(lane, task, t0, t1, status, sid, parent);
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -63,6 +71,12 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--from-lat', 'from_lat', '--from-lon', 'from_lon', '--to-lat', 'to_lat', '--to-lon', 'to_lon',
     '--label', 'label', '--value', 'gbps',
     '--caption', 'Connections drawn as arcs between city pairs.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'timeline', '--title', 'Deploy timeline',
+    '--db', dbPath, '--view', 'deploy_timeline', '--chart', 'timeline',
+    '--lane', 'lane', '--label', 'task', '--start', 't0', '--end', 't1',
+    '--color', 'status', '--id', 'sid', '--depends-on', 'parent',
+    '--event', '50|cutover',
+    '--caption', 'A Gantt-style timeline: lanes stack overlapping bars into sublanes; colour = status.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);
