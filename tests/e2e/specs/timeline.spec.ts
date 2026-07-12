@@ -99,6 +99,16 @@ test.describe('timeline tile', () => {
     await expect(readout).toContainText('UTC');
   });
 
+  test('an absolute-time event marker renders its line and label', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="timeline-ts"]');
+    await expect(panel).toBeVisible();
+    // The --event '2026-05-01 14:15|escalated' marker positions against the
+    // absolute (UTC) domain: a dashed line in the plot + its label in the band.
+    await expect(panel.locator('svg.tl-overlay .tl-events line')).toHaveCount(1);
+    await expect(panel.locator('.tl-head-plot .tl-ev-lab', { hasText: 'escalated' })).toBeVisible();
+  });
+
   test('bar hover shows a rich tooltip with core fields and extra columns', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="timeline"]');

@@ -3872,7 +3872,6 @@
   function hydrateTimelines(scope) {
     (scope || document).querySelectorAll(".tl-plot[data-tl]").forEach((plot) => {
       const pay = tlPayloads[plot.dataset.tl]; if (!pay) return;
-      plot._tlPay = pay;
       const wrap = plot.closest(".tl-wrap");
       const headPlot = wrap && wrap.querySelector(".tl-head-plot");
       const axisEl = wrap && wrap.querySelector(".tl-axis");

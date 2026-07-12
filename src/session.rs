@@ -719,11 +719,11 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             .as_deref()
             .context("--chart timeline needs --lane <column> (the row / resource label)")?;
         check("--lane", lane)?;
-        let label = chart
+        chart
             .label
             .as_deref()
             .context("--chart timeline needs --label <column> (the bar text)")?;
-        check("--label", label)?;
+        // (--label column existence is validated generically above.)
         let start = chart
             .start
             .as_deref()
@@ -782,6 +782,17 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
                      numeric (relative seconds) or both be timestamps"
                 );
             }
+        }
+        // --duration is numeric seconds — a temporal column would silently render
+        // every bar empty (Number(timestamp) is NaN), so reject it up front.
+        if let Some(dur) = chart.duration.as_deref()
+            && let Some(dt) = col_type(dur)
+            && is_temporal(&dt)
+            && !is_numeric(&dt)
+        {
+            bail!(
+                "--chart timeline: --duration ({dur}: {dt}) must be numeric seconds, not a timestamp"
+            );
         }
     }
     Ok(())
@@ -1416,7 +1427,8 @@ mod tests {
         run_sql(
             dbs,
             "CREATE TABLE spans AS SELECT 'web' AS lane, 'deploy' AS task, \
-             0.0 AS t0, 10.0 AS t1, 'ok' AS status, 'a' AS sid, NULL AS pids",
+             0.0 AS t0, 10.0 AS t1, 'ok' AS status, 'a' AS sid, NULL AS pids, \
+             TIMESTAMP '2026-01-01' AS ts",
         );
         let mk = |chart: Chart| validate_tile(dbs, Some("spans"), None, &chart);
         let base = || Chart {
@@ -1460,6 +1472,16 @@ mod tests {
         let mut c = base();
         c.end = None;
         assert!(mk(c).is_err());
+        // A temporal --duration fails (must be numeric seconds).
+        let mut c = base();
+        c.end = None;
+        c.duration = Some("ts".into());
+        assert!(mk(c).is_err());
+        // A numeric --duration is accepted.
+        let mut c = base();
+        c.end = None;
+        c.duration = Some("t1".into());
+        assert!(mk(c).is_ok());
         std::fs::remove_dir_all(&dir).ok();
     }
 }
