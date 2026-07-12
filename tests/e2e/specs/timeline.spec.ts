@@ -35,15 +35,18 @@ test.describe('timeline tile', () => {
     // Two dependencies (s1→s3, s3→s4) → two orthogonal connector paths.
     await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(2);
 
-    // The --event '50|cutover' marker → a dashed line + its label.
+    // The --event '50|cutover' marker → a dashed line in the plot, and its label
+    // is drawn in the head band above the lanes (not overprinting the bars).
     await expect(panel.locator('svg.tl-overlay .tl-events line')).toHaveCount(1);
-    await expect(panel.locator('svg.tl-overlay .tl-events text')).toContainText('cutover');
+    await expect(panel.locator('.tl-head-plot .tl-ev-lab', { hasText: 'cutover' })).toBeVisible();
 
-    // Hovering the plot shows the time cursor with a readout.
+    // Hovering the plot shows the time cursor plus a readout in the head band.
     await panel.locator('.tl-plot').hover();
     const cursor = panel.locator('.tl-cursor');
     await expect(cursor).toHaveClass(/\bshow\b/);
-    await expect(panel.locator('.tl-readout')).not.toBeEmpty();
+    const readout = panel.locator('.tl-head-readout');
+    await expect(readout).toHaveClass(/\bshow\b/);
+    await expect(readout).not.toBeEmpty();
   });
 
   test('bar hover shows a rich tooltip with core fields and extra columns', async ({ page }) => {

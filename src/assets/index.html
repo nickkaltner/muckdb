@@ -517,12 +517,24 @@
   .tl-bar-label { font-size: 11px; line-height: 1; padding: 0 6px; color: var(--on-accent, #14171b);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
   .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
-  .tl-overlay .tl-ev-label { font-size: 10px; fill: var(--muted); }
-  .tl-cursor { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--muted);
+  /* Marker band above the lanes: event labels (stacked to avoid overlap) and the
+     live hover-time readout live here, so nothing overprints the bars. */
+  .tl-head { display: grid; grid-template-columns: var(--tl-gutter) 1fr; }
+  .tl-head-plot { position: relative; min-height: 16px; }
+  .tl-ev-lab { position: absolute; font-size: 10px; line-height: 13px; white-space: nowrap;
+    padding: 0 3px; border-radius: 3px; background: color-mix(in srgb, var(--surface) 85%, transparent);
+    pointer-events: none; }
+  .tl-ev-lead { position: absolute; width: 0; border-left: 1px dashed var(--anno-event, var(--teal));
+    opacity: 0.55; pointer-events: none; }
+  .tl-head-readout { position: absolute; font-size: 10.5px; line-height: 14px; color: var(--orange);
+    background: var(--surface); border: 1px solid var(--orange-dim); border-radius: 3px;
+    padding: 0 4px; white-space: nowrap; pointer-events: none; opacity: 0; }
+  .tl-head-readout.show { opacity: 1; }
+  /* Hover cursor uses the "live" orange accent — deliberately distinct from the
+     teal --event markers. */
+  .tl-cursor { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--orange);
     pointer-events: none; opacity: 0; }
-  .tl-cursor.show { opacity: 0.85; }
-  .tl-readout { position: absolute; top: 0; left: 4px; font-size: 10.5px; color: var(--fg);
-    background: var(--surface); border: 1px solid var(--line-soft); border-radius: 3px; padding: 1px 4px; white-space: nowrap; }
+  .tl-cursor.show { opacity: 0.9; }
   .tl-axis-row { display: grid; grid-template-columns: var(--tl-gutter) 1fr; margin-top: 2px; }
   .tl-axis { position: relative; height: 16px; border-top: 1px solid var(--line-soft); }
   .tl-tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
@@ -3694,12 +3706,13 @@
       .filter((e) => isFinite(e.frac) && e.frac >= -0.001 && e.frac <= 1.001);
     tlPayloads[id] = { t0, t1, numeric, startFmt, deps, events, totalH };
     return `<div class="tl-wrap">${legendHtml}
+      <div class="tl-head"><div></div><div class="tl-head-plot"><span class="tl-head-readout"></span></div></div>
       <div class="tl" style="height:${totalH}px">
         <div class="tl-gutter" style="height:${totalH}px">${gutterHtml}</div>
         <div class="tl-plot" data-tl="${id}" style="height:${totalH}px">
           ${bandsHtml}${barsHtml}
           <svg class="tl-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
-          <div class="tl-cursor"><span class="tl-readout"></span></div>
+          <div class="tl-cursor"></div>
         </div>
       </div>
       <div class="tl-axis-row"><div></div>${axisHtml}</div>
@@ -3719,34 +3732,86 @@
       return `<path d="M${x1.toFixed(1)} ${y1} H${mx.toFixed(1)} V${y2} H${x2.toFixed(1)}" fill="none" stroke="${line}" stroke-width="1" opacity="${TL_DEP_OPACITY}"/>` +
         `<circle cx="${x2.toFixed(1)}" cy="${y2}" r="2.2" fill="${line}" opacity="${TL_DEP_OPACITY}"/>`;
     }).join("");
+    // Marker lines run the full plot height; their labels are drawn in the head
+    // band above the lanes (see renderTimelineHead) so they never overprint bars.
     const events = pay.events.map((e) => {
-      const x = (e.frac * W).toFixed(1);
-      return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${evCol}" stroke-width="1.2" stroke-dasharray="4 3"/>` +
-        (e.label ? `<text x="${(+x + 3)}" y="11" class="tl-ev-label">${esc(e.label)}</text>` : "");
+      const x = (Math.max(0, Math.min(1, e.frac)) * W).toFixed(1);
+      return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${evCol}" stroke-width="1.2" stroke-dasharray="4 3"/>`;
     }).join("");
     svg.innerHTML = `<g class="tl-deps">${deps}</g><g class="tl-events">${events}</g>`;
+  }
+  // Marker labels + the live hover-time readout, drawn in the head band above the
+  // lanes. Labels are packed into stacked rows so overlapping ones sit below each
+  // other; a dashed leader ties each label down to its marker line. The readout
+  // occupies a reserved row at the band's bottom.
+  const TL_EV_LH = 15;
+  function renderTimelineHead(headPlot, pay) {
+    if (!headPlot) return;
+    const W = headPlot.clientWidth; if (!W) return;
+    const evCol = cssVar("--anno-event") || cssVar("--teal") || "#4bc4b6";
+    const evs = pay.events
+      .map((e) => ({ x: Math.max(0, Math.min(1, e.frac)) * W, label: e.label || "" }))
+      .filter((e) => e.label)
+      .sort((a, b) => a.x - b.x);
+    const rowEnds = []; // rightmost occupied px per stacked row
+    evs.forEach((e) => {
+      const w = e.label.length * 5.6 + 8; // rough label width
+      let left = e.x; if (left + w > W) left = Math.max(0, W - w);
+      let row = rowEnds.findIndex((end) => left >= end + 4);
+      if (row < 0) row = rowEnds.length;
+      rowEnds[row] = left + w;
+      e.left = left; e.row = row;
+    });
+    const nRows = rowEnds.length;
+    const height = (nRows + 1) * TL_EV_LH + 4; // + a reserved row for the readout
+    headPlot.style.height = height + "px";
+    const readout = headPlot.querySelector(".tl-head-readout");
+    let html = "";
+    evs.forEach((e) => {
+      const top = e.row * TL_EV_LH;
+      html += `<div class="tl-ev-lab" style="left:${e.left.toFixed(1)}px;top:${top}px;color:${evCol}">${esc(e.label)}</div>`;
+      const ly = top + TL_EV_LH - 3;
+      html += `<div class="tl-ev-lead" style="left:${e.x.toFixed(1)}px;top:${ly.toFixed(1)}px;height:${(height - ly).toFixed(1)}px"></div>`;
+    });
+    // Re-attach the (preserved) readout node so mousemove keeps its reference.
+    headPlot.innerHTML = html;
+    headPlot.appendChild(readout || (() => { const s = document.createElement("span"); s.className = "tl-head-readout"; return s; })());
+    const rd = headPlot.querySelector(".tl-head-readout");
+    rd.style.top = (nRows * TL_EV_LH) + "px";
   }
   function hydrateTimelines(scope) {
     (scope || document).querySelectorAll(".tl-plot[data-tl]").forEach((plot) => {
       const pay = tlPayloads[plot.dataset.tl]; if (!pay) return;
       plot._tlPay = pay;
-      const draw = () => renderTimelineOverlay(plot, pay);
+      const headPlot = plot.closest(".tl-wrap") && plot.closest(".tl-wrap").querySelector(".tl-head-plot");
+      const draw = () => { renderTimelineOverlay(plot, pay); renderTimelineHead(headPlot, pay); };
       draw();
       if (window.ResizeObserver && !plot._tlRO) { plot._tlRO = new ResizeObserver(draw); plot._tlRO.observe(plot); }
       const cursor = plot.querySelector(".tl-cursor");
-      const readout = cursor && cursor.querySelector(".tl-readout");
       if (cursor && !plot._tlCursor) {
         plot._tlCursor = true;
         plot.addEventListener("mousemove", (ev) => {
           const rect = plot.getBoundingClientRect();
+          if (!rect.width) return;
           const fx = (ev.clientX - rect.left) / rect.width;
-          if (fx < 0 || fx > 1) { cursor.classList.remove("show"); return; }
+          const readout = headPlot && headPlot.querySelector(".tl-head-readout");
+          if (fx < 0 || fx > 1) { cursor.classList.remove("show"); if (readout) readout.classList.remove("show"); return; }
           cursor.style.left = (fx * 100) + "%";
           cursor.classList.add("show");
           const t = pay.t0 + (pay.t1 - pay.t0) * fx;
-          if (readout) { readout.textContent = tlFmtTime(t, pay); readout.style.left = fx > 0.85 ? "auto" : "4px"; readout.style.right = fx > 0.85 ? "4px" : "auto"; }
+          if (readout) {
+            const hw = headPlot.clientWidth || rect.width, x = fx * hw;
+            readout.textContent = tlFmtTime(t, pay);
+            readout.style.left = Math.max(2, Math.min(x, hw - 4)) + "px";
+            readout.style.transform = x > hw - 60 ? "translateX(-100%)" : "none";
+            readout.classList.add("show");
+          }
         });
-        plot.addEventListener("mouseleave", () => cursor.classList.remove("show"));
+        plot.addEventListener("mouseleave", () => {
+          cursor.classList.remove("show");
+          const readout = headPlot && headPlot.querySelector(".tl-head-readout");
+          if (readout) readout.classList.remove("show");
+        });
       }
     });
   }
