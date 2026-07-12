@@ -342,8 +342,9 @@ MD
 "$MUCKDB" session tile "$SESSION" --name flows --title "Backbone flows between cities" \
   --db "$DB" --view network_flows --chart map \
   --from-lat from_lat --from-lon from_lon --to-lat to_lat --to-lon to_lon \
+  --from-label from_city --to-label to_city \
   --label label --value gbps \
-  --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map (whose sea gently shimmers), taking the shorter way round the globe when that wraps the date line, with opacity scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping; hover an arc or its label for details." >/dev/null
+  --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map (whose sea gently shimmers), taking the shorter way round the globe when that wraps the date line, with opacity scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping; hover an arc for its route, or a city marker for its name (--from-label/--to-label)." >/dev/null
 
 "$MUCKDB" session section "$SESSION" --name sec-timeline --title "Timelines" >/dev/null
 

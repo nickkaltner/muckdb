@@ -73,7 +73,8 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
         [--from-lat COL --from-lon COL --to-lat COL --to-lon COL]  (map: draw each row as a connection/arc between two points)
-        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label — which also names the endpoint markers, so hovering a point lists the routes through it; timeline: the text drawn in each bar; sequence: the message text)
+        [--from-label COL --to-label COL]  (map connections: name each endpoint marker — the place at each end — shown on marker hover; auto-detects from_city/to_city etc.)
+        [--label COL]  (map: per-point label in the hover tooltip; for a connections map, the arc's label; timeline: the text drawn in each bar; sequence: the message text)
         [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
         [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
         [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
@@ -160,9 +161,10 @@ muckdb session rm <name> [--tile TILE]
   opacity scales with `--value` (line width is uniform). `--label` names each arc;
   labels render on a top layer with a subtle rounded pill and shift vertically to
   avoid overlapping (a leader line is drawn when one is moved). Hovering an arc or
-  its label shows the same tooltip; each endpoint **marker** also inherits the
-  arc's `--label`, so hovering a point lists the routes that pass through it (each
-  naming the places at both ends) rather than bare coordinates. Themes control the arc look (opacity, connect-
+  its label shows the same tooltip. Name each endpoint **marker** (the place at
+  each end — a distinct thing from the arc's `--label`) with `--from-label`/
+  `--to-label`; hovering a marker then shows that place name (they auto-detect
+  `from_city`/`to_city` etc. when the flags are omitted). Themes control the arc look (opacity, connect-
   gap, arc-vs-straight, label-pill fill) — see the `arcOpacity`/`arcGap`/
   `roundLinks`/`labelBg` theme keys.
 - **`timeline`** lays each view row out as a **bar** on a shared time axis, grouped

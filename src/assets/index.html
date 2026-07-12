@@ -4527,6 +4527,10 @@
     const valMode = valI >= 0;
     const ptValMode = valMode && ptMode && !connMode;   // value colours point cells
     const labelI = spec.label ? cols.indexOf(spec.label) : -1;
+    // Connections: optional per-endpoint label columns naming each point (distinct
+    // from --label, which names the arc). Auto-detects from_city/to_city etc.
+    const fLabI = findCol(spec.from_label, ["from_label", "from_city", "from_name", "src_label", "src_city"]);
+    const tLabI = findCol(spec.to_label, ["to_label", "to_city", "to_name", "dst_label", "dst_city"]);
     const f = valMode ? colFmt(db, spec.value, table) : null;
     const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
     const valid = (lat, lon) => isFinite(lat) && isFinite(lon) && lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
@@ -4541,11 +4545,13 @@
         if (!valid(alat, alon) || !valid(blat, blon)) return;
         const v = valMode ? Number(r[valI]) : NaN;
         conns.push({ alat, alon, blat, blon, label: lb, v });
-        // Both endpoints inherit the connection's --label, so hovering a marker
-        // lists the routes that pass through it (naming the places at each end)
-        // rather than showing bare coordinates.
-        pts.push({ lat: alat, lon: alon, v: NaN, label: lb });
-        pts.push({ lat: blat, lon: blon, v: NaN, label: lb });
+        // Each endpoint marker is named by its own --from-label/--to-label (the
+        // place at that end) — a separate thing from the arc's --label. Without
+        // them a marker just shows its coordinates.
+        const alb = fLabI >= 0 && r[fLabI] != null ? String(r[fLabI]) : "";
+        const blb = tLabI >= 0 && r[tLabI] != null ? String(r[tLabI]) : "";
+        pts.push({ lat: alat, lon: alon, v: NaN, label: alb });
+        pts.push({ lat: blat, lon: blon, v: NaN, label: blb });
       } else {
         const lat = Number(r[latI]), lon = Number(r[lonI]);
         if (!valid(lat, lon)) return;

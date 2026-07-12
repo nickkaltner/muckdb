@@ -403,6 +403,8 @@ mod tests {
                         from_lon: None,
                         to_lat: None,
                         to_lon: None,
+                        from_label: None,
+                        to_label: None,
                         label: None,
                         value: None,
                         no_values: false,

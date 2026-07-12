@@ -118,28 +118,33 @@ test.describe('map tile', () => {
     await expect(tip).toContainText(labelText);
   });
 
-  test('connections map: hovering an endpoint marker names the routes through it', async ({ page }) => {
+  test('connections map: an endpoint marker is named by its own --from-label/--to-label', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="flows"]');
     await panel.locator('.wm-mode[data-mapmode="svg"]').click();
     await expect(panel.locator('.wm-svg')).toBeVisible();
 
-    // Endpoint markers used to carry only coordinates; now each inherits its
-    // connection's --label, so a marker's tooltip names the routes through it
-    // (the fixture labels are "A → B") rather than being nameless.
+    // Each endpoint marker carries its own place name (from --from-label /
+    // --to-label = the from_city / to_city columns), NOT the arc's route label.
+    // So a marker's tooltip names the city and contains no "A → B" route arrow.
     const dots = panel.locator('.wm-svg .wm-dots circle.wm-x');
     const n = await dots.count();
     expect(n).toBeGreaterThan(0);
-    let named = -1;
+    let cityDot = -1;
     for (let i = 0; i < n; i++) {
       const tip = await dots.nth(i).getAttribute('data-tip');
-      if (tip && tip.includes('→')) { named = i; break; }
+      if (tip && /London|Sydney|New York/.test(tip)) {
+        expect(tip).not.toContain('→');   // a place name, not a route
+        cityDot = i;
+        break;
+      }
     }
-    expect(named).toBeGreaterThanOrEqual(0);
-    await dots.nth(named).hover();
+    expect(cityDot).toBeGreaterThanOrEqual(0);
+    await dots.nth(cityDot).hover();
     const tip = page.locator('.wm-tip');
     await expect(tip).toBeVisible();
-    await expect(tip).toContainText('→');
+    await expect(tip).toContainText(/London|Sydney|New York/);
+    await expect(tip).not.toContainText('→');
   });
 
   test('connections also render as a fluid SVG overlay on the ASCII backdrop', async ({ page }) => {

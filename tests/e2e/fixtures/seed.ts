@@ -30,10 +30,10 @@ CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
 -- A connections/flows view: each row is an arc between two fixed cities, for
 -- the map tile's connection rendering (arcs + labels).
 CREATE VIEW widget_flows AS SELECT * FROM (VALUES
-  (-33.87, 151.21, 51.51, -0.13,  'Sydney → London',   120),
-  (51.51,  -0.13,  40.71, -74.01, 'London → New York', 200),
-  (40.71,  -74.01, -33.87, 151.21,'New York → Sydney', 90)
-) f(from_lat, from_lon, to_lat, to_lon, label, gbps);
+  (-33.87, 151.21, 51.51, -0.13,  'Sydney',   'London',   'Sydney → London',   120),
+  (51.51,  -0.13,  40.71, -74.01, 'London',   'New York', 'London → New York', 200),
+  (40.71,  -74.01, -33.87, 151.21,'New York', 'Sydney',   'New York → Sydney', 90)
+) f(from_lat, from_lon, to_lat, to_lon, from_city, to_city, label, gbps);
 -- Timeline (Gantt) fixture: a small deploy pipeline on a relative-seconds axis
 -- with two lanes, an overlap (→ sublane), a colour category, and a dependency.
 CREATE VIEW deploy_timeline AS SELECT * FROM (VALUES
@@ -108,6 +108,7 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'flows', '--title', 'Flows',
     '--db', dbPath, '--view', 'widget_flows', '--chart', 'map',
     '--from-lat', 'from_lat', '--from-lon', 'from_lon', '--to-lat', 'to_lat', '--to-lon', 'to_lon',
+    '--from-label', 'from_city', '--to-label', 'to_city',
     '--label', 'label', '--value', 'gbps',
     '--caption', 'Connections drawn as arcs between city pairs.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'timeline', '--title', 'Deploy timeline',

@@ -51,6 +51,13 @@ pub struct Chart {
     pub to_lat: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub to_lon: Option<String>,
+    /// Map connections: optional per-endpoint label columns (`--from-label`/
+    /// `--to-label`) naming the source/destination point in each marker's hover
+    /// tooltip. Distinct from `--label`, which labels the arc itself.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_label: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_label: Option<String>,
     /// Map tiles: an optional per-point label column (`--label`) surfaced in the
     /// hover tooltip so each marker names its points. For a connections map it
     /// labels each arc (drawn on top, nudged to avoid overlap).
@@ -703,6 +710,8 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
         ("--from-lon", &chart.from_lon),
         ("--to-lat", &chart.to_lat),
         ("--to-lon", &chart.to_lon),
+        ("--from-label", &chart.from_label),
+        ("--to-label", &chart.to_label),
     ] {
         if let Some(c) = col {
             check(flag, c)?;
@@ -1034,6 +1043,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     from_lon: p.get("from-lon").map(str::to_string),
                     to_lat: p.get("to-lat").map(str::to_string),
                     to_lon: p.get("to-lon").map(str::to_string),
+                    from_label: p.get("from-label").map(str::to_string),
+                    to_label: p.get("to-label").map(str::to_string),
                     label: p.get("label").map(str::to_string),
                     value: p.get("value").map(str::to_string),
                     no_values: p.get("no-values").is_some(),
@@ -1185,7 +1196,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
-                 --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip\n                       \
+                 --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip; connections: --from-lat/--from-lon/--to-lat/--to-lon per arc, --from-label/--to-label name each endpoint marker\n                       \
                  --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
                  --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
@@ -1244,6 +1255,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: None,
             value: Some("sites".into()),
             no_values: false,
@@ -1292,6 +1305,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: Some("city".into()),
             value: None,
             no_values: false,
@@ -1346,6 +1361,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: Some("task".into()),
             value: None,
             no_values: false,
@@ -1408,6 +1425,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: Some("msg".into()),
             value: None,
             no_values: false,
@@ -1595,6 +1614,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: Some("task".into()),
             value: None,
             no_values: false,
@@ -1674,6 +1695,8 @@ mod tests {
             from_lon: None,
             to_lat: None,
             to_lon: None,
+            from_label: None,
+            to_label: None,
             label: Some("msg".into()),
             value: None,
             no_values: false,
