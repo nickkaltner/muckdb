@@ -544,6 +544,23 @@
   .tl-tick { position: absolute; top: 6px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
   .tl-tip-cat { color: var(--muted); font-weight: 400; }
   .tl-tip-sep { border-top: 1px solid var(--line-soft); margin: 4px 0; }
+  .seq-wrap { overflow-x: auto; padding: 4px 0; }
+  .seq-svg { display: block; max-width: 100%; height: auto; font-family: inherit; }
+  .seq-part { fill: var(--raised); stroke: var(--line); stroke-width: 1.2; }
+  .seq-part-lbl { fill: var(--fg); font-size: 12px; }
+  .seq-life { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
+  .seq-line { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  .seq-line.reply { stroke-dasharray: 5 4; }
+  .seq-head { fill: var(--fg); stroke: none; }
+  .seq-head-open { stroke: var(--fg); stroke-width: 1.4; fill: none; }
+  .seq-msg-lbl { fill: var(--fg); font-size: 11px; }
+  .seq-num { fill: var(--teal); }
+  .seq-num-txt { fill: var(--on-accent); font-size: 9px; }
+  .seq-frame { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+  .seq-frame-tab { fill: var(--surface); stroke: var(--muted); stroke-width: 1; }
+  .seq-frame-lbl { fill: var(--muted); font-size: 10px; font-weight: 600; }
+  .seq-div { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
+  .seq-hit { fill: transparent; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--orange); font-weight: 400; }
@@ -3018,7 +3035,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "timeline") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
@@ -3028,6 +3045,7 @@
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
+      if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -3491,7 +3509,7 @@
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
     const wide = !!state.tileWide[t.name];
-    const widenBtn = kind === "table" || kind === "timeline"
+    const widenBtn = kind === "table" || kind === "timeline" || kind === "sequence"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
@@ -3500,7 +3518,7 @@
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too).
-    const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions">${mapToggle}${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -3546,6 +3564,7 @@
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
+    if (kind === "sequence") { slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
     // the space around (and, for a doughnut, inside) the circle.
@@ -3971,6 +3990,205 @@
         });
       }
     });
+  }
+
+  // ---- sequence diagram tile ------------------------------------------------
+  // A hand-rolled SVG sequence diagram (microservice comms / UML). Layout is
+  // intrinsic to the data — one column per participant, one row per message — so
+  // sequenceHtml() returns a complete self-contained SVG string with no
+  // responsive hydrate step. Tooltips use the delegated .wm-x/data-tip
+  // mechanism; the mermaid-export button (see the click handler) regenerates
+  // from the rows on demand.
+  const SEQ_COL_W = 160, SEQ_MSG_H = 46, SEQ_SELF_H = 60, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 12;
+  const SEQ_PART_TYPES = ["actor", "database", "boundary", "participant"];
+  const SEQ_MSG_TYPES = ["sync", "reply", "async", "lost"];
+
+  function seqType(v) {
+    const t = (v == null ? "" : String(v)).trim().toLowerCase();
+    return SEQ_MSG_TYPES.includes(t) ? t : "sync"; // blank/unknown → sync
+  }
+  // "kind:label" → {kind,label,raw}; an unrecognised/blank kind keeps the whole
+  // value as the label with kind "group".
+  function seqGroup(v) {
+    if (v == null || String(v).trim() === "") return null;
+    const s = String(v).trim(), i = s.indexOf(":");
+    const kind = i > 0 ? s.slice(0, i).trim().toLowerCase() : "";
+    const label = i > 0 ? s.slice(i + 1).trim() : s;
+    return { kind: ["loop", "opt", "alt", "par"].includes(kind) ? kind : "group", label, raw: s };
+  }
+  // Participants in first-appearance order (from then to, scanning rows top to
+  // bottom); each participant's type comes from the first row where it appears.
+  function seqParticipants(cols, rows, spec) {
+    const fi = cols.indexOf(spec.from_participant), ti = cols.indexOf(spec.to_participant);
+    const fti = spec.from_type ? cols.indexOf(spec.from_type) : -1;
+    const tti = spec.to_type ? cols.indexOf(spec.to_type) : -1;
+    const order = [], typeOf = {};
+    const seen = (n, tv) => {
+      if (n === "") return;
+      if (!order.includes(n)) order.push(n);
+      if (typeOf[n] == null && tv != null && String(tv).trim() !== "") {
+        const t = String(tv).trim().toLowerCase();
+        if (SEQ_PART_TYPES.includes(t)) typeOf[n] = t;
+      }
+    };
+    rows.forEach((r) => {
+      seen(String(r[fi] ?? ""), fti >= 0 ? r[fti] : null);
+      seen(String(r[ti] ?? ""), tti >= 0 ? r[tti] : null);
+    });
+    return { order, typeOf };
+  }
+  // Rich hover tooltip (mirrors tlTip): from → to, label, type, then every other
+  // row column through its format/link.
+  function seqTip(m, cols, rows, spec, db, table) {
+    const row = rows[m.ri];
+    const core = [
+      `<b>${esc(m.label)}</b>`,
+      `${esc(m.from)} → ${esc(m.to)}`,
+      `type: ${esc(m.type)}`,
+    ];
+    const shown = new Set([spec.from_participant, spec.to_participant, spec.label, spec.message_type].filter(Boolean));
+    const extra = [];
+    cols.forEach((c, i) => {
+      if (shown.has(c)) return;
+      const v = row[i]; if (v === null || v === undefined || v === "") return;
+      const f = colFmt(db, c, table);
+      let disp = f ? applyFmtHtml(f, v) : esc(typeof v === "object" ? JSON.stringify(v) : String(v));
+      if (f && f.link) {
+        const href = linkSubst(f.link, v, row, cols, true);
+        const txt = f.link_title ? esc(linkSubst(f.link_title, v, row, cols, false)) : disp;
+        disp = `<a href="${attr(href)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+      }
+      extra.push(`${esc(c)}: ${disp}`);
+    });
+    const extraHtml = extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : "";
+    return `${core.join("<br>")}${extraHtml}`;
+  }
+  // A small SVG arrowhead at (x,y) pointing in dir (+1 right, -1 left) for a
+  // message of the given type. Filled triangle for sync/reply; open for async;
+  // an X for lost (drawn at the line end instead of a head).
+  function seqArrow(x, y, dir, type) {
+    if (type === "lost") {
+      const s = 4;
+      return `<path class="seq-line" d="M${x - s},${y - s} L${x + s},${y + s} M${x + s},${y - s} L${x - s},${y + s}"/>`;
+    }
+    const w = 9 * dir, h = 4;
+    if (type === "async") {
+      return `<path class="seq-head-open" d="M${x - w},${y - h} L${x},${y} L${x - w},${y + h}"/>`;
+    }
+    return `<path class="seq-head" d="M${x},${y} L${x - w},${y - h} L${x - w},${y + h} Z"/>`;
+  }
+
+  function sequenceHtml(cols, rows, spec, db, table) {
+    const fi = cols.indexOf(spec.from_participant), ti = cols.indexOf(spec.to_participant), lbi = cols.indexOf(spec.label);
+    if (fi < 0 || ti < 0 || lbi < 0) return '<div class="note">sequence needs --from, --to and --label.</div>';
+    const mti = spec.message_type ? cols.indexOf(spec.message_type) : -1;
+    const gi = spec.group ? cols.indexOf(spec.group) : -1;
+    const gbi = spec.group_branch ? cols.indexOf(spec.group_branch) : -1;
+
+    const msgs = rows.map((r, ri) => ({
+      ri,
+      from: r[fi] == null ? "" : String(r[fi]),
+      to: r[ti] == null ? "" : String(r[ti]),
+      label: r[lbi] == null ? "" : String(r[lbi]),
+      type: mti >= 0 ? seqType(r[mti]) : "sync",
+      grp: gi >= 0 ? seqGroup(r[gi]) : null,
+      branch: gbi >= 0 && r[gbi] != null ? String(r[gbi]) : null,
+    })).filter((m) => m.from !== "" && m.to !== "");
+    if (!msgs.length) return '<div class="note">no sequence rows.</div>';
+
+    const { order, typeOf } = seqParticipants(cols, rows, spec);
+    const parts = order.filter((n) => n !== "");
+    const xOf = {};
+    parts.forEach((p, i) => { xOf[p] = SEQ_PAD + i * SEQ_COL_W + SEQ_COL_W / 2; });
+
+    // Per-message vertical slots (self-messages are taller); line drawn 22px
+    // below the slot top, label 10px below the top.
+    let cur = SEQ_HEAD_H + SEQ_PAD;
+    const ys = msgs.map((m) => { const top = cur; cur += (m.from === m.to ? SEQ_SELF_H : SEQ_MSG_H); return top; });
+    const bottomY = cur + 6;
+    const W = SEQ_PAD * 2 + parts.length * SEQ_COL_W;
+    const H = bottomY + SEQ_PAD;
+
+    // Group frames: contiguous runs of equal grp.raw.
+    let framesSvg = "";
+    for (let i = 0; i < msgs.length;) {
+      const g = msgs[i].grp;
+      if (!g) { i++; continue; }
+      let j = i;
+      while (j < msgs.length && msgs[j].grp && msgs[j].grp.raw === g.raw) j++;
+      let lo = Infinity, hi = -Infinity;
+      for (let k = i; k < j; k++) {
+        [msgs[k].from, msgs[k].to].forEach((p) => { const idx = parts.indexOf(p); if (idx >= 0) { lo = Math.min(lo, idx); hi = Math.max(hi, idx); } });
+      }
+      if (lo === Infinity) { i = j; continue; }
+      const x1 = SEQ_PAD + lo * SEQ_COL_W + 10, x2 = SEQ_PAD + (hi + 1) * SEQ_COL_W - 10;
+      const y1 = ys[i] - 4, y2 = (j < msgs.length ? ys[j] : bottomY) - 8;
+      const tab = `${esc(g.kind)}${g.label ? " " + esc(g.label) : ""}`;
+      const tabW = tab.length * 6 + 14;
+      framesSvg += `<rect class="seq-frame" x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3"/>`
+        + `<path class="seq-frame-tab" d="M${x1},${y1} h${tabW} v12 l-6,6 h-${tabW - 6} Z"/>`
+        + `<text class="seq-frame-lbl" x="${x1 + 6}" y="${y1 + 13}">${tab}</text>`;
+      // Compartment dividers where --group-branch changes within the frame.
+      for (let k = i + 1; k < j; k++) {
+        if (msgs[k].branch && (msgs[k].branch || "") !== (msgs[k - 1].branch || "")) {
+          const dy = ys[k] - 6;
+          framesSvg += `<line class="seq-div" x1="${x1}" y1="${dy}" x2="${x2}" y2="${dy}"/>`
+            + `<text class="seq-frame-lbl" x="${x1 + 6}" y="${dy - 3}">${esc(msgs[k].branch)}</text>`;
+        }
+      }
+      i = j;
+    }
+
+    // Participant headers + lifelines.
+    let headSvg = "", lifeSvg = "";
+    parts.forEach((p) => {
+      const x = xOf[p], ty = typeOf[p] || "participant";
+      const lblY = SEQ_HEAD_H - 6;
+      lifeSvg += `<line class="seq-life" x1="${x}" y1="${SEQ_HEAD_H + 2}" x2="${x}" y2="${bottomY}"/>`;
+      if (ty === "actor") {
+        headSvg += `<circle class="seq-part" cx="${x}" cy="16" r="7"/>`
+          + `<path class="seq-line" d="M${x},23 v13 M${x - 9},29 h18 M${x},36 l-8,10 M${x},36 l8,10"/>`;
+      } else if (ty === "database") {
+        headSvg += `<path class="seq-part" d="M${x - 26},14 v22 a26,7 0 0 0 52,0 v-22"/>`
+          + `<ellipse class="seq-part" cx="${x}" cy="14" rx="26" ry="7"/>`;
+      } else if (ty === "boundary") {
+        headSvg += `<line class="seq-line" x1="${x - 30}" y1="10" x2="${x - 30}" y2="42"/>`
+          + `<line class="seq-line" x1="${x - 30}" y1="26" x2="${x - 14}" y2="26"/>`
+          + `<circle class="seq-part" cx="${x}" cy="26" r="14"/>`;
+      } else {
+        const bw = Math.min(SEQ_COL_W - 24, Math.max(70, p.length * 8 + 16));
+        headSvg += `<rect class="seq-part" x="${x - bw / 2}" y="10" width="${bw}" height="30" rx="4"/>`;
+      }
+      headSvg += `<text class="seq-part-lbl" x="${x}" y="${lblY}" text-anchor="middle">${esc(p.length > 20 ? p.slice(0, 19) + "…" : p)}</text>`;
+    });
+
+    // Messages.
+    let msgSvg = "";
+    msgs.forEach((m, k) => {
+      const ly = ys[k] + 22, lty = ys[k] + 12;
+      const tip = attr(seqTip(m, cols, rows, spec, db, table));
+      const num = spec.autonumber ? k + 1 : null;
+      if (m.from === m.to) {
+        const x = xOf[m.from];
+        msgSvg += `<path class="seq-line${m.type === "reply" ? " reply" : ""}" d="M${x},${ly} h34 v16 h-34"/>`
+          + seqArrow(x, ly + 16, -1, m.type)
+          + `<text class="seq-msg-lbl" x="${x + 40}" y="${ly + 6}">${esc(m.label)}</text>`;
+        if (num != null) msgSvg += `<circle class="seq-num" cx="${x - 12}" cy="${ly}" r="8"/><text class="seq-num-txt" x="${x - 12}" y="${ly + 3}" text-anchor="middle">${num}</text>`;
+        msgSvg += `<rect class="seq-hit wm-x" x="${x - 6}" y="${ys[k]}" width="90" height="${SEQ_SELF_H}" data-tip="${tip}"/>`;
+      } else {
+        const x1 = xOf[m.from], x2 = xOf[m.to], dir = x2 > x1 ? 1 : -1;
+        const ex = x2 - dir * 1; // stop at the lifeline
+        msgSvg += `<line class="seq-line${m.type === "reply" ? " reply" : ""}" x1="${x1}" y1="${ly}" x2="${ex}" y2="${ly}"/>`
+          + seqArrow(ex, ly, dir, m.type)
+          + `<text class="seq-msg-lbl" x="${(x1 + x2) / 2}" y="${lty}" text-anchor="middle">${esc(m.label)}</text>`;
+        if (num != null) msgSvg += `<circle class="seq-num" cx="${x1 + dir * 12}" cy="${ly}" r="8"/><text class="seq-num-txt" x="${x1 + dir * 12}" y="${ly + 3}" text-anchor="middle">${num}</text>`;
+        const hx = Math.min(x1, x2), hw = Math.abs(x2 - x1);
+        msgSvg += `<rect class="seq-hit wm-x" x="${hx}" y="${ys[k]}" width="${hw}" height="${SEQ_MSG_H}" data-tip="${tip}"/>`;
+      }
+    });
+
+    return `<div class="seq-wrap"><svg class="seq-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`
+      + framesSvg + lifeSvg + headSvg + msgSvg + `</svg></div>`;
   }
 
   // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
