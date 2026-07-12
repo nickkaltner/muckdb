@@ -174,6 +174,22 @@ CREATE OR REPLACE VIEW pipeline_timeline AS
 CREATE OR REPLACE VIEW incident_timeline AS
   SELECT system, phase, started, ended, severity, ticket FROM incident ORDER BY started;
 
+-- Sequence diagram view: one row per message in a checkout flow across services.
+-- Participants are typed (actor/boundary/database/participant), messages carry an
+-- arrow kind, and an alt group splits the session-valid path from the expired one.
+CREATE OR REPLACE VIEW service_calls AS SELECT * FROM (VALUES
+  (1,  'user','gateway', 'POST /checkout',       'sync',  'actor',      'participant', NULL,               NULL,      'trace-8a01'),
+  (2,  'gateway','auth',  'verify session',       'sync',  'participant','boundary',    'alt:session valid','valid',   'trace-8a02'),
+  (3,  'auth','db',       'SELECT session',       'sync',  'boundary',   'database',    'alt:session valid','valid',   'trace-8a03'),
+  (4,  'gateway','orders','create order',         'sync',  'participant','participant', 'alt:session valid','valid',   'trace-8a04'),
+  (5,  'orders','payments','charge card',         'sync',  'participant','participant', 'alt:session valid','valid',   'trace-8a05'),
+  (6,  'payments','orders','payment ok',          'reply', 'participant','participant', 'alt:session valid','valid',   'trace-8a06'),
+  (7,  'orders','db',     'INSERT order',         'sync',  'participant','database',    'alt:session valid','valid',   'trace-8a07'),
+  (8,  'gateway','user',  '401 unauthorized',     'reply', 'participant','actor',       'alt:session valid','expired', 'trace-8a08'),
+  (9,  'orders','orders', 'publish order.created','async', 'participant','participant', NULL,               NULL,      'trace-8a09'),
+  (10, 'payments','gateway','webhook',            'lost',  'participant','participant', NULL,               NULL,      'trace-8a10')
+) t(seq, caller, callee, message, msg_type, caller_type, callee_type, grp, branch, trace) ORDER BY seq;
+
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 " >/dev/null
@@ -199,6 +215,10 @@ for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/de
   --link 'https://tracker.example.com/{value}' --link-title 'open {value}' >/dev/null
 "$MUCKDB" format "$DB" sid --table pipeline_timeline \
   --link 'https://ci.example.com/builds/{value}' --link-title 'build {value} · {step}' >/dev/null
+# 'trace' (a distributed-trace id on each message) → its trace viewer, so the
+# sequence tile's hover tooltip carries a clickable link.
+"$MUCKDB" format "$DB" trace --table service_calls \
+  --link 'https://trace.example.com/{value}' --link-title 'trace {value}' >/dev/null
 # Show the incident timeline in the viewer's LOCAL zone (timestamps are UTC in the
 # db; without a --tz they render in UTC). The hover readout then also shows the
 # UTC instant so a local-time axis stays unambiguous.
@@ -341,6 +361,14 @@ MD
   --event '2026-05-01 14:18|outage declared' --event '2026-05-01 14:41|resolved' \
   --caption "The same tile on an absolute time axis, shown in your local zone (a --tz local format on the column; the db stores UTC). Each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover the plot for the time (local + UTC); hover any bar for its window, details, and a clickable ticket link." >/dev/null
 
+"$MUCKDB" session section "$SESSION" --name sec-sequence --title "Sequences" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name checkout --title "Checkout flow across services" \
+  --db "$DB" --view service_calls --chart sequence \
+  --from caller --to callee --label message --message-type msg_type \
+  --from-type caller_type --to-type callee_type --group grp --group-branch branch --autonumber \
+  --caption "A sequence diagram of microservice comms: participants are typed (user is an actor, auth a boundary, db a database, the rest plain services), messages are sync/reply/async/lost arrows, and the alt frame splits the session-valid path from the expired one — with a self-message and a lost webhook at the end. Autonumbered; hover a message for its details and a clickable trace link. The 'mermaid' button copies a mermaid.js sequenceDiagram to the clipboard." >/dev/null
+
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
 
@@ -359,8 +387,9 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Customers**       | map (lat/long → world map)     | geographic points, brighter = denser      |
 | **CI pipeline**     | timeline (relative seconds)    | tasks over time, sublanes for overlap, dep arrows |
 | **Incident**        | timeline (absolute time)       | phases per system, severity colour, event markers |
+| **Checkout flow**   | sequence diagram               | service comms — typed participants, arrow kinds, an alt frame |
 
-Section headers (**Sales**, **Time series**, **Distributions**, **Geography**, **Timelines**)
+Section headers (**Sales**, **Time series**, **Distributions**, **Geography**, **Timelines**, **Sequences**)
 group the panels and appear in the contents.
 
 Every figure here is backed by a **view** you can open (hit **explore**),
