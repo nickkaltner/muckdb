@@ -111,6 +111,33 @@ pub struct Chart {
     pub id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub depends_on: Option<String>,
+    /// Sequence diagram tiles: one row per message. `--from`/`--to` name the
+    /// source and destination participant columns (`from == to` → self-message);
+    /// the message text reuses `--label`. Participants and their order are
+    /// inferred from the rows (first appearance).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_participant: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_participant: Option<String>,
+    /// Sequence: per-message arrow kind (`--message-type`): sync (default) |
+    /// reply | async | lost. Sequence: per-participant shape (`--from-type`/
+    /// `--to-type`): participant (default) | actor | database | boundary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub message_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_type: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_type: Option<String>,
+    /// Sequence group frames (`--group`): a `kind:label` value (loop|opt|alt|par);
+    /// contiguous rows sharing the value are wrapped in one frame. `--group-branch`
+    /// gives the else/and compartment label within a frame.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group_branch: Option<String>,
+    /// Sequence: number the messages 1,2,3… (`--autonumber`).
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub autonumber: bool,
 }
 
 /// One panel in a session.
@@ -485,7 +512,7 @@ struct Args {
 }
 
 /// Flags that take no value — the parser must not eat the next argument.
-const BOOL_FLAGS: &[&str] = &["no-validate", "up", "down"];
+const BOOL_FLAGS: &[&str] = &["no-validate", "up", "down", "trend", "autonumber"];
 
 impl Args {
     fn parse(args: &[String]) -> Self {
@@ -996,6 +1023,14 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     color: p.get("color").map(str::to_string),
                     id: p.get("id").map(str::to_string),
                     depends_on: p.get("depends-on").map(str::to_string),
+                    from_participant: p.get("from").map(str::to_string),
+                    to_participant: p.get("to").map(str::to_string),
+                    message_type: p.get("message-type").map(str::to_string),
+                    from_type: p.get("from-type").map(str::to_string),
+                    to_type: p.get("to-type").map(str::to_string),
+                    group: p.get("group").map(str::to_string),
+                    group_branch: p.get("group-branch").map(str::to_string),
+                    autonumber: p.get("autonumber").is_some(),
                 }),
                 caption: p.get("caption").map(str::to_string),
                 trashed: false,
@@ -1196,6 +1231,14 @@ mod tests {
             color: None,
             id: None,
             depends_on: None,
+            from_participant: None,
+            to_participant: None,
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("\"value\":\"sites\""));
@@ -1236,6 +1279,14 @@ mod tests {
             color: None,
             id: None,
             depends_on: None,
+            from_participant: None,
+            to_participant: None,
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -1282,6 +1333,14 @@ mod tests {
             color: Some("status".into()),
             id: Some("span_id".into()),
             depends_on: Some("parent_ids".into()),
+            from_participant: None,
+            to_participant: None,
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -1304,6 +1363,70 @@ mod tests {
         .unwrap();
         assert!(!bar.contains("\"lane\""));
         assert!(!bar.contains("\"depends_on\""));
+    }
+
+    #[test]
+    fn sequence_chart_serde_roundtrips_fields() {
+        let c = Chart {
+            kind: "sequence".into(),
+            x: None,
+            y: vec![],
+            lat: None,
+            lon: None,
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
+            label: Some("msg".into()),
+            value: None,
+            no_values: false,
+            desc: None,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+            lane: None,
+            start: None,
+            end: None,
+            duration: None,
+            color: None,
+            id: None,
+            depends_on: None,
+            from_participant: Some("src".into()),
+            to_participant: Some("dst".into()),
+            message_type: Some("kind".into()),
+            from_type: Some("src_type".into()),
+            to_type: Some("dst_type".into()),
+            group: Some("grp".into()),
+            group_branch: Some("branch".into()),
+            autonumber: true,
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let back: Chart = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.from_participant.as_deref(), Some("src"));
+        assert_eq!(back.to_participant.as_deref(), Some("dst"));
+        assert_eq!(back.message_type.as_deref(), Some("kind"));
+        assert_eq!(back.group_branch.as_deref(), Some("branch"));
+        assert!(back.autonumber);
+        // Other kinds omit the sequence fields entirely (skip_serializing_if).
+        let bar = serde_json::to_string(&Chart {
+            kind: "bar".into(),
+            from_participant: None,
+            to_participant: None,
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
+            ..c
+        })
+        .unwrap();
+        assert!(!bar.contains("from_participant"));
+        assert!(!bar.contains("autonumber"));
     }
 
     #[test]
@@ -1459,6 +1582,14 @@ mod tests {
             color: None,
             id: None,
             depends_on: None,
+            from_participant: None,
+            to_participant: None,
+            message_type: None,
+            from_type: None,
+            to_type: None,
+            group: None,
+            group_branch: None,
+            autonumber: false,
         };
         // Missing --lane fails.
         let mut c = base();
