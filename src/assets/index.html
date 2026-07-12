@@ -3515,13 +3515,14 @@
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
+    const mermaidBtn = kind === "sequence" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too).
     const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions">${mapToggle}${sqlBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
@@ -4189,6 +4190,69 @@
 
     return `<div class="seq-wrap"><svg class="seq-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`
       + framesSvg + lifeSvg + headSvg + msgSvg + `</svg></div>`;
+  }
+
+  // A mermaid-safe participant id, plus whether an "as <original>" alias is needed.
+  function seqMermaidId(name) {
+    const id = name.replace(/[^A-Za-z0-9_]/g, "_").replace(/^_+|_+$/g, "") || "p";
+    return { id, alias: id !== name };
+  }
+  // Generate a valid mermaid `sequenceDiagram` document from the same rows/spec.
+  // db/boundary participants map to `participant` with a preceding %% comment
+  // (mermaid has no such shape); arrows map sync/reply/async/lost →
+  // ->>/-->>/-)/-x; single-level groups → loop/opt/alt/par … end.
+  function seqToMermaid(cols, rows, spec) {
+    const fi = cols.indexOf(spec.from_participant), ti = cols.indexOf(spec.to_participant), lbi = cols.indexOf(spec.label);
+    if (fi < 0 || ti < 0 || lbi < 0) return "sequenceDiagram\n";
+    const mti = spec.message_type ? cols.indexOf(spec.message_type) : -1;
+    const gi = spec.group ? cols.indexOf(spec.group) : -1;
+    const gbi = spec.group_branch ? cols.indexOf(spec.group_branch) : -1;
+    const arrow = { sync: "->>", reply: "-->>", async: "-)", lost: "-x" };
+
+    const lines = ["sequenceDiagram"];
+    if (spec.autonumber) lines.push("  autonumber");
+
+    const { order, typeOf } = seqParticipants(cols, rows, spec);
+    const idOf = {};
+    order.filter((n) => n !== "").forEach((n) => {
+      const { id, alias } = seqMermaidId(n);
+      idOf[n] = id;
+      const ty = typeOf[n] || "participant";
+      if (ty === "database") lines.push("  %% database");
+      else if (ty === "boundary") lines.push("  %% boundary");
+      const kw = ty === "actor" ? "actor" : "participant";
+      lines.push(alias ? `  ${kw} ${id} as ${n}` : `  ${kw} ${id}`);
+    });
+
+    let curRaw = null, curKind = null, curBranch = null;
+    const close = () => { if (curRaw) { lines.push("  end"); curRaw = null; curKind = null; curBranch = null; } };
+    rows.forEach((r) => {
+      const from = String(r[fi] ?? ""), to = String(r[ti] ?? "");
+      if (from === "" || to === "") return;
+      const raw = gi >= 0 && r[gi] != null && String(r[gi]).trim() !== "" ? String(r[gi]).trim() : null;
+      if (raw !== curRaw) {
+        close();
+        if (raw) {
+          const g = seqGroup(raw);
+          curKind = g.kind === "group" ? "loop" : g.kind; // unknown kind → a loop frame
+          lines.push(`  ${curKind} ${g.label}`);
+          curRaw = raw;
+          curBranch = gbi >= 0 && r[gbi] != null ? String(r[gbi]) : null;
+        }
+      } else if (curRaw && gbi >= 0) {
+        const br = r[gbi] != null ? String(r[gbi]) : null;
+        if (br && br !== curBranch) {
+          lines.push(`  ${curKind === "par" ? "and" : "else"} ${br}`);
+          curBranch = br;
+        }
+      }
+      const ty = mti >= 0 ? seqType(r[mti]) : "sync";
+      const indent = curRaw ? "    " : "  ";
+      const label = String(r[lbi] ?? "").replace(/\s*\n\s*/g, " ");
+      lines.push(`${indent}${idOf[from] || seqMermaidId(from).id}${arrow[ty]}${idOf[to] || seqMermaidId(to).id}: ${label}`);
+    });
+    close();
+    return lines.join("\n") + "\n";
   }
 
   // A box-plot tile: one horizontal box-and-whisker per row, all drawn on a
@@ -5467,6 +5531,23 @@
     }
     const js = ev.target.closest("[data-json]"); if (js) { showJsonValue(js.dataset.json, js.dataset.jdb || null, js.dataset.jtable || null, js.dataset.jcol || null); return; }
     const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
+    const mmd = ev.target.closest("[data-mermaid]");
+    if (mmd) {
+      const t = sessionTile(mmd.dataset.mermaid);
+      if (!t || t.type !== "view") return;
+      const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
+      fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))
+        .then((r) => r.json())
+        .then((data) => {
+          if (data.error) throw new Error(data.error);
+          const text = seqToMermaid(data.columns || [], data.rows || [], t.chart || {});
+          const done = () => toast("mermaid copied to clipboard");
+          if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => toast("copy failed", true));
+          else { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) { toast("copy failed", true); } ta.remove(); }
+        })
+        .catch((e) => toast(String(e), true));
+      return;
+    }
     const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
     const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
