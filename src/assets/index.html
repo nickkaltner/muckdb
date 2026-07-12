@@ -3793,8 +3793,13 @@
       svg.setAttribute("viewBox", `0 0 ${W} ${height}`);
       svg.setAttribute("width", W); svg.setAttribute("height", height);
       svg.innerHTML = evs.map((e) => {
-        const ly = e.row * TL_EV_LH + TL_EV_LH - 3;
-        return `<line x1="${e.x.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${e.x.toFixed(1)}" y2="${height}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
+        const x = e.x, ly = e.row * TL_EV_LH + TL_EV_LH - 3;
+        // A small solid triangle sits at the top of each marker line (just below
+        // the label, pointing down into the line) to make markers instantly
+        // distinct from the hover cursor.
+        const tri = `<path d="M${(x - 4).toFixed(1)} ${ly.toFixed(1)} L${(x + 4).toFixed(1)} ${ly.toFixed(1)} L${x.toFixed(1)} ${(ly + 7).toFixed(1)} Z" fill="${m.color}"/>`;
+        const line = `<line x1="${x.toFixed(1)}" y1="${ly.toFixed(1)}" x2="${x.toFixed(1)}" y2="${height}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
+        return tri + line;
       }).join("");
     }
     evs.forEach((e) => {
