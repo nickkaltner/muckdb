@@ -89,6 +89,28 @@ pub struct Chart {
     /// Overlay a smoothed trendline (LOESS; single-series bar/line/area/scatter).
     #[serde(default, skip_serializing_if = "is_false")]
     pub trend: bool,
+    /// Timeline tiles: the lane (row / resource) each bar belongs to (`--lane`).
+    /// Bar text reuses `--label`. `--start`/`--end` are numeric (relative seconds)
+    /// or timestamps — auto-detected in the browser. `--duration` (numeric
+    /// seconds) is an alternative to `--end` (end = start + duration).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lane: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub end: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub duration: Option<String>,
+    /// Timeline: colour bars by this category column (`--color`); adds a legend.
+    /// When unset each lane gets its own palette colour instead.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub color: Option<String>,
+    /// Timeline dependencies: `--id` gives each bar a unique id; `--depends-on`
+    /// holds comma-separated parent id(s), drawn as right-angle connectors.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub depends_on: Option<String>,
 }
 
 /// One panel in a session.
@@ -884,6 +906,13 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     thresholds: parse_markers(&p.get_all("threshold")),
                     events: parse_markers(&p.get_all("event")),
                     trend: p.get("trend").is_some(),
+                    lane: p.get("lane").map(str::to_string),
+                    start: p.get("start").map(str::to_string),
+                    end: p.get("end").map(str::to_string),
+                    duration: p.get("duration").map(str::to_string),
+                    color: p.get("color").map(str::to_string),
+                    id: p.get("id").map(str::to_string),
+                    depends_on: p.get("depends-on").map(str::to_string),
                 }),
                 caption: p.get("caption").map(str::to_string),
                 trashed: false,
@@ -1076,6 +1105,13 @@ mod tests {
             thresholds: vec![],
             events: vec![],
             trend: false,
+            lane: None,
+            start: None,
+            end: None,
+            duration: None,
+            color: None,
+            id: None,
+            depends_on: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("\"value\":\"sites\""));
@@ -1109,6 +1145,13 @@ mod tests {
             thresholds: vec![],
             events: vec![],
             trend: false,
+            lane: None,
+            start: None,
+            end: None,
+            duration: None,
+            color: None,
+            id: None,
+            depends_on: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -1123,6 +1166,60 @@ mod tests {
         })
         .unwrap();
         assert!(!bar.contains("\"lat\""));
+    }
+
+    #[test]
+    fn timeline_chart_serde_roundtrips_fields() {
+        let c = Chart {
+            kind: "timeline".into(),
+            x: None,
+            y: vec![],
+            lat: None,
+            lon: None,
+            from_lat: None,
+            from_lon: None,
+            to_lat: None,
+            to_lon: None,
+            label: Some("task".into()),
+            value: None,
+            no_values: false,
+            desc: None,
+            xlabel: None,
+            ylabel: None,
+            bars: None,
+            targets: vec![],
+            thresholds: vec![],
+            events: vec![],
+            trend: false,
+            lane: Some("resource".into()),
+            start: Some("started_at".into()),
+            end: Some("ended_at".into()),
+            duration: None,
+            color: Some("status".into()),
+            id: Some("span_id".into()),
+            depends_on: Some("parent_ids".into()),
+        };
+        let json = serde_json::to_string(&c).unwrap();
+        let back: Chart = serde_json::from_str(&json).unwrap();
+        assert_eq!(back.lane.as_deref(), Some("resource"));
+        assert_eq!(back.start.as_deref(), Some("started_at"));
+        assert_eq!(back.end.as_deref(), Some("ended_at"));
+        assert_eq!(back.color.as_deref(), Some("status"));
+        assert_eq!(back.depends_on.as_deref(), Some("parent_ids"));
+        // Other kinds omit the timeline fields entirely (skip_serializing_if).
+        let bar = serde_json::to_string(&Chart {
+            kind: "bar".into(),
+            lane: None,
+            start: None,
+            end: None,
+            color: None,
+            id: None,
+            depends_on: None,
+            ..c
+        })
+        .unwrap();
+        assert!(!bar.contains("\"lane\""));
+        assert!(!bar.contains("\"depends_on\""));
     }
 
     #[test]
