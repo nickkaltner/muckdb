@@ -80,13 +80,15 @@ CREATE OR REPLACE TABLE pipeline AS SELECT * FROM (VALUES
 
 -- An incident timeline on an absolute time axis: phases per system, with
 -- colour by severity and event markers for the key moments.
+-- Each phase carries a ticket id; a --link format (below) turns it into a
+-- clickable tracker link inside the hover tooltip.
 CREATE OR REPLACE TABLE incident AS SELECT * FROM (VALUES
-  ('api',      'elevated errors', TIMESTAMP '2026-05-01 14:02:00', TIMESTAMP '2026-05-01 14:18:00', 'warning'),
-  ('api',      'outage',          TIMESTAMP '2026-05-01 14:18:00', TIMESTAMP '2026-05-01 14:41:00', 'critical'),
-  ('database', 'failover',        TIMESTAMP '2026-05-01 14:22:00', TIMESTAMP '2026-05-01 14:35:00', 'critical'),
-  ('oncall',   'investigate',     TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:30:00', 'info'),
-  ('oncall',   'mitigate',        TIMESTAMP '2026-05-01 14:30:00', TIMESTAMP '2026-05-01 14:41:00', 'info')
-) t(system, phase, started, ended, severity);
+  ('api',      'elevated errors', TIMESTAMP '2026-05-01 14:02:00', TIMESTAMP '2026-05-01 14:18:00', 'warning',  'INC-4021'),
+  ('api',      'outage',          TIMESTAMP '2026-05-01 14:18:00', TIMESTAMP '2026-05-01 14:41:00', 'critical', 'INC-4021'),
+  ('database', 'failover',        TIMESTAMP '2026-05-01 14:22:00', TIMESTAMP '2026-05-01 14:35:00', 'critical', 'INC-4022'),
+  ('oncall',   'investigate',     TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:30:00', 'info',     'INC-4021'),
+  ('oncall',   'mitigate',        TIMESTAMP '2026-05-01 14:30:00', TIMESTAMP '2026-05-01 14:41:00', 'info',     'INC-4023')
+) t(system, phase, started, ended, severity, ticket);
 
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
@@ -170,7 +172,7 @@ CREATE OR REPLACE VIEW revenue_cumulative AS
 CREATE OR REPLACE VIEW pipeline_timeline AS
   SELECT resource, step, t0, t1, outcome, sid, parent FROM pipeline;
 CREATE OR REPLACE VIEW incident_timeline AS
-  SELECT system, phase, started, ended, severity FROM incident ORDER BY started;
+  SELECT system, phase, started, ended, severity, ticket FROM incident ORDER BY started;
 
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
@@ -191,6 +193,12 @@ for col in lo q1 med q3 hi; do "$MUCKDB" format "$DB" "$col" --currency USD >/de
 "$MUCKDB" format "$DB" humidity --suffix '%'  --decimals 0 >/dev/null
 "$MUCKDB" format "$DB" cumulative_revenue --currency USD >/dev/null
 "$MUCKDB" format "$DB" gbps --suffix ' Gbps' --thousands >/dev/null
+# Link formats: id/reference columns become clickable in the timeline tooltips.
+# 'ticket' → an incident tracker; 'sid' (a pipeline step id) → its CI build page.
+"$MUCKDB" format "$DB" ticket --table incident_timeline \
+  --link 'https://tracker.example.com/{value}' --link-title 'open {value}' >/dev/null
+"$MUCKDB" format "$DB" sid --table pipeline_timeline \
+  --link 'https://ci.example.com/builds/{value}' --link-title 'build {value} · {step}' >/dev/null
 
 # ---- session dashboard --------------------------------------------------------
 # Rebuild from scratch so tiles land in this script's order (a pre-existing demo
@@ -326,7 +334,7 @@ MD
   --lane system --label phase --start started --end ended \
   --color severity \
   --event '2026-05-01 14:18|outage declared' --event '2026-05-01 14:41|resolved' \
-  --caption "The same tile on an absolute time axis: each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover any bar for its exact window and details." >/dev/null
+  --caption "The same tile on an absolute time axis: each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover any bar for its exact window, details, and a clickable ticket link." >/dev/null
 
 # A closing summary panel — the takeaways, so the dashboard reads top-to-bottom.
 "$MUCKDB" session post "$SESSION" --name summary --title "Summary" --md "## Summary
