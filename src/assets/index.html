@@ -3587,8 +3587,8 @@
       let disp = f ? applyFmtHtml(f, v) : esc(typeof v === "object" ? JSON.stringify(v) : String(v));
       if (f && f.link) {
         const href = linkSubst(f.link, v, row, cols, true);
-        const txt = f.link_title ? linkSubst(f.link_title, v, row, cols, false) : disp;
-        disp = `<a href="${attr(href)}" target="_blank" rel="noopener">${txt}</a>`;
+        const txt = f.link_title ? esc(linkSubst(f.link_title, v, row, cols, false)) : disp;
+        disp = `<a href="${attr(href)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
       }
       extra.push(`${esc(c)}: ${disp}`);
     });

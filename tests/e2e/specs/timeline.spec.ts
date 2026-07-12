@@ -55,4 +55,21 @@ test.describe('timeline tile', () => {
     await expect(tip).toContainText('lane: deploy');
     await expect(tip).toContainText('status: failed');  // colour category, an extra column
   });
+
+  test('bar tooltip escapes a hostile link_title instead of injecting HTML', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="timeline"]');
+    await panel.locator('.tl-bar', { hasText: 'migrate' }).hover();
+    const tip = page.locator('.wm-tip');
+    await expect(tip).toBeVisible();
+
+    // The `sid` column carries a link_title template of `<img src=x onerror=alert(1)>`
+    // (set in seed.ts). It must show up as literal text in the tooltip's link,
+    // never parsed as a live element.
+    await expect(tip.locator('img')).toHaveCount(0);
+    await expect(tip).toContainText('onerror');
+    await expect(tip.locator('a[href="https://example.test/s4"]')).toContainText(
+      '<img src=x onerror=alert(1)>'
+    );
+  });
 });

@@ -52,6 +52,15 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   // Unit format on the array column, so empty vs non-empty rendering is exercised.
   run(binary, env, ['format', dbPath, 'sizes', '--suffix', ' Gbps', '--thousands']);
 
+  // A link + link_title on the timeline's `sid` column, scoped to deploy_timeline,
+  // with a deliberately hostile link_title — regression coverage for the tlTip()
+  // XSS fix (the tooltip must render this as escaped text, never as a live <img>).
+  run(binary, env, [
+    'format', dbPath, 'sid', '--table', 'deploy_timeline',
+    '--link', 'https://example.test/{value}',
+    '--link-title', '<img src=x onerror=alert(1)>',
+  ]);
+
   // 2. Build the dashboard session.
   run(binary, env, ['session', 'create', 'e2e', '--title', 'E2E fixtures']);
   run(binary, env, ['session', 'post', 'e2e', '--name', 'summary', '--title', 'Summary',
