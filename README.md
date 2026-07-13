@@ -84,6 +84,10 @@ grouped under that session in the ledger.
 ```sh
 muckdb session create analysis --title "Pond analysis"
 
+# durable datasource provenance and agent handoff (Markdown; read before edits)
+muckdb session context analysis read
+muckdb session context analysis save --md "# Data sources\n\n- mydb.db: local analysis database."
+
 # a markdown panel (text or - for stdin)
 muckdb session post analysis --name notes --title Notes \
   --md "# Findings\n\n- pH trends **down** over time"

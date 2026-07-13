@@ -66,6 +66,7 @@ muckdb session create <name> [--title T] [--claude UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
+muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
@@ -431,7 +432,7 @@ cargo install cargo-release      # one-time, if not already installed
 
 # Working tree must be clean first (cargo release refuses with uncommitted changes).
 cargo release patch              # dry-run: shows the plan, changes nothing
-cargo release patch --execute    # actually bump + commit + tag + push
+cargo release patch --execute --no-confirm  # actually bump + commit + tag + push
 #            ^ patch | minor | major, or an exact version e.g. `cargo release 0.2.0`
 ```
 

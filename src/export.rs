@@ -377,6 +377,7 @@ mod tests {
         Session {
             id: "exp-test".into(),
             title: Some("Export test".into()),
+            agent_context: Some("# Sources\n\n- test fixture".into()),
             claude_session: None,
             created: 1,
             updated: 2,
@@ -524,6 +525,10 @@ mod tests {
 
         // Collision → suffixed id; dbs land under imports/<final-id>/.
         assert_eq!(imported.session.id, "exp-test-2");
+        assert_eq!(
+            imported.session.agent_context.as_deref(),
+            Some("# Sources\n\n- test fixture")
+        );
         assert_eq!(imported.dbs.len(), 1);
         assert!(imported.dbs[0].starts_with(root.join("exp-test-2")));
         assert!(imported.dbs[0].exists());

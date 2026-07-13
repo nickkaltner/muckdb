@@ -223,6 +223,10 @@ pub struct Session {
     pub id: String,
     #[serde(default)]
     pub title: Option<String>,
+    /// Markdown handoff for agents: data-source provenance and session-wide
+    /// decisions that should survive across conversations and exports.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agent_context: Option<String>,
     /// The Claude Code session UUID this dashboard was built for, if linked.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub claude_session: Option<String>,
@@ -432,6 +436,7 @@ fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
     Ok(Session {
         id: id.to_string(),
         title,
+        agent_context: None,
         claude_session: None,
         created: now,
         updated: now,
@@ -980,6 +985,42 @@ pub fn cli(args: &[String]) -> Result<i32> {
             println!("set section '{tile_name}' in session {id}");
             Ok(0)
         }
+        // Session-level Markdown handoff: unlike a markdown tile, this is not
+        // rendered on the dashboard. It gives later agents provenance for every
+        // source feeding the session and durable notes about its assumptions.
+        "context" | "agent-metadata" => {
+            let name = session_arg
+                .context("usage: muckdb session context <name> <read|save> [--md <text|->]")?;
+            let id = slug(&name);
+            let op = p
+                .positionals
+                .get(1)
+                .map(String::as_str)
+                .context("say context read or context save")?;
+            match op {
+                "read" => {
+                    let s = load(&id)?.with_context(|| format!("no such session '{id}'"))?;
+                    print!("{}", s.agent_context.as_deref().unwrap_or(""));
+                    Ok(0)
+                }
+                "save" => {
+                    let md = read_md(
+                        p.get("md")
+                            .or(p.get("markdown"))
+                            .context("context save needs --md <text|->")?,
+                    )?;
+                    let _lock = lock_session(&id)?;
+                    let mut s = load_or_new(&id, None)?;
+                    s.agent_context = Some(md);
+                    s.updated = store::now_millis();
+                    save(&s)?;
+                    crate::facade::ensure_daemon()?;
+                    println!("saved agent context for session {id}");
+                    Ok(0)
+                }
+                _ => bail!("context action must be read or save"),
+            }
+        }
         "move" => {
             let name = session_arg.context(
                 "usage: muckdb session move <name> --tile T (--up | --down | --to N | --before X | --after X)",
@@ -1188,10 +1229,11 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|section|tile|move|screenshot|export|import|rm> ...\n\
+                "usage: muckdb session <create|list|post|section|context|tile|move|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--claude UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
+                 context <name> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
@@ -1562,6 +1604,20 @@ mod tests {
         assert_eq!(read_md("real\nnewline").unwrap(), "real\nnewline"); // untouched
         assert_eq!(read_md("trailing\\").unwrap(), "trailing\\");
         assert_eq!(read_md("\\x unknown").unwrap(), "\\x unknown");
+    }
+
+    #[test]
+    fn agent_context_is_backward_compatible_and_serializes_when_set() {
+        let mut session: Session =
+            serde_json::from_str(r#"{"id":"handoff","created":1,"updated":1,"tiles":[]}"#).unwrap();
+        assert_eq!(session.agent_context, None);
+
+        session.agent_context = Some("# Data sources\n\n- warehouse.duckdb".into());
+        let value = serde_json::to_value(session).unwrap();
+        assert_eq!(
+            value["agent_context"],
+            "# Data sources\n\n- warehouse.duckdb"
+        );
     }
 
     // ---- timeline validation (needs the `duckdb` CLI) --------------------

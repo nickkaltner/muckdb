@@ -86,7 +86,7 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         Some("--help" | "-help" | "-h" | "help") => help(),
         // muckdb's version, then the underlying duckdb's version line.
         Some("--version" | "-version") => version(),
-        // Session dashboards: `muckdb session <create|list|post|tile|rm> ...`
+        // Session dashboards: `muckdb session <create|list|post|context|tile|rm> ...`
         Some("session") => session::cli(&args[1..]),
         // Install the bundled Claude skill: `muckdb skill install`.
         Some("skill") => skill::cli(&args[1..]),
@@ -126,7 +126,7 @@ muckdb commands:
   --stop                 stop the background daemon
   --port <N>             use TCP port N for the daemon (default 11000; per-port pidfile)
   --version              print muckdb's version, then duckdb's
-  session <subcommand>   build dashboards: create | list | post | tile | screenshot | export | import | rm
+  session <subcommand>   build dashboards: create | list | post | context | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
   skill <install|uninstall|path>   manage the muckdb Claude Code skill
