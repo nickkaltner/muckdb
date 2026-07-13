@@ -1,4 +1,4 @@
-//! `muckdb skill ...` — install the bundled Claude Code skill (a guide that
+//! `muckdb skill ...` — install the bundled agent skill (a guide that
 //! teaches coding agents how to drive muckdb) into the user's skills directory.
 //!
 //! The skill content is embedded in the binary, so this works whether muckdb was

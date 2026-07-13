@@ -33,9 +33,9 @@ brew install nickkaltner/muckdb/muckdb
 This taps `nickkaltner/homebrew-muckdb` and installs a prebuilt binary. The
 `duckdb` CLI is pulled in as a dependency (muckdb shells out to it).
 
-### Claude skill
+### Agent skill
 
-muckdb bundles a Claude Code skill that teaches coding agents how to drive it
+muckdb bundles an agent skill that teaches coding agents how to drive it
 (sessions, tiles, JSON introspection). Install it into your skills directory:
 
 ```sh
@@ -76,14 +76,15 @@ can find `muckdb` via mDNS: `avahi-browse _muckdb._tcp` on Linux,
 
 ## Sessions (agent dashboards)
 
-A **session** is a named dashboard of **tiles** (panels) that a tool like Claude
-Code can post to from the CLI and update by name. Tiles are markdown notes or
+A **session** is a named dashboard of **tiles** (panels) that a coding agent can
+post to from the CLI and update by name. Tiles are markdown notes or
 **data views** — backed by a duckdb view or inline SQL — rendered as a chart and
 explorable as a faceted search. Set `MUCKDB_SESSION` and your commands are also
 grouped under that session in the ledger.
 
 ```sh
-muckdb session create analysis --title "Pond analysis"
+muckdb session create analysis --title "Pond analysis" \
+  --agent-session "$CODEX_THREAD_ID"
 
 # durable datasource provenance and agent handoff (Markdown; read before edits)
 muckdb session context analysis read
@@ -114,6 +115,9 @@ muckdb session screenshot analysis --tile species --out species.png
 muckdb session export analysis                # writes ./analysis.muckdb
 muckdb session import analysis.muckdb        # imports; name collisions get -2
 ```
+
+`--agent-session` records the creating agent's conversation/thread UUID and
+returns it as `agent_session` from `muckdb ls session <id>`.
 
 Re-running `post`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |

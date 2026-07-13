@@ -179,7 +179,7 @@ The button is client-side only; no new server route.
   documents all flags, the participant types, the message/arrow vocabulary, the
   `--group` grammar + compartments, `--autonumber`, the mermaid-export button
   (and the db/boundary → `participant` mapping caveat), with a worked example.
-- **`CLAUDE.md`**: parallel updates to the usage block and kind list.
+- **`AGENT.md`**: parallel updates to the usage block and kind list.
 - Keep the `session.rs` usage strings in sync (the `--chart sequence` line).
 
 ## Tests

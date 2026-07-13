@@ -1,4 +1,4 @@
-# Using muckdb (guide for Claude / coding agents)
+# Using muckdb (guide for coding agents)
 
 please keep the latest version running whenever possible.
 
@@ -62,7 +62,7 @@ muckdb session tile pond-analysis --name species --title "By species" \
 ## Command reference
 
 ```
-muckdb session create <name> [--title T] [--claude UUID]
+muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
@@ -95,9 +95,9 @@ muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
 ```
 
-- **Link the session to your conversation** with `--claude "$CLAUDE_CODE_SESSION_ID"`
+- **Link the session to your conversation** with `--agent-session "$CODEX_THREAD_ID"`
   on `create`. The UUID is shown at the top of the session view and returned by
-  `muckdb ls session <id>` (`claude_session`).
+  `muckdb ls session <id>` (`agent_session`).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
 - **Lay the report out, and keep it laid out.** Tiles render in post order;

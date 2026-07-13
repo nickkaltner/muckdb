@@ -694,8 +694,8 @@
     #view-sessions.toc-open .session-toc { display: block; }
     #view-sessions.toc-open .toc-resizer { display: block; }
   }
-  .session-claude { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
-  .session-claude:empty { display: none; }
+  .session-agent { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .session-agent:empty { display: none; }
   .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
   .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
@@ -867,7 +867,7 @@
     </section>
 
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
-      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-claude" id="session-claude"></span>
+      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-agent" id="session-agent"></span>
         <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
         <button class="toc-toggle sess-act" id="poster-btn" title="Download a PNG poster of the whole dashboard"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.1"/><path d="M2.5 11l3.2-2.7 2.3 1.9 3-2.4 2.5 2.1"/></svg><span>poster</span></button>
         <button class="toc-toggle sess-act" id="session-rm-btn" title="Delete this session (click twice)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.8 9h6.4l.8-9M6.5 7v4M9.5 7v4"/></svg><span>delete</span></button>
@@ -3099,7 +3099,7 @@
   function renderSessionNav() {
     const ss = state.sessions;
     $("session-empty").style.display = ss.length ? "none" : "block";
-    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-claude").innerHTML = ""; return; }
+    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-agent").innerHTML = ""; return; }
     const cur = ss.find((s) => s.id === state.selSession);
     const name = cur ? (cur.title || cur.id) : "select a session";
     $("session-chips").innerHTML = `<button class="combo" id="session-combo"><span class="cv-name">${esc(name)}</span><span class="cv-sub">${ss.length} ${ss.length === 1 ? "session" : "sessions"}</span><span class="cv-caret">▾</span></button>`;
@@ -3113,14 +3113,14 @@
       onPick: (it) => loadSession(it.id, true),
     });
   }
-  // The linked Claude session UUID, shown inline on the session nav row (the
-  // picker already carries the session name, so no separate title is needed).
+  // The linked agent conversation/thread UUID, shown inline on the session nav
+  // row. Fall back to the legacy field while an older daemon is still running.
   function renderSessionHead(s) {
-    const el = $("session-claude");
+    const el = $("session-agent");
     if (!el) return;
-    const cs = s.claude_session;
+    const cs = s.agent_session ?? s.claude_session;
     el.innerHTML = cs
-      ? `<span class="sh-label">claude session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button>`
+      ? `<span class="sh-label">agent session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button>`
       : "";
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }

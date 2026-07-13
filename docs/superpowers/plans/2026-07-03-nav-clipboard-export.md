@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- Before every commit: `cargo fmt` (not `--check`), `cargo clippy --all-targets -- -D warnings`, `cargo test` — all clean (project CLAUDE.md).
+- Before every commit: `cargo fmt` (not `--check`), `cargo clippy --all-targets -- -D warnings`, `cargo test` — all clean (project AGENT.md).
 - Archive extension is `.muckdb`; export filename is `<session-id>.muckdb`.
 - Import never overwrites: session-id collision → numeric suffix (`name-2`, `name-3`, …).
 - Manifest carries `format: 1`; importing a *newer* format fails with a clear "upgrade muckdb" error.
@@ -244,7 +244,7 @@ mod tests {
     fn sample_session(db: &std::path::Path) -> Session {
         Session {
             id: "exp-test".into(), title: Some("Export test".into()),
-            claude_session: None, created: 1, updated: 2,
+            agent_session: None, created: 1, updated: 2,
             tiles: vec![
                 Tile::Markdown { name: "intro".into(), title: None, markdown: "# hi".into(), trashed: false },
                 Tile::View {
@@ -969,7 +969,7 @@ git commit -m "feat: /api/session/export and /api/session/import daemon endpoint
 ### Task 7: Web UI buttons + docs
 
 **Files:**
-- Modify: `src/assets/index.html` (export button in session nav row, import button + file input in titlebar, wiring), `CLAUDE.md`, `README.md`, `src/assets/skill/SKILL.md` (command reference blocks)
+- Modify: `src/assets/index.html` (export button in session nav row, import button + file input in titlebar, wiring), `AGENT.md`, `README.md`, `src/assets/skill/SKILL.md` (command reference blocks)
 
 **Interfaces:**
 - Consumes: Task 6's endpoints, Task 2's `toast()`.
@@ -1020,13 +1020,13 @@ Restart the daemon on the new binary (`./target/debug/muckdb --stop; ./target/de
 
 - [ ] **Step 4: Docs**
 
-Add `export`/`import` lines to the command-reference blocks in `CLAUDE.md` ("Command reference" fence) and `src/assets/skill/SKILL.md` (same fence), plus a short bullet each: what the archive contains, where imports land, collision suffixing. Check `README.md` for a session command list and update if present.
+Add `export`/`import` lines to the command-reference blocks in `AGENT.md` ("Command reference" fence) and `src/assets/skill/SKILL.md` (same fence), plus a short bullet each: what the archive contains, where imports land, collision suffixing. Check `README.md` for a session command list and update if present.
 
 - [ ] **Step 5: Commit**
 
 ```bash
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
-git add src/assets/index.html CLAUDE.md README.md src/assets/skill/SKILL.md
+git add src/assets/index.html AGENT.md README.md src/assets/skill/SKILL.md
 git commit -m "feat: session export/import buttons in the web UI + docs"
 ```
 
@@ -1035,7 +1035,7 @@ git commit -m "feat: session export/import buttons in the web UI + docs"
 ### Task 8: `muckdb --start` — start the server without opening a browser
 
 **Files:**
-- Modify: `src/main.rs` (match arm + help), `CLAUDE.md` + `src/assets/skill/SKILL.md` (mention beside `--status`/`--stop`/`--display`)
+- Modify: `src/main.rs` (match arm + help), `AGENT.md` + `src/assets/skill/SKILL.md` (mention beside `--status`/`--stop`/`--display`)
 
 **Interfaces:**
 - Produces: `muckdb --start` — ensures the daemon is running and prints the URL; exactly `--display` minus `open_browser`.
@@ -1070,11 +1070,11 @@ cargo build
 
 - [ ] **Step 3: Docs + commit**
 
-Mention `--start` in `CLAUDE.md` (the "(muckdb --status / --stop / --display exist if needed)" line) and `src/assets/skill/SKILL.md` if it has the same line.
+Mention `--start` in `AGENT.md` (the "(muckdb --status / --stop / --display exist if needed)" line) and `src/assets/skill/SKILL.md` if it has the same line.
 
 ```bash
 cargo fmt && cargo clippy --all-targets -- -D warnings && cargo test
-git add src/main.rs CLAUDE.md src/assets/skill/SKILL.md
+git add src/main.rs AGENT.md src/assets/skill/SKILL.md
 git commit -m "feat: muckdb --start starts the daemon without opening a browser"
 ```
 

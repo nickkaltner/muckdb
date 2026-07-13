@@ -805,17 +805,17 @@ git commit -m "feat(web): export sequence tile as mermaid.js (copy button)"
 
 ---
 
-### Task 5: Documentation — SKILL.md + CLAUDE.md
+### Task 5: Documentation — SKILL.md + AGENT.md
 
 **Files:**
 - Modify: `src/assets/skill/SKILL.md` — `session tile` usage block (~`:187`), the kind list (~`:248`), and a new `## Sequence tiles` section (model it on `## Timeline tiles`, ~`:338`).
-- Modify: `CLAUDE.md` — the usage block (~`:71`) and the kind list (~`:115`).
+- Modify: `AGENT.md` — the usage block (~`:71`) and the kind list (~`:115`).
 
 **Interfaces:** none (docs only). Must match the flags/vocabulary defined in Tasks 1–4 exactly.
 
 - [ ] **Step 1: Add `sequence` to the command reference**
 
-In both `SKILL.md` and `CLAUDE.md`, add `sequence` to the `[--chart …]` kind list wherever the full list appears, and add these flag lines to the `session tile` reference block (matching the surrounding style):
+In both `SKILL.md` and `AGENT.md`, add `sequence` to the `[--chart …]` kind list wherever the full list appears, and add these flag lines to the `session tile` reference block (matching the surrounding style):
 
 ```
         [--chart sequence]  (sequence diagram — service comms; one row per message)
@@ -860,7 +860,7 @@ muckdb session tile trace --name login --db ~/data/trace.duckdb --view login_flo
 - [ ] **Step 3: Commit**
 
 ```bash
-git add src/assets/skill/SKILL.md CLAUDE.md
+git add src/assets/skill/SKILL.md AGENT.md
 git commit -m "docs: sequence diagram tile (skill + CLAUDE)"
 ```
 

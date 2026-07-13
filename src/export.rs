@@ -378,7 +378,7 @@ mod tests {
             id: "exp-test".into(),
             title: Some("Export test".into()),
             agent_context: Some("# Sources\n\n- test fixture".into()),
-            claude_session: None,
+            agent_session: None,
             created: 1,
             updated: 2,
             tiles: vec![

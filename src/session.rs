@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::Read;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
 use anyhow::{Context, Result, bail};
@@ -227,9 +227,16 @@ pub struct Session {
     /// decisions that should survive across conversations and exports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub agent_context: Option<String>,
-    /// The Claude Code session UUID this dashboard was built for, if linked.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub claude_session: Option<String>,
+    /// The agent conversation/thread UUID this dashboard was built for, if linked.
+    ///
+    /// Older session files used `claude_session`; keep reading that field so
+    /// existing dashboards migrate on their next save.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        alias = "claude_session"
+    )]
+    pub agent_session: Option<String>,
     pub created: u64,
     pub updated: u64,
     #[serde(default)]
@@ -437,7 +444,7 @@ fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
         id: id.to_string(),
         title,
         agent_context: None,
-        claude_session: None,
+        agent_session: None,
         created: now,
         updated: now,
         tiles: Vec::new(),
@@ -621,6 +628,30 @@ fn closest<'a>(target: &str, options: impl Iterator<Item = &'a str>) -> Option<&
 fn is_volatile_path(db: &str) -> bool {
     let temp = std::env::temp_dir().display().to_string();
     db.starts_with(&temp) || db.starts_with("/tmp/") || db.starts_with("/var/tmp/")
+}
+
+/// Resolve a database reference before it is persisted in a session tile.
+///
+/// Tiles are rendered by the daemon, whose working directory is not necessarily
+/// the CLI's working directory. Persisting a relative path would therefore pass
+/// CLI-time validation but fail when the dashboard is viewed. Canonicalise an
+/// existing path (which also resolves symlinks); retain an absolute lexical path
+/// for a not-yet-created database so `--no-validate` keeps its documented use.
+fn resolve_db_path_from(base: &Path, db: &str) -> PathBuf {
+    let path = Path::new(db);
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        base.join(path)
+    };
+    fs::canonicalize(&absolute).unwrap_or(absolute)
+}
+
+fn resolve_db_path(db: &str) -> Result<String> {
+    let cwd = std::env::current_dir().context("resolving the current directory for --db")?;
+    Ok(resolve_db_path_from(&cwd, db)
+        .to_string_lossy()
+        .into_owned())
 }
 
 fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart) -> Result<()> {
@@ -869,6 +900,14 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     Ok(())
 }
 
+/// Return the neutral session-link flag, falling back to the legacy alias.
+/// An explicit `--agent-session` wins when both are supplied.
+fn agent_session_arg(args: &Args) -> Option<&str> {
+    args.get("agent-session")
+        .filter(|id| !id.is_empty())
+        .or_else(|| args.get("claude").filter(|id| !id.is_empty()))
+}
+
 fn read_md(value: &str) -> Result<String> {
     if value == "-" {
         let mut buf = String::new();
@@ -926,10 +965,10 @@ pub fn cli(args: &[String]) -> Result<i32> {
             let id = slug(&name);
             let _lock = lock_session(&id)?;
             let mut s = load_or_new(&id, p.get("title").map(str::to_string).or(Some(name)))?;
-            // Link this dashboard to a Claude Code session by UUID, when given.
-            // Agents pass their own id via $CLAUDE_CODE_SESSION_ID.
-            if let Some(uuid) = p.get("claude").filter(|u| !u.is_empty()) {
-                s.claude_session = Some(uuid.to_string());
+            // Link this dashboard to its creating agent's conversation/thread.
+            // `--claude` remains a compatibility alias for existing scripts.
+            if let Some(uuid) = agent_session_arg(&p) {
+                s.agent_session = Some(uuid.to_string());
             }
             save(&s)?;
             crate::facade::ensure_daemon()?;
@@ -937,8 +976,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "session {id} ready at http://localhost:{}/session/{id}",
                 crate::facade::resolved_port()
             );
-            if let Some(uuid) = &s.claude_session {
-                println!("linked to Claude session {uuid}");
+            if let Some(uuid) = &s.agent_session {
+                println!("linked to agent session {uuid}");
             }
             Ok(0)
         }
@@ -1054,7 +1093,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
             let id = slug(&name);
             let _lock = lock_session(&id)?;
             let tile_name = p.get("name").context("--name <tile> required")?.to_string();
-            let db = p.get("db").context("--db <path> required")?.to_string();
+            let db = resolve_db_path(p.get("db").context("--db <path> required")?)?;
             let view = p.get("view").map(str::to_string);
             let sql = p.get("sql").map(str::to_string);
             if view.is_none() && sql.is_none() {
@@ -1230,7 +1269,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         _ => {
             eprintln!(
                 "usage: muckdb session <create|list|post|section|context|tile|move|screenshot|export|import|rm> ...\n\
-                 \n  create <name> [--title T] [--claude UUID]\n  list\n  \
+                 \n  create <name> [--title T] [--agent-session UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
@@ -1597,6 +1636,27 @@ mod tests {
     }
 
     #[test]
+    fn resolves_relative_tile_database_paths_to_absolute_paths() {
+        let base = std::env::temp_dir().join(format!("muckdb-session-path-{}", std::process::id()));
+        fs::create_dir_all(&base).unwrap();
+        let db = base.join("tile.duckdb");
+        fs::write(&db, []).unwrap();
+
+        assert_eq!(
+            resolve_db_path_from(&base, "tile.duckdb"),
+            db.canonicalize().unwrap()
+        );
+        // Keep `--no-validate` useful for a database that will be created later,
+        // while still making its stored path independent of the daemon's cwd.
+        assert_eq!(
+            resolve_db_path_from(&base, "later.duckdb"),
+            base.join("later.duckdb")
+        );
+
+        fs::remove_dir_all(base).unwrap();
+    }
+
+    #[test]
     fn read_md_unescapes_shell_literal_newlines() {
         assert_eq!(read_md("# T\\n\\nBody").unwrap(), "# T\n\nBody");
         assert_eq!(read_md("a\\tb").unwrap(), "a\tb");
@@ -1618,6 +1678,33 @@ mod tests {
             value["agent_context"],
             "# Data sources\n\n- warehouse.duckdb"
         );
+    }
+
+    #[test]
+    fn agent_session_reads_legacy_field_and_serializes_neutral_field() {
+        let session: Session = serde_json::from_str(
+            r#"{"id":"handoff","claude_session":"legacy-id","created":1,"updated":1,"tiles":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(session.agent_session.as_deref(), Some("legacy-id"));
+
+        let value = serde_json::to_value(session).unwrap();
+        assert_eq!(value["agent_session"], "legacy-id");
+        assert!(value.get("claude_session").is_none());
+    }
+
+    #[test]
+    fn agent_session_flag_prefers_neutral_name_and_keeps_legacy_alias() {
+        let legacy = Args::parse(&[s("--claude"), s("legacy-id")]);
+        assert_eq!(agent_session_arg(&legacy), Some("legacy-id"));
+
+        let both = Args::parse(&[
+            s("--claude"),
+            s("legacy-id"),
+            s("--agent-session"),
+            s("agent-id"),
+        ]);
+        assert_eq!(agent_session_arg(&both), Some("agent-id"));
     }
 
     // ---- timeline validation (needs the `duckdb` CLI) --------------------

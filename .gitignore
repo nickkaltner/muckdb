@@ -1,4 +1,7 @@
 /target
 
+# Local snapshots created by the machine-health dashboard workflow.
+/machine-health-*.duckdb
+
 # Claude Code local settings + agent worktrees
 .claude/

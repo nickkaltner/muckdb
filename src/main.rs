@@ -88,7 +88,7 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         Some("--version" | "-version") => version(),
         // Session dashboards: `muckdb session <create|list|post|context|tile|rm> ...`
         Some("session") => session::cli(&args[1..]),
-        // Install the bundled Claude skill: `muckdb skill install`.
+        // Install the bundled agent skill: `muckdb skill install`.
         Some("skill") => skill::cli(&args[1..]),
         // Column display formats: `muckdb format <db> <col> --currency USD`.
         Some("format") => formats::cli(&args[1..]),
@@ -129,19 +129,19 @@ muckdb commands:
   session <subcommand>   build dashboards: create | list | post | context | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
-  skill <install|uninstall|path>   manage the muckdb Claude Code skill
+  skill <install|uninstall|path>   manage the muckdb agent skill
 
-Claude Code skill:
+Agent skill:
   muckdb ships a skill that teaches coding agents to use muckdb by default for
   any data work — charting, SQL analysis, and presenting verifiable dashboards.
   Install it into your user skills directory so agents pick it up automatically:
 
     muckdb skill install            write it to ~/.agents/skills/muckdb/SKILL.md
-    muckdb skill install -f         update it there and migrate any ~/.claude copy
+    muckdb skill install -f         update it there and migrate any legacy ~/.claude copy
     muckdb skill path               print where it would be installed
     muckdb skill uninstall          remove it
 
-  Then restart Claude Code (or start a new session) to load it.
+  Then start a new agent session to load it.
 
 Anything else is passed straight through to duckdb:
 

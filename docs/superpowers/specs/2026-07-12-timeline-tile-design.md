@@ -174,7 +174,7 @@ Add `"timeline"` to the widen gate at `index.html:3384`; the existing
   - **A worked example** command per use case (copy-pasteable), each showing how
     to shape the view (`GROUP BY`/`ORDER BY` for lane order) and set column
     formats.
-- Mirror the same detail into the repo `CLAUDE.md` chart docs where the other
+- Mirror the same detail into the repo `AGENT.md` chart docs where the other
   kinds are documented, so both stay consistent.
 
 ## Tests
@@ -198,9 +198,9 @@ Add `"timeline"` to the widen gate at `index.html:3384`; the existing
 ## Definition of done
 
 - `cargo fmt` clean, `cargo clippy --all-targets -- -D warnings` clean,
-  `cargo test` green (per `CLAUDE.md` CI rules).
+  `cargo test` green (per `AGENT.md` CI rules).
 - E2E timeline spec passes.
 - `demo.sh` produces the timeline section; `muckdb session screenshot demo`
   looks right (verified by reading the PNG).
-- SKILL.md + CLAUDE.md document the tile in detail with worked examples.
+- SKILL.md + AGENT.md document the tile in detail with worked examples.
 - **Not** pushed or released — await the user's word.

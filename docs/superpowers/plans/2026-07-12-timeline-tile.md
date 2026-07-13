@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **Do NOT push or release** until the user explicitly gives the word. No `git push`, no `cargo release`, no tags.
-- CI order that must stay green (per `CLAUDE.md`): `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test`. Always run `cargo fmt` (not `--check`), `cargo clippy --all-targets -- -D warnings`, and `cargo test` before each commit.
+- CI order that must stay green (per `AGENT.md`): `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings` → `cargo build` → `cargo test`. Always run `cargo fmt` (not `--check`), `cargo clippy --all-targets -- -D warnings`, and `cargo test` before each commit.
 - The `Chart` struct has no `Default` derive: **every `Chart { … }` literal must list all fields**. New fields use `#[serde(default, skip_serializing_if = "Option::is_none")]` so other chart kinds omit them from JSON.
 - Chart `kind` is a free-form `String`, not an enum — no new Rust variant is needed, but the frontend switch appears in **three** places that must all be updated: `loadTileChart`, `zoomTile`, `panelHtml`.
 - New flag→field name mapping: `--depends-on` → `depends_on` (the parser keeps the hyphen in the key, so read `p.get("depends-on")`).
@@ -28,7 +28,7 @@
 - `tests/e2e/specs/timeline.spec.ts` — **create**: DOM assertions.
 - `demo.sh` — **modify**: timeline section + tiles + summary row.
 - `src/assets/skill/SKILL.md` — **modify**: detailed `timeline` docs.
-- `CLAUDE.md` — **modify**: mirror the timeline docs.
+- `AGENT.md` — **modify**: mirror the timeline docs.
 
 ---
 
@@ -1002,11 +1002,11 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ---
 
-## Task 7: Documentation — SKILL.md (detailed) + CLAUDE.md mirror
+## Task 7: Documentation — SKILL.md (detailed) + AGENT.md mirror
 
 **Files:**
 - Modify: `src/assets/skill/SKILL.md` (command reference ~187; chart-kind list ~244; new detailed `timeline` subsection; option rows)
-- Modify: `CLAUDE.md` (mirror the chart-kind list + timeline docs where the other kinds are documented)
+- Modify: `AGENT.md` (mirror the chart-kind list + timeline docs where the other kinds are documented)
 
 **Interfaces:** none (docs only).
 
@@ -1094,15 +1094,15 @@ In the "Pick the chart that packs in the most information" list, after the `map`
     ```
 ````
 
-- [ ] **Step 4: Mirror into CLAUDE.md.**
+- [ ] **Step 4: Mirror into AGENT.md.**
 
-In the repo `CLAUDE.md`, apply the same two edits (chart-kind list + a condensed version of the timeline bullet with the four use cases, the options, and at least the trace + incident worked examples) in the chart-docs section where `map`/`box` are documented, so the checked-in guide matches the skill.
+In the repo `AGENT.md`, apply the same two edits (chart-kind list + a condensed version of the timeline bullet with the four use cases, the options, and at least the trace + incident worked examples) in the chart-docs section where `map`/`box` are documented, so the checked-in guide matches the skill.
 
 - [ ] **Step 5: Commit.**
 
 ```bash
-git add src/assets/skill/SKILL.md CLAUDE.md
-git commit -m "docs(timeline): detailed skill + CLAUDE.md docs with use cases
+git add src/assets/skill/SKILL.md AGENT.md
+git commit -m "docs(timeline): detailed skill + AGENT.md docs with use cases
 
 Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 ```
@@ -1120,6 +1120,6 @@ Co-Authored-By: Claude Opus 4.8 (1M context) <noreply@anthropic.com>"
 
 ## Self-Review notes (author)
 
-- **Spec coverage:** data model + auto-detected axis (Task 1/3), validation incl. type check (Task 2), colour default+category+legend (Task 3), dependencies (Task 3 payload + Task 4 draw), markers via `--event` (Task 3/4), hover cursor + range axis (Task 3/4), rich tooltip (Task 5), sublanes (Task 3), full-width + grip (Task 3), demo (Task 6), detailed skill + CLAUDE.md (Task 7), tests throughout. All spec sections mapped.
+- **Spec coverage:** data model + auto-detected axis (Task 1/3), validation incl. type check (Task 2), colour default+category+legend (Task 3), dependencies (Task 3 payload + Task 4 draw), markers via `--event` (Task 3/4), hover cursor + range axis (Task 3/4), rich tooltip (Task 5), sublanes (Task 3), full-width + grip (Task 3), demo (Task 6), detailed skill + AGENT.md (Task 7), tests throughout. All spec sections mapped.
 - **Type consistency:** `tlPayloads`/`tlSeq` defined in Task 3, consumed in Task 4; payload shape `{t0,t1,numeric,startFmt,deps,events,totalH}` is identical at produce and consume; `tlTip` signature matches its Task-5 call site; DOM class names (`.tl-plot`,`.tl-overlay`,`.tl-deps path`,`.tl-events line/text`,`.tl-cursor`,`.tl-readout`,`.tl-bar`,`.tl-lane-label`,`.tl-legend .tl-leg`) match between renderer, overlay, CSS, and specs.
 - **Placeholders:** none — all steps carry real code/commands. The two `NOTE`s (test DB write helper; `Option::context` fallback) are compiler-verifiable branch points, not deferred work.

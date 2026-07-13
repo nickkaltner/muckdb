@@ -52,13 +52,13 @@ class Muckdb < Formula
 
   def caveats
     <<~EOS
-      muckdb ships a Claude Code skill that teaches coding agents how to drive it.
+      muckdb ships an agent skill that teaches coding agents how to drive it.
 
       First time? Install it into your skills directory:
         muckdb skill install
 
       Upgrading muckdb? The bundled skill is updated too — refresh your copy so
-      agents get the latest guidance (this overwrites ~/.claude/skills/muckdb/SKILL.md):
+      agents get the latest guidance (this refreshes ~/.agents/skills/muckdb/SKILL.md):
         muckdb skill install --force
 
       Remove it again with:

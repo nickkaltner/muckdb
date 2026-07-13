@@ -183,10 +183,11 @@ session tile` warns when a `--db` lives in a temp dir.
 # 1. Tag your work so commands are grouped under a session in the ledger.
 export MUCKDB_SESSION=pond-analysis
 
-# 2. Create the session, linked to THIS Claude session via its UUID so the
-#    dashboard is tied to the conversation that built it.
+# 2. Create the session, linked to THIS agent conversation via its UUID so the
+#    dashboard is tied to the conversation that built it. Codex exposes
+#    $CODEX_THREAD_ID; other agents may expose their own session identifier.
 muckdb session create pond-analysis --title "Pond analysis" \
-  --claude "$CLAUDE_CODE_SESSION_ID"
+  --agent-session "$CODEX_THREAD_ID"
 
 # 2a. Before changing an existing dashboard, read its agent handoff. Update it
 # whenever you add/replace a datasource or change an assumption used by tiles.
@@ -217,7 +218,7 @@ muckdb session context pond-analysis save --md "# Data sources\n\n- ~/data/ponds
 ## Command reference
 
 ```
-muckdb session create <name> [--title T] [--claude UUID]
+muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
@@ -250,10 +251,10 @@ muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
 ```
 
-- **Link the session to your conversation.** Pass `--claude "$CLAUDE_CODE_SESSION_ID"`
-  on `create` to record the Claude Code session UUID on the dashboard. It's shown
-  at the top of the session view and returned by `muckdb ls session <id>`
-  (`claude_session`), so a human can tell which conversation produced a dashboard.
+- **Link the session to your conversation.** Pass `--agent-session "$CODEX_THREAD_ID"`
+  on `create` to record the agent conversation/thread UUID on the dashboard. It's
+  shown at the top of the session view and returned by `muckdb ls session <id>`
+  (`agent_session`), so a human can tell which conversation produced a dashboard.
 - **Read and maintain the agent context.** On an existing session, start with
   `muckdb session context <name> read`. Save a Markdown update with `context
   <name> save --md -` whenever a contributing datasource, its provenance, or a
