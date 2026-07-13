@@ -136,8 +136,8 @@ Claude Code skill:
   any data work — charting, SQL analysis, and presenting verifiable dashboards.
   Install it into your user skills directory so agents pick it up automatically:
 
-    muckdb skill install            write it to ~/.claude/skills/muckdb/SKILL.md
-    muckdb skill install --force    overwrite an existing copy
+    muckdb skill install            write it to ~/.agents/skills/muckdb/SKILL.md
+    muckdb skill install -f         update it there and migrate any ~/.claude copy
     muckdb skill path               print where it would be installed
     muckdb skill uninstall          remove it
 
