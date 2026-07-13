@@ -520,7 +520,13 @@
     box-shadow: 0 1px 2px rgba(0,0,0,0.18); cursor: default; display: flex; align-items: center; }
   .tl-bar-label { font-size: 11px; line-height: 1; padding: 0 6px; color: var(--on-accent, #14171b);
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
-  .tl-overlay { position: absolute; inset: 0; pointer-events: none; }
+  /* Dependency paths sit below bars: a route may pass behind an unrelated bar,
+     but must never be painted across its label or fill. Event markers retain a
+     separate top layer so they remain readable across the whole timeline. */
+  .tl-overlay, .tl-event-overlay { position: absolute; inset: 0; pointer-events: none; }
+  .tl-overlay { z-index: 1; }
+  .tl-event-overlay { z-index: 3; }
+  .tl-bar { z-index: 2; }
   /* Marker band above the lanes: event labels (stacked to avoid overlap) and the
      live hover-time readout live here, so nothing overprints the bars. */
   .tl-head { display: grid; grid-template-columns: var(--tl-gutter) 1fr; }
@@ -535,7 +541,7 @@
   .tl-head-readout.show { opacity: 1; }
   /* Hover cursor uses the "live" orange accent — deliberately distinct from the
      teal --event markers. */
-  .tl-cursor { position: absolute; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--orange);
+  .tl-cursor { position: absolute; z-index: 4; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--orange);
     pointer-events: none; opacity: 0; }
   .tl-cursor.show { opacity: 0.9; }
   .tl-axis-row { display: grid; grid-template-columns: var(--tl-gutter) 1fr; margin-top: 2px; }
@@ -3768,7 +3774,11 @@
       });
       const subCount = Math.max(1, subEnds.length);
       const top = y, height = subCount * TL_ROW_H + TL_LANE_PAD * 2;
-      list.forEach((b) => { b.topPx = top + TL_LANE_PAD + b.sub * TL_ROW_H; b.color = barColor(b, laneIndex); });
+      list.forEach((b) => {
+        b.topPx = top + TL_LANE_PAD + b.sub * TL_ROW_H;
+        b.laneTopPx = top;
+        b.color = barColor(b, laneIndex);
+      });
       laneRows.push({ lane, top, height });
       y += height;
     });
@@ -3784,8 +3794,10 @@
         style="left:${l}%;width:${w}%;top:${b.topPx}px;height:${TL_BAR_H}px;background:${b.color}">
         <span class="tl-bar-label">${esc(b.label)}</span></div>`;
     }).join("");
-    const gutterHtml = laneRows.map((lr) =>
-      `<div class="tl-lane-label" style="top:${lr.top}px;height:${lr.height}px" title="${attr(lr.lane)}">${esc(lr.lane)}</div>`).join("");
+    const gutterHtml = laneRows.map((lr) => {
+      const tip = `<b>Lane</b><br>${esc(lr.lane)}`;
+      return `<div class="tl-lane-label wm-x" data-tip="${attr(tip)}" style="top:${lr.top}px;height:${lr.height}px" title="${attr(lr.lane)}">${esc(lr.lane)}</div>`;
+    }).join("");
     const bandsHtml = laneRows.map((lr, i) =>
       `<div class="tl-band${i % 2 ? " alt" : ""}" style="top:${lr.top}px;height:${lr.height}px"></div>`).join("");
     const legendHtml = (ci >= 0 && cats.length)
@@ -3798,11 +3810,57 @@
     // Overlay payload (deps + events) for hydrateTimelines().
     const id = "tl" + (++tlSeq);
     const barById = {}; bars.forEach((b) => { if (b.id) barById[b.id] = b; });
-    const deps = [];
+    // Connect at bar edges, rather than their centres.  Each relationship gets
+    // its own port on a bar and its own elbow channel, so a fan-out/fan-in reads
+    // as separate connections instead of a single shared line.
+    const depPairs = [];
     bars.forEach((b) => b.deps.forEach((pid) => {
       const p = barById[pid];
-      if (p) deps.push({ fromFrac: frac(p.e), fromY: p.topPx + TL_BAR_H / 2, toFrac: frac(b.s), toY: b.topPx + TL_BAR_H / 2 });
+      if (p) depPairs.push({ parent: p, child: b });
     }));
+    const outgoing = new Map(), incoming = new Map();
+    depPairs.forEach((d) => {
+      outgoing.set(d.parent, (outgoing.get(d.parent) || 0) + 1);
+      incoming.set(d.child, (incoming.get(d.child) || 0) + 1);
+    });
+    const nextOut = new Map(), nextIn = new Map();
+    const portY = (bar, index, count) =>
+      bar.topPx + 3 + (TL_BAR_H - 6) * (index + 1) / (count + 1);
+    const deps = depPairs.map((d, routeIndex) => {
+      const outIndex = nextOut.get(d.parent) || 0, inIndex = nextIn.get(d.child) || 0;
+      nextOut.set(d.parent, outIndex + 1); nextIn.set(d.child, inIndex + 1);
+      const fromFrac = frac(d.parent.e), toFrac = frac(d.child.s);
+      const gap = toFrac - fromFrac;
+      let elbowFrac;
+      const sameLaneHandoff = d.parent.lane === d.child.lane && gap <= 0.014;
+      if (sameLaneHandoff) {
+        // A back-to-back pair on one lane has no horizontal space between its
+        // boxes. Take a short detour through the lane's top padding: it stays
+        // visible, unlike a connector hidden completely beneath the next bar.
+        // Keep enough horizontal run to read as a deliberate U-shaped handoff
+        // at ordinary tile widths (rather than an almost invisible 1–2px notch).
+        elbowFrac = Math.max(fromFrac, toFrac) + 0.03 + routeIndex * 0.008;
+      } else if (gap > 0.014) {
+        // Spread elbows within the available time gap. This is what keeps the
+        // first legs of a parent's multiple outgoing connectors distinct.
+        const spread = (outIndex - (outgoing.get(d.parent) - 1) / 2) * Math.min(gap * 0.22, 0.07);
+        elbowFrac = fromFrac + gap / 2 + spread;
+      } else {
+        // Overlapping/reversed tasks need an outside detour. For a touching
+        // cross-lane handoff, going just before the child makes the vertical
+        // leg visible; a right detour would sit underneath that child bar.
+        const right = Math.max(fromFrac, toFrac) + 0.025 + routeIndex * 0.012;
+        const left = Math.min(fromFrac, toFrac) - 0.025 - routeIndex * 0.012;
+        elbowFrac = left > 0.015 ? left : (right < 0.985 ? right : Math.max(0.015, left));
+      }
+      return {
+        fromFrac, toFrac, elbowFrac: Math.max(0.005, Math.min(0.995, elbowFrac)),
+        fromY: portY(d.parent, outIndex, outgoing.get(d.parent)),
+        toY: portY(d.child, inIndex, incoming.get(d.child)),
+        railY: sameLaneHandoff ? d.parent.laneTopPx + 2 + (outIndex % 2) * 2 : null,
+        fromId: d.parent.id, toId: d.child.id,
+      };
+    });
     const events = (spec.events || []).map((m) => ({ frac: frac(toT(m.value)), label: m.label || "" }))
       .filter((e) => isFinite(e.frac) && e.frac >= -0.001 && e.frac <= 1.001);
     tlPayloads[id] = { t0, t1, numeric, startFmt, deps, events, totalH };
@@ -3813,6 +3871,7 @@
         <div class="tl-plot" data-tl="${id}" style="height:${totalH}px">
           ${bandsHtml}${barsHtml}
           <svg class="tl-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
+          <svg class="tl-event-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
           <div class="tl-cursor"></div>
         </div>
       </div>
@@ -3835,16 +3894,50 @@
     };
   }
   function renderTimelineOverlay(plot, pay) {
-    const svg = plot.querySelector("svg.tl-overlay"); if (!svg) return;
+    const svg = plot.querySelector("svg.tl-overlay");
+    const eventSvg = plot.querySelector("svg.tl-event-overlay");
+    if (!svg || !eventSvg) return;
     const W = plot.clientWidth, H = pay.totalH; if (!W) return;
-    svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
-    svg.setAttribute("width", W); svg.setAttribute("height", H);
+    [svg, eventSvg].forEach((el) => {
+      el.setAttribute("viewBox", `0 0 ${W} ${H}`);
+      el.setAttribute("width", W); el.setAttribute("height", H);
+    });
     const line = cssVar("--muted") || "#9b958a";
     const m = tlMarkerStyle();
+    const markerXs = pay.events.map((e) => Math.max(0, Math.min(1, e.frac)) * W);
+    const markerGap = 4; // leave the event marker itself visually uninterrupted
+    // A dependency's horizontal legs are split around event markers. The marker
+    // therefore remains a clean, continuous time reference instead of becoming
+    // a plus-sign with a relationship line. Its vertical elbow is nudged away
+    // as well when the two would otherwise be collinear.
+    const routedPath = (points) => {
+      let path = `M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
+      for (let i = 1; i < points.length; i++) {
+        const [x0, y0] = points[i - 1], [x1, y1] = points[i];
+        if (Math.abs(y1 - y0) < 0.01) {
+          const dir = x1 >= x0 ? 1 : -1;
+          const crossings = markerXs.filter((x) =>
+            (dir > 0 ? x > x0 + markerGap && x < x1 - markerGap : x < x0 - markerGap && x > x1 + markerGap));
+          crossings.forEach((x) => {
+            path += ` H${(x - dir * markerGap).toFixed(1)}`;
+            path += ` M${(x + dir * markerGap).toFixed(1)} ${y0.toFixed(1)}`;
+          });
+          path += ` H${x1.toFixed(1)}`;
+        } else path += ` V${y1.toFixed(1)}`;
+      }
+      return path;
+    };
     const deps = pay.deps.map((d) => {
       const x1 = d.fromFrac * W, y1 = d.fromY, x2 = d.toFrac * W, y2 = d.toY;
-      const mx = (x1 + x2) / 2;
-      return `<path d="M${x1.toFixed(1)} ${y1} H${mx.toFixed(1)} V${y2} H${x2.toFixed(1)}" fill="none" stroke="${line}" stroke-width="1" opacity="${TL_DEP_OPACITY}"/>` +
+      let elbow = d.elbowFrac * W;
+      markerXs.forEach((x) => {
+        if (Math.abs(elbow - x) < markerGap + 1) elbow = Math.min(W - markerGap - 1, x + markerGap + 1);
+      });
+      const points = d.railY == null
+        ? [[x1, y1], [elbow, y1], [elbow, y2], [x2, y2]]
+        : [[x1, y1], [elbow, y1], [elbow, d.railY], [x2, d.railY], [x2, y2]];
+      const route = routedPath(points);
+      return `<path data-from="${attr(d.fromId)}" data-to="${attr(d.toId)}" d="${route}" fill="none" stroke="${line}" stroke-width="1" opacity="${TL_DEP_OPACITY}"/>` +
         `<circle cx="${x2.toFixed(1)}" cy="${y2}" r="2.2" fill="${line}" opacity="${TL_DEP_OPACITY}"/>`;
     }).join("");
     // Marker lines run the full plot height; their labels are drawn in the head
@@ -3853,7 +3946,8 @@
       const x = (Math.max(0, Math.min(1, e.frac)) * W).toFixed(1);
       return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
     }).join("");
-    svg.innerHTML = `<g class="tl-deps">${deps}</g><g class="tl-events">${events}</g>`;
+    svg.innerHTML = `<g class="tl-deps">${deps}</g>`;
+    eventSvg.innerHTML = `<g class="tl-events">${events}</g>`;
   }
   // Marker labels + the live hover-time readout, drawn in the head band above the
   // lanes. Labels are packed into stacked rows so overlapping ones sit below each

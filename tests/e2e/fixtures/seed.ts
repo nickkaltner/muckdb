@@ -40,7 +40,7 @@ CREATE VIEW deploy_timeline AS SELECT * FROM (VALUES
   ('build',  'compile',   0.0,  40.0, 'ok',     's1', NULL),
   ('build',  'lint',      5.0,  30.0, 'ok',     's2', NULL),   -- overlaps compile → sublane
   ('deploy', 'push',     40.0,  70.0, 'ok',     's3', 's1'),
-  ('deploy', 'migrate',  70.0,  95.0, 'failed', 's4', 's3')
+  ('deploy', 'migrate',  70.0,  95.0, 'failed', 's4', 's1,s3') -- fan-in; s1 also fans out to push
 ) t(lane, task, t0, t1, status, sid, parent);
 
 -- An absolute-time timeline (UTC in the db); a --tz local format shifts its axis

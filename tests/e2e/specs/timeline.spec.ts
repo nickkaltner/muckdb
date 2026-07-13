@@ -32,12 +32,23 @@ test.describe('timeline tile', () => {
     const panel = page.locator('.panel[data-tile="timeline"]');
     await expect(panel).toBeVisible();
 
-    // Two dependencies (s1→s3, s3→s4) → two orthogonal connector paths.
-    await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(2);
+    // Three dependencies (s1→s3, s1→s4, s3→s4) → three orthogonal paths.
+    await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(3);
+
+    // The two paths leaving s1 have dedicated ports/elbows; they must not be
+    // the same visual trunk merely because they share a parent.
+    const fanout = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"]');
+    await expect(fanout).toHaveCount(2);
+    expect(await fanout.nth(0).getAttribute('d')).not.toBe(await fanout.nth(1).getAttribute('d'));
+    // The s1→s4 route crosses the cutover time; it has a gap there rather than
+    // painting across the event marker (multiple SVG move commands).
+    const markerSafe = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s4"]');
+    expect((await markerSafe.getAttribute('d'))!.match(/M/g)!.length).toBeGreaterThan(1);
+    await expect(panel.locator('.tl-bar').first()).toHaveCSS('z-index', '2');
 
     // The --event '50|cutover' marker → a dashed line in the plot, and its label
     // is drawn in the head band above the lanes (not overprinting the bars).
-    await expect(panel.locator('svg.tl-overlay .tl-events line')).toHaveCount(1);
+    await expect(panel.locator('svg.tl-event-overlay .tl-events line')).toHaveCount(1);
     await expect(panel.locator('.tl-head-plot .tl-ev-lab', { hasText: 'cutover' })).toBeVisible();
 
     // Hovering the plot shows the time cursor plus a readout in the head band.
@@ -105,7 +116,7 @@ test.describe('timeline tile', () => {
     await expect(panel).toBeVisible();
     // The --event '2026-05-01 14:15|escalated' marker positions against the
     // absolute (UTC) domain: a dashed line in the plot + its label in the band.
-    await expect(panel.locator('svg.tl-overlay .tl-events line')).toHaveCount(1);
+    await expect(panel.locator('svg.tl-event-overlay .tl-events line')).toHaveCount(1);
     await expect(panel.locator('.tl-head-plot .tl-ev-lab', { hasText: 'escalated' })).toBeVisible();
   });
 
@@ -117,6 +128,16 @@ test.describe('timeline tile', () => {
     await expect(tip).toBeVisible();
     await expect(tip).toContainText('lane: deploy');
     await expect(tip).toContainText('status: failed');  // colour category, an extra column
+  });
+
+  test('lane label hover shows its full name', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="timeline"]');
+    await panel.locator('.tl-lane-label', { hasText: 'build' }).hover();
+    const tip = page.locator('.wm-tip');
+    await expect(tip).toBeVisible();
+    await expect(tip).toContainText('Lane');
+    await expect(tip).toContainText('build');
   });
 
   test('bar tooltip escapes a hostile link_title instead of injecting HTML', async ({ page }) => {
