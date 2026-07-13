@@ -1187,6 +1187,33 @@
       bargrad: ["#fdfcf7", "#3f86a8@0.2", "#1f5470@0.8", "#122c42"],
       chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
     },
+    // "sunroom": a bright, lived-in light mode. The warm paper ground is
+    // deliberately visible behind clean white surfaces, while ink-blue,
+    // coral, mint and violet keep dense charts unmistakably categorical.
+    sunroom: {
+      label: "sunroom", light: true, vars: {
+        bg: "#fff1dc", surface: "#fffaf2", raised: "#ffffff", line: "#e7cdb1", "line-soft": "#f1ddc8",
+        fg: "#24213b", muted: "#6f6273", faint: "#a4908e", "on-accent": "#fffaf2", mist: "#73709a",
+        orange: "#e04f71", amber: "#f27d5d", ember: "#b73562", "orange-dim": "#b7556c", teal: "#168f88",
+        ok: "#34875b", fail: "#c63854",
+        glow: "radial-gradient(920px 520px at 88% -16%, rgba(244,125,93,0.20), transparent 68%), radial-gradient(720px 460px at -8% 108%, rgba(73,101,202,0.13), transparent 70%)",
+        "grad-panel": "linear-gradient(135deg, rgba(242,125,93,0.105), rgba(255,255,255,0) 42%), linear-gradient(0deg, rgba(73,101,202,0.035), rgba(73,101,202,0) 58%)",
+        hi: "inset 0 1px 0 rgba(255,255,255,0.92), 0 1px 2px rgba(99,61,45,0.06)",
+        selection: "rgba(224, 79, 113, 0.22)",
+        "anno-target": "#168f88", "anno-threshold": "#c63854", "anno-event": "#4965ca",
+      },
+      grad2: ["#ff9a6b", "#c13e79"],
+      bargrad: ["#ffd4ad", "#f27d5d@0.30", "#e04f71@0.68", "#8d2f75"],
+      barRadius: 7,
+      arcOpacity: 0.48, labelBg: "var(--raised)", labelBgAlpha: 0.9,
+      chart: ["#d86751", "#7a386f", "#c25a37", "#c5406a", "#60407e", "#b64b50", "#e06a43", "#96305f", "#74508a", "#b85676"],
+      catN: 20,
+      // A tightly related warm fan, rather than a rainbow: coral and apricot
+      // branch one way; raspberry, wine and aubergine the other. Value still
+      // alternates, but later categories gain enough hue movement to read apart.
+      cat: ["#d86751", "#7a386f", "#c25a37", "#c5406a", "#60407e", "#b64b50", "#e06a43", "#96305f", "#74508a", "#b85676",
+        "#c84e44", "#6e2d61", "#d15d66", "#82467a", "#b9673c", "#a93569", "#d74655", "#5d3a6c", "#c37a58", "#8b2855"],
+    },
     // "glacier": cold daylight on ice — the cool counterpart to paper's warm
     // cream. Pale ice-blue ground, deep arctic-slate ink, glacial azure accent;
     // bars stay square-edged (no radius) like cut ice, and the chart palette
