@@ -431,6 +431,7 @@
   .hm { display: flex; flex-direction: column; gap: 10px; padding: 4px 2px; }
   .hm .pd-cell { cursor: default; }
   .hm .pd-cell:hover { transform: none; box-shadow: none; }
+  .hm .pd-cell.wm-x:hover { box-shadow: inset 0 0 0 2px var(--orange); }
   .hm-legend { display: flex; align-items: center; gap: 8px; font-size: 10.5px; color: var(--faint); }
   .hm-grad { flex: 0 0 120px; height: 8px; border-radius: 4px; background: linear-gradient(90deg, color-mix(in srgb, var(--orange) 8%, var(--surface)), color-mix(in srgb, var(--orange) 92%, var(--surface))); border: 1px solid var(--line-soft); }
   /* Map tiles: an ASCII world map scaled to fill the panel width (container
@@ -537,7 +538,7 @@
     pointer-events: none; }
   .tl-head-readout { position: absolute; font-size: 10.5px; line-height: 14px; color: var(--orange);
     background: var(--surface); border: 1px solid var(--orange-dim); border-radius: 3px;
-    padding: 0 4px; white-space: nowrap; pointer-events: none; opacity: 0; }
+    padding: 0 4px; white-space: nowrap; pointer-events: none; opacity: 0; z-index: 200; }
   .tl-head-readout.show { opacity: 1; }
   /* Hover cursor uses the "live" orange accent — deliberately distinct from the
      teal --event markers. */
@@ -3664,8 +3665,9 @@
       if (v === undefined) return `<div class="pd-cell empty hm-cell"></div>`;
       const t = (v - lo) / span;
       const fill = Math.round(8 + t * 84);
-      // --no-values: colour only; the hover title still carries the figure.
-      return `<div class="pd-cell hm-cell" style="background:${mixColors('var(--orange)', fill, 'var(--surface)')}" title="${attr(`${y} × ${x} — ${fv(v)}`)}">${spec.no_values ? "" : esc(fv(v))}</div>`;
+      // --no-values: colour only; the rich hover still carries the figure.
+      const tip = `<b>${esc(y)} × ${esc(x)}</b><br>${esc(vname)}: ${esc(fv(v))}`;
+      return `<div class="pd-cell hm-cell wm-x" style="background:${mixColors('var(--orange)', fill, 'var(--surface)')}" data-tip="${attr(tip)}">${spec.no_values ? "" : esc(fv(v))}</div>`;
     }).join("")).join("");
     const hmGrad = `linear-gradient(90deg, ${mixColors('var(--orange)', 8, 'var(--surface)')}, ${mixColors('var(--orange)', 92, 'var(--surface)')})`;
     const legend = `<div class="hm-legend"><span>${esc(fv(lo))}</span><span class="hm-grad" style="background:${hmGrad}"></span><span>${esc(fv(hi))}</span></div>`;
@@ -4030,7 +4032,11 @@
       headPlot.appendChild(lab);
     });
     const rd = headPlot.querySelector(".tl-head-readout");
-    if (rd) rd.style.top = (nRows * TL_EV_LH) + "px";
+    if (rd) {
+      const top = (nRows * TL_EV_LH) + "px";
+      rd.style.top = top;
+      rd.dataset.headTop = top;
+    }
   }
   // "Nice" axis steps in seconds (1s … 1y); the absolute axis multiplies by 1000
   // to work in ms. Ticks land on multiples of the chosen step so they read as
@@ -4098,14 +4104,20 @@
           cursor.classList.add("show");
           const t = pay.t0 + (pay.t1 - pay.t0) * fx;
           if (readout) {
-            const hw = headPlot.clientWidth || rect.width, x = fx * hw;
             readout.textContent = tlFmtTimeHover(t, pay);
             readout.classList.add("show");
-            // Centre the pill on the cursor, then clamp to its MEASURED width so it
-            // never runs off either edge (absolute-time text is far wider than a
-            // duration — a fixed flip threshold clipped it).
             readout.style.transform = "none";
             const w = readout.offsetWidth;
+            const headRect = headPlot.getBoundingClientRect();
+            // Once the timeline header has scrolled away, keep the time in the
+            // viewport rather than leaving it above the visible part of a tall
+            // timeline. It returns to the header as soon as that is visible.
+            const pinToViewport = headRect.bottom < 0 || headRect.top > window.innerHeight;
+            const hw = pinToViewport ? window.innerWidth : (headPlot.clientWidth || rect.width);
+            const x = pinToViewport ? ev.clientX : fx * hw;
+            readout.style.position = pinToViewport ? "fixed" : "absolute";
+            readout.style.top = pinToViewport ? "8px" : (readout.dataset.headTop || "0px");
+            // Centre the pill on the cursor, then clamp it to the visible edge.
             readout.style.left = Math.max(2, Math.min(x - w / 2, hw - w - 2)) + "px";
           }
         });
@@ -4425,10 +4437,13 @@
     const rowsHtml = boxes.map((b) => {
       const [mn, q1, med, q3, mx] = b.v;
       const wl = pct(mn), wr = pct(mx), bl = pct(q1), bw = Math.max(0.5, pct(q3) - pct(q1)), ml = pct(med);
-      const title = `${b.label} — min ${fv(mn)} · q1 ${fv(q1)} · median ${fv(med)} · q3 ${fv(q3)} · max ${fv(mx)}`;
+      const stats = [["min", mn], ["q1", q1], ["median", med], ["q3", q3], ["max", mx]]
+        .map(([key, value]) => `<li><span class="wm-tip-lb">${key}</span><span class="wm-tip-c">${esc(fv(value))}</span></li>`).join("");
+      const tip = `<b>${esc(b.label)}</b>${b.desc ? `<br><span class="tl-tip-cat">${esc(b.desc)}</span>` : ""}` +
+        `<div class="tl-tip-sep"></div><ul class="wm-tip-list">${stats}</ul>`;
       return `<div class="bx-row">
         <div class="bx-head"><span class="bx-label" title="${attr(b.label)}">${esc(b.label)}</span>${b.desc ? `<span class="bx-desc">${esc(b.desc)}</span>` : ""}</div>
-        <div class="bx-plot" title="${attr(title)}">
+        <div class="bx-plot wm-x" data-tip="${attr(tip)}">
           <span class="box-whisk" style="left:${wl}%;right:${100 - wr}%"></span>
           <span class="box-cap" style="left:${wl}%"></span><span class="box-cap" style="left:${wr}%"></span>
           <span class="box-iqr" style="left:${bl}%;width:${bw}%;background:${mixColors('var(--orange)', 30, 'transparent')}"></span>
@@ -5042,8 +5057,7 @@
     } catch (_) { return 0; }
   }
   // Time tooltips say which clock they're on ("UTC", "AEST", "GMT+10") — a bare
-  // 10:00 on a zone-shifted axis is otherwise ambiguous. Added as an afterTitle
-  // line so the adapter's own title formatting is left alone.
+  // 10:00 on a zone-shifted axis is otherwise ambiguous.
   function zoneLabel(tz) {
     if (!tz || tz === "utc") return "UTC";
     const z = tz === "local" ? undefined : tz;
@@ -5053,11 +5067,30 @@
       return n ? n.value : String(tz);
     } catch (_) { return String(tz); }
   }
-  function addZoneTitle(o, tz) {
+  function addZoneTitle(o, tz, titleFor) {
     o.plugins = o.plugins || {};
     o.plugins.tooltip = o.plugins.tooltip || {};
     const cbs = (o.plugins.tooltip.callbacks = o.plugins.tooltip.callbacks || {});
-    cbs.afterTitle = () => zoneLabel(tz);
+    const defaultTitle = Chart.defaults.plugins.tooltip.callbacks.title;
+    // Keep the clock label on the timestamp's final title line. A separate
+    // afterTitle line wraps awkwardly in the combined multi-series tooltip.
+    cbs.title = function(items) {
+      const title = titleFor ? titleFor(items[0]) : defaultTitle.call(this, items);
+      const lines = Array.isArray(title) ? title : [title];
+      const last = lines.length - 1;
+      return lines.map((line, i) => i === last ? `${line} · ${zoneLabel(tz)}` : line);
+    };
+  }
+  function chartTimeTitle(raw, fmt, tz) {
+    if (fmt && (fmt.tz || fmt.epoch)) {
+      const rendered = fmtTs(fmt, raw);
+      if (rendered) return rendered[0];
+    }
+    const t = parseTs(raw);
+    if (isNaN(t)) return String(raw ?? "");
+    const zone = tz === "local" ? undefined : tz === "utc" ? "UTC" : tz;
+    try { return new Date(t).toLocaleString("sv-SE", { timeZone: zone }); }
+    catch (_) { return new Date(t).toISOString().slice(0, 19).replace("T", " "); }
   }
   function chartOpts(scatter, time, stacked, minUnit, offset) {
     // Grid lines are the theme foreground mixed toward the surface (an opaque soft
@@ -5085,6 +5118,33 @@
     return { responsive: true, maintainAspectRatio: false,
       scales: { x, y },
       plugins: { legend: { display: true, position: "bottom" } } };
+  }
+  // Chart.js's stock `nearest` mode targets data points. That still leaves the
+  // stroke between points frustratingly thin, so line charts get a small hit
+  // corridor around each visible segment. Outside it, no tooltip is shown.
+  if (window.Chart && Chart.Interaction && Chart.Interaction.modes) {
+    Chart.Interaction.modes.muckLineSnap = (chart, event, opts, useFinalPosition) => {
+      const limit = opts.snapDistance || 14;
+      let nearest = null;
+      chart.getSortedVisibleDatasetMetas().forEach((meta) => {
+        if (meta.type !== "line") return;
+        const points = meta.data || [];
+        for (let i = 1; i < points.length; i++) {
+          const a = points[i - 1], b = points[i];
+          if (!a || !b || a.skip || b.skip) continue;
+          const p = a.getCenterPoint(useFinalPosition), q = b.getCenterPoint(useFinalPosition);
+          const dx = q.x - p.x, dy = q.y - p.y, len2 = dx * dx + dy * dy;
+          if (!len2) continue;
+          const u = Math.max(0, Math.min(1, ((event.x - p.x) * dx + (event.y - p.y) * dy) / len2));
+          const sx = p.x + u * dx, sy = p.y + u * dy;
+          const dist = Math.hypot(event.x - sx, event.y - sy);
+          if (dist <= limit && (!nearest || dist < nearest.dist)) {
+            nearest = { dist, datasetIndex: meta.index, index: u < 0.5 ? i - 1 : i, element: u < 0.5 ? a : b };
+          }
+        }
+      });
+      return nearest ? [nearest] : [];
+    };
   }
   // Chart.js plugin: draws a tile's reference lines on top of the data. Reads
   // its spec from options.plugins.muckAnno (set by chartConfig via annoSpec).
@@ -5192,6 +5252,28 @@
       ctx.restore();
     },
   };
+  // Multi-series line charts use a shared x-position, rather than making the
+  // user hunt for one of several thin strokes. Draw that shared position as a
+  // subtle cursor behind the tooltip, like the timeline hover cursor.
+  const muckHoverCursor = {
+    id: "muckHoverCursor",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled || !chart.tooltip) return;
+      const active = chart.tooltip.getActiveElements();
+      const a = active && active[0], area = chart.chartArea;
+      if (!a || !a.element || !isFinite(a.element.x)) return;
+      const x = a.element.x;
+      if (x < area.left || x > area.right) return;
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.strokeStyle = cssVar("--orange") || "#ff7d22";
+      ctx.globalAlpha = 0.7;
+      ctx.lineWidth = 1;
+      ctx.setLineDash([3, 3]);
+      ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+      ctx.restore();
+    },
+  };
   function chartConfig(kind, spec, cols, rows, db, table) {
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
@@ -5243,7 +5325,11 @@
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
       const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX, false, minUnit))); if (anno) o.plugins.muckAnno = anno;
-      if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
+      if (timeX) {
+        // Scatter points have {x, y} data but no category label, so Chart.js's
+        // default title is empty. Read the original x column for every hover.
+        addZoneTitle(o, axisTz, (item) => chartTimeTitle(rows[item.dataIndex]?.[xi], xf, axisTz));
+      }
       o.plugins.legend.display = false; // one series — the title already names it
       const pts = rows.map((r) => ({ x: xv(r), y: +r[yi] }));
       const sets = [{ label: ys[0], data: pts, backgroundColor: hexA(PAL[0], 0.7), borderWidth: 0, pointRadius: 2.5, pointHoverRadius: 4 }];
@@ -5307,6 +5393,18 @@
     }
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar"))); if (anno) o.plugins.muckAnno = anno;
+    if (type === "bar") {
+      // Event bars may be only a few pixels wide. Pick the whole time/category
+      // column, instead of requiring the pointer to land on the painted bar.
+      o.interaction = { mode: "index", axis: "x", intersect: false };
+    } else if (type === "line" && !single) {
+      // All series at one x-value belong together: one tooltip and one cursor
+      // make comparisons much easier than selecting whichever stroke is closest.
+      o.interaction = { mode: "index", axis: "x", intersect: false };
+      o.plugins.muckHoverCursor = { enabled: true };
+    } else if (type === "line") {
+      o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
+    }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
@@ -6069,6 +6167,7 @@
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
+    try { Chart.register(muckHoverCursor); } catch (_) {}
     try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }
