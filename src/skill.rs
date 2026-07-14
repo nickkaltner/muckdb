@@ -13,8 +13,8 @@ use anyhow::{Context, Result};
 /// The skill markdown, baked into the binary at build time.
 pub const SKILL_MD: &str = include_str!("assets/skill/SKILL.md");
 
-/// Skill locations supported by the agent runtimes we integrate with. New
-/// installs use `.agents`; `--force` migrates legacy `.claude` installs there.
+/// Skill locations supported by the agent runtimes we integrate with. The
+/// `.agents` copy is canonical; Claude reads it through a symlink at `.claude`.
 fn skill_paths() -> Result<[PathBuf; 2]> {
     let home = directories::BaseDirs::new()
         .context("could not locate your home directory")?
@@ -42,20 +42,35 @@ fn clean_empty_skill_dir(dest: &Path) {
     }
 }
 
-/// Write the canonical `.agents` copy. When migrating, only remove the legacy
-/// path after the new file has been written successfully.
-fn write_agent_skill(paths: &[PathBuf; 2], migrate_legacy: bool) -> Result<bool> {
-    let dest = &paths[1];
-    if let Some(dir) = dest.parent() {
+/// Write the canonical `.agents` copy and link Claude's skill location to it.
+fn write_agent_skill(paths: &[PathBuf; 2]) -> Result<()> {
+    let claude_dest = &paths[0];
+    let agent_dest = &paths[1];
+    if let Some(dir) = agent_dest.parent() {
         fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    fs::write(dest, SKILL_MD).with_context(|| format!("writing {}", dest.display()))?;
-    let migrated = migrate_legacy && paths[0].exists();
-    if migrated {
-        fs::remove_file(&paths[0]).with_context(|| format!("removing {}", paths[0].display()))?;
-        clean_empty_skill_dir(&paths[0]);
+    fs::write(agent_dest, SKILL_MD).with_context(|| format!("writing {}", agent_dest.display()))?;
+    link_claude_skill(claude_dest, agent_dest)
+}
+
+/// Point Claude at the canonical agent skill, replacing an older standalone
+/// Claude copy after the canonical copy has been written successfully.
+fn link_claude_skill(claude_dest: &Path, agent_dest: &Path) -> Result<()> {
+    if let Some(dir) = claude_dest.parent() {
+        fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
-    Ok(migrated)
+    if claude_dest.exists() || claude_dest.is_symlink() {
+        fs::remove_file(claude_dest)
+            .with_context(|| format!("removing {}", claude_dest.display()))?;
+    }
+    std::os::unix::fs::symlink(agent_dest, claude_dest).with_context(|| {
+        format!(
+            "linking {} to {}",
+            claude_dest.display(),
+            agent_dest.display()
+        )
+    })?;
+    Ok(())
 }
 
 /// Dispatch `muckdb skill <install|uninstall|path>`.
@@ -80,7 +95,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         _ => {
             eprintln!(
                 "usage: muckdb skill <install|uninstall|path>\n\n  \
-                 install [-f|--force]  install in ~/.agents/skills/muckdb; force migrates ~/.claude there\n  \
+                 install [-f|--force]  install in ~/.agents and link it from ~/.claude\n  \
                  uninstall           remove every installed muckdb skill copy\n  \
                  path                print the installed skill path(s), or the default install path"
             );
@@ -94,24 +109,29 @@ fn install(force: bool) -> Result<i32> {
     let paths = skill_paths()?;
     let existing = installed_paths(&paths);
     if !existing.is_empty() && !force {
+        // Versions that predate the Claude link may already have the canonical
+        // `.agents` copy. Add the missing link without rewriting that copy.
+        if paths[1].exists() && !paths[0].exists() && !paths[0].is_symlink() {
+            link_claude_skill(&paths[0], &paths[1])?;
+            println!("linked Claude skill → {}", paths[0].display());
+            println!("Start a new agent session to pick it up.");
+            return Ok(0);
+        }
         let locations = existing
             .iter()
             .map(|p| p.display().to_string())
             .collect::<Vec<_>>()
             .join("\n");
         println!(
-            "muckdb skill already installed at:\n{locations}\n(re-run with -f or --force to update it in ~/.agents)"
+            "muckdb skill already installed at:\n{locations}\n(re-run with -f or --force to update it)"
         );
         return Ok(0);
     }
-    // New installs and forced upgrades converge on the shared agent-skill
-    // location. Write the destination first, then remove the legacy copy: a
-    // failed write can never strand the user without their old skill.
-    let migrated = write_agent_skill(&paths, force)?;
-    if migrated {
-        println!("migrated muckdb skill from {}", paths[0].display());
-    }
+    // Write the canonical copy before replacing Claude's path, so a failed
+    // write can never strand the user without their existing skill.
+    write_agent_skill(&paths)?;
     println!("installed muckdb skill → {}", paths[1].display());
+    println!("linked Claude skill → {}", paths[0].display());
     println!("Start a new agent session to pick it up.");
     Ok(0)
 }
@@ -121,7 +141,7 @@ fn uninstall() -> Result<i32> {
     let paths = skill_paths()?;
     let existing = installed_paths(&paths);
     if existing.is_empty() {
-        println!("muckdb skill is not installed in ~/.claude or ~/.agents (nothing to remove)");
+        println!("muckdb skill is not installed in ~/.agents or ~/.claude (nothing to remove)");
         return Ok(0);
     }
     for dest in existing {
@@ -150,31 +170,26 @@ mod tests {
     }
 
     #[test]
-    fn force_migrates_legacy_and_converges_dual_installs_on_agents() {
+    fn install_writes_agents_copy_and_links_claude_to_it() {
         let root = std::env::temp_dir().join(format!("muckdb-skill-test-{}", std::process::id()));
         let _ = fs::remove_dir_all(&root);
         let paths = skill_paths_for(&root);
 
-        // A normal new install lands in `.agents`.
-        assert!(!write_agent_skill(&paths, false).unwrap());
+        write_agent_skill(&paths).unwrap();
         assert!(paths[1].exists());
-        assert!(!paths[0].exists());
-
-        // A legacy-only install moves to `.agents` with force.
-        fs::remove_file(&paths[1]).unwrap();
-        fs::create_dir_all(paths[0].parent().unwrap()).unwrap();
-        fs::write(&paths[0], "legacy").unwrap();
-        assert!(write_agent_skill(&paths, true).unwrap());
-        assert!(!paths[0].exists());
+        assert!(paths[0].is_symlink());
         assert_eq!(fs::read_to_string(&paths[1]).unwrap(), SKILL_MD);
+        assert_eq!(fs::read_to_string(&paths[0]).unwrap(), SKILL_MD);
 
-        // Dual copies converge on one current `.agents` installation.
+        // An update replaces a legacy standalone Claude copy with the link.
+        fs::remove_file(&paths[0]).unwrap();
         fs::create_dir_all(paths[0].parent().unwrap()).unwrap();
         fs::write(&paths[0], "stale legacy").unwrap();
         fs::write(&paths[1], "stale agent copy").unwrap();
-        assert!(write_agent_skill(&paths, true).unwrap());
-        assert!(!paths[0].exists());
+        write_agent_skill(&paths).unwrap();
+        assert!(paths[0].is_symlink());
         assert_eq!(fs::read_to_string(&paths[1]).unwrap(), SKILL_MD);
+        assert_eq!(fs::read_to_string(&paths[0]).unwrap(), SKILL_MD);
 
         let _ = fs::remove_dir_all(root);
     }

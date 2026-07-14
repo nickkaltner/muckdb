@@ -39,8 +39,8 @@ muckdb bundles an agent skill that teaches coding agents how to drive it
 (sessions, tiles, JSON introspection). Install it into your skills directory:
 
 ```sh
-muckdb skill install     # → ~/.agents/skills/muckdb/SKILL.md
-muckdb skill install -f  # update it there and migrate any legacy ~/.claude copy
+muckdb skill install     # → ~/.agents/skills/muckdb/SKILL.md (linked from ~/.claude)
+muckdb skill install -f  # update it and recreate the Claude link
 muckdb skill uninstall   # remove it again
 ```
 
