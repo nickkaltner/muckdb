@@ -32,18 +32,12 @@ test.describe('timeline tile', () => {
     const panel = page.locator('.panel[data-tile="timeline"]');
     await expect(panel).toBeVisible();
 
-    // Three dependencies (s1→s3, s1→s4, s3→s4) → three orthogonal paths.
-    await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(3);
-
-    // The two paths leaving s1 have dedicated ports/elbows; they must not be
-    // the same visual trunk merely because they share a parent.
-    const fanout = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"]');
-    await expect(fanout).toHaveCount(2);
-    expect(await fanout.nth(0).getAttribute('d')).not.toBe(await fanout.nth(1).getAttribute('d'));
-    // The s1→s4 route crosses the cutover time; it has a gap there rather than
-    // painting across the event marker (multiple SVG move commands).
-    const markerSafe = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s4"]');
-    expect((await markerSafe.getAttribute('d'))!.match(/M/g)!.length).toBeGreaterThan(1);
+    // Same-lane back-to-back dependencies do not draw tiny, unreadable
+    // connectors; a cross-lane hand-off remains visible.
+    await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(2);
+    await expect(panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s3"]')).toBeVisible();
+    const roomy = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s4"]');
+    expect((await roomy.getAttribute('d'))!.match(/M/g)!.length).toBeGreaterThan(1);
     await expect(panel.locator('.tl-bar').first()).toHaveCSS('z-index', '2');
 
     // The --event '50|cutover' marker → a dashed line in the plot, and its label
@@ -100,14 +94,14 @@ test.describe('timeline tile', () => {
     expect(rb!.x + rb!.width).toBeLessThanOrEqual(hb!.x + hb!.width + 1);
   });
 
-  test('hover readout on a local-tz timeline also shows the UTC instant', async ({ page }) => {
+  test('hover readout uses the timeline display zone only', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="timeline-ts"]');
     await expect(panel).toBeVisible();
     await panel.locator('.tl-plot').hover();
     const readout = panel.locator('.tl-head-readout');
     await expect(readout).toHaveClass(/\bshow\b/);
-    await expect(readout).toContainText('UTC');
+    await expect(readout).not.toContainText('UTC');
   });
 
   test('an absolute-time event marker renders its line and label', async ({ page }) => {

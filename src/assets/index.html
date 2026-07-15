@@ -514,7 +514,7 @@
   .tl-lane-label { position: absolute; left: 0; right: 8px; display: flex; align-items: center;
     font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
     border-top: 1px solid var(--line-soft); padding-right: 6px; }
-  .tl-plot { position: relative; overflow: hidden; border-left: 1px solid var(--line); }
+  .tl-plot { position: relative; overflow: visible; border-left: 1px solid var(--line); }
   .tl-band { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line-soft); }
   .tl-band.alt { background: color-mix(in srgb, var(--fg) 3%, transparent); }
   .tl-bar { position: absolute; border-radius: 3px; overflow: hidden; box-sizing: border-box;
@@ -540,6 +540,14 @@
     background: var(--surface); border: 1px solid var(--orange-dim); border-radius: 3px;
     padding: 0 4px; white-space: nowrap; pointer-events: none; opacity: 0; z-index: 200; }
   .tl-head-readout.show { opacity: 1; }
+  .tl-controls { display: flex; justify-content: flex-end; min-height: 0; padding: 0 0 4px; }
+  .tl-reset { font: inherit; font-size: 10.5px; color: var(--muted); background: var(--raised); border: 1px solid var(--line);
+    border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+  .tl-reset:hover { color: var(--fg); border-color: var(--orange-dim); }
+  .tl-reset[hidden] { display: none; }
+  .tl-brush { position: absolute; z-index: 5; top: 0; bottom: 0; background: color-mix(in srgb, var(--orange) 16%, transparent);
+    border-left: 1px solid var(--orange); border-right: 1px solid var(--orange); pointer-events: none; display: none; }
+  .tl-brush.show { display: block; }
   /* Hover cursor uses the "live" orange accent — deliberately distinct from the
      teal --event markers. */
   .tl-cursor { position: absolute; z-index: 4; top: 0; bottom: 0; width: 0; border-left: 1px dashed var(--orange);
@@ -3412,6 +3420,43 @@
       }
     });
   }
+  // canvas.toBlob() produces a perfectly valid PNG but no descriptive chunks.
+  // Add the standard PNG creation-time chunk plus textual fields before handing
+  // the image to the clipboard or download, so Finder/Preview and other image
+  // tools can identify where it came from.
+  const PNG_SIG = [137, 80, 78, 71, 13, 10, 26, 10];
+  const PNG_CRC_TABLE = (() => {
+    const t = new Uint32Array(256);
+    for (let i = 0; i < 256; i++) { let c = i; for (let n = 0; n < 8; n++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1; t[i] = c >>> 0; }
+    return t;
+  })();
+  function pngCrc(bytes) {
+    let c = 0xffffffff;
+    for (const b of bytes) c = PNG_CRC_TABLE[(c ^ b) & 0xff] ^ (c >>> 8);
+    return (c ^ 0xffffffff) >>> 0;
+  }
+  function pngChunk(type, data) {
+    const name = new TextEncoder().encode(type), out = new Uint8Array(12 + data.length);
+    new DataView(out.buffer).setUint32(0, data.length);
+    out.set(name, 4); out.set(data, 8);
+    new DataView(out.buffer).setUint32(8 + data.length, pngCrc(out.subarray(4, 8 + data.length)));
+    return out;
+  }
+  async function stampPngMetadata(blob) {
+    const src = new Uint8Array(await blob.arrayBuffer());
+    if (src.length < 33 || !PNG_SIG.every((v, i) => src[i] === v)) return blob;
+    const now = new Date();
+    const text = new TextEncoder();
+    const software = text.encode("Software\0muckdb __MUCKDB_VERSION__ by Nick Kaltner");
+    const created = text.encode("Creation Time\0" + now.toISOString());
+    const time = new Uint8Array(7), view = new DataView(time.buffer);
+    view.setUint16(0, now.getUTCFullYear()); time[2] = now.getUTCMonth() + 1; time[3] = now.getUTCDate();
+    time[4] = now.getUTCHours(); time[5] = now.getUTCMinutes(); time[6] = now.getUTCSeconds();
+    const extra = [pngChunk("tIME", time), pngChunk("tEXt", software), pngChunk("tEXt", created)];
+    // IHDR is always the first chunk. Insert metadata immediately after it.
+    const at = 8 + 12 + new DataView(src.buffer, src.byteOffset + 8, 4).getUint32(0);
+    return new Blob([src.subarray(0, at), ...extra, src.subarray(at)], { type: "image/png" });
+  }
   // Rasterize one panel to a PNG blob in the browser via html2canvas. The
   // action buttons are dropped from the capture and the app background is
   // painted behind the panel so the PNG isn't transparent where the panel's
@@ -3430,7 +3475,7 @@
       onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
-    }));
+    })).then(stampPngMetadata);
   }
   // Rasterize the whole dashboard (every visible tile, stacked) to a PNG blob —
   // the "poster" export. Drops the per-panel controls from the capture.
@@ -3448,7 +3493,7 @@
       onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
-    }));
+    })).then(stampPngMetadata);
   }
   async function exportDashboardPoster() {
     if (!state.selSession) { toast("select a session first", true); return; }
@@ -3707,16 +3752,11 @@
       (isFinite(Number(v)) && !/[-:T]/.test(String(v).trim())));
   }
   function tlFmtTime(t, pay) { return pay.numeric ? tlFmtDur(t) : tlFmtAbs(t, pay.startFmt); }
-  // The follow-the-cursor readout: like tlFmtTime, but when the axis is shifted to
-  // a non-UTC zone (a --tz format on the start column) it also appends the UTC
-  // instant, so a local-time timeline stays unambiguous on hover.
+  // The follow-the-cursor readout uses the timeline's own display zone. Keeping
+  // it to one clock avoids a second, competing timestamp at the cursor.
   function tlFmtTimeHover(t, pay) {
     if (pay.numeric) return tlFmtDur(t);
-    const primary = tlFmtAbs(t, pay.startFmt);
-    const tz = pay.startFmt && pay.startFmt.tz;
-    if (!tz || String(tz).toLowerCase() === "utc") return primary; // already UTC
-    const utc = new Date(t).toISOString().slice(0, 16).replace("T", " ");
-    return primary + " · " + utc + " UTC";
+    return tlFmtAbs(t, pay.startFmt);
   }
 
   function tlTip(b, cols, rows, spec, db, table, fmtT, fmtDur) {
@@ -3806,6 +3846,7 @@
       list.forEach((b) => {
         b.topPx = top + TL_LANE_PAD + b.sub * TL_ROW_H;
         b.laneTopPx = top;
+        b.laneHeightPx = height;
         b.color = barColor(b, laneIndex);
       });
       laneRows.push({ lane, top, height });
@@ -3819,7 +3860,7 @@
     const barsHtml = bars.map((b) => {
       const l = frac(b.s) * 100, w = Math.max(0.4, (frac(b.e) - frac(b.s)) * 100);
       const tip = tlTip(b, cols, rows, spec, db, table, fmtT, fmtDur);
-      return `<div class="tl-bar wm-x" data-tlid="${attr(b.id || "")}" data-tip="${attr(tip)}"
+      return `<div class="tl-bar wm-x" data-tlid="${attr(b.id || "")}" data-tlri="${b.ri}" data-tip="${attr(tip)}"
         style="left:${l}%;width:${w}%;top:${b.topPx}px;height:${TL_BAR_H}px;background:${b.color}">
         <span class="tl-bar-label">${esc(b.label)}</span></div>`;
     }).join("");
@@ -3883,6 +3924,7 @@
         elbowFrac = left > 0.015 ? left : (right < 0.985 ? right : Math.max(0.015, left));
       }
       return {
+        parent: d.parent, child: d.child,
         fromFrac, toFrac, elbowFrac: Math.max(0.005, Math.min(0.995, elbowFrac)),
         fromY: portY(d.parent, outIndex, outgoing.get(d.parent)),
         toY: portY(d.child, inIndex, incoming.get(d.child)),
@@ -3890,10 +3932,11 @@
         fromId: d.parent.id, toId: d.child.id,
       };
     });
-    const events = (spec.events || []).map((m) => ({ frac: frac(toT(m.value)), label: m.label || "" }))
-      .filter((e) => isFinite(e.frac) && e.frac >= -0.001 && e.frac <= 1.001);
-    tlPayloads[id] = { t0, t1, numeric, startFmt, deps, events, totalH };
+    const events = (spec.events || []).map((m) => ({ t: toT(m.value), label: m.label || "" }))
+      .filter((e) => isFinite(e.t) && e.t >= t0 - span * 0.001 && e.t <= t1 + span * 0.001);
+    tlPayloads[id] = { t0, t1, fullT0: t0, fullT1: t1, numeric, startFmt, deps, events, bars, totalH };
     return `<div class="tl-wrap">${legendHtml}
+      <div class="tl-controls"><button class="tl-reset" type="button" hidden title="Reset timeline zoom">reset zoom</button></div>
       <div class="tl-head"><div></div><div class="tl-head-plot"><svg class="tl-head-ov" xmlns="http://www.w3.org/2000/svg"></svg><span class="tl-head-readout"></span></div></div>
       <div class="tl" style="height:${totalH}px">
         <div class="tl-gutter" style="height:${totalH}px">${gutterHtml}</div>
@@ -3902,6 +3945,7 @@
           <svg class="tl-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
           <svg class="tl-event-overlay" xmlns="http://www.w3.org/2000/svg"></svg>
           <div class="tl-cursor"></div>
+          <div class="tl-brush"></div>
         </div>
       </div>
       <div class="tl-axis-row"><div></div>${axisHtml}</div>
@@ -3922,18 +3966,38 @@
       opacity: cssVar("--tl-marker-opacity") || "0.85",
     };
   }
+  function tlFrac(t, pay) { return (t - pay.t0) / (pay.t1 - pay.t0); }
+  function updateTimelineDomain(plot, pay, t0, t1) {
+    const fullSpan = pay.fullT1 - pay.fullT0;
+    if (!(t1 > t0) || t1 - t0 < fullSpan * 0.002) return;
+    pay.t0 = Math.max(pay.fullT0, t0); pay.t1 = Math.min(pay.fullT1, t1);
+    pay.bars.forEach((b) => {
+      const el = plot.querySelector(`.tl-bar[data-tlri="${b.ri}"]`); if (!el) return;
+      const l = tlFrac(b.s, pay), r = tlFrac(b.e, pay);
+      const visible = r >= 0 && l <= 1;
+      el.style.display = visible ? "flex" : "none";
+      el.style.left = (Math.max(0, l) * 100) + "%";
+      el.style.width = (Math.max(0.4, (Math.min(1, r) - Math.max(0, l)) * 100)) + "%";
+    });
+    const wrap = plot.closest(".tl-wrap"), reset = wrap && wrap.querySelector(".tl-reset");
+    if (reset) reset.hidden = pay.t0 === pay.fullT0 && pay.t1 === pay.fullT1;
+    renderTimelineOverlay(plot, pay); renderTimelineHead(wrap && wrap.querySelector(".tl-head-plot"), pay);
+    renderTimelineAxis(wrap && wrap.querySelector(".tl-axis"), pay);
+  }
   function renderTimelineOverlay(plot, pay) {
     const svg = plot.querySelector("svg.tl-overlay");
     const eventSvg = plot.querySelector("svg.tl-event-overlay");
     if (!svg || !eventSvg) return;
     const W = plot.clientWidth, H = pay.totalH; if (!W) return;
-    [svg, eventSvg].forEach((el) => {
-      el.setAttribute("viewBox", `0 0 ${W} ${H}`);
-      el.setAttribute("width", W); el.setAttribute("height", H);
-    });
+    const gutter = parseFloat(getComputedStyle(plot.closest(".tl-wrap")).getPropertyValue("--tl-gutter")) || 148;
+    svg.setAttribute("viewBox", `-${gutter} 0 ${W + gutter} ${H}`);
+    svg.setAttribute("width", W + gutter); svg.setAttribute("height", H);
+    svg.style.left = -gutter + "px"; svg.style.width = (W + gutter) + "px";
+    eventSvg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+    eventSvg.setAttribute("width", W); eventSvg.setAttribute("height", H);
     const line = cssVar("--muted") || "#9b958a";
     const m = tlMarkerStyle();
-    const markerXs = pay.events.map((e) => Math.max(0, Math.min(1, e.frac)) * W);
+    const markerXs = pay.events.map((e) => Math.max(0, Math.min(1, tlFrac(e.t, pay))) * W);
     const markerGap = 4; // leave the event marker itself visually uninterrupted
     // A dependency's horizontal legs are split around event markers. The marker
     // therefore remains a clean, continuous time reference instead of becoming
@@ -3957,12 +4021,42 @@
       return path;
     };
     const deps = pay.deps.map((d) => {
-      const x1 = d.fromFrac * W, y1 = d.fromY, x2 = d.toFrac * W, y2 = d.toY;
-      let elbow = d.elbowFrac * W;
+      const fromFrac = tlFrac(d.parent.e, pay), toFrac = tlFrac(d.child.s, pay);
+      if ((fromFrac < 0 && toFrac < 0) || (fromFrac > 1 && toFrac > 1)) return "";
+      const x1 = Math.max(0, Math.min(W, fromFrac * W)), y1 = d.fromY;
+      const x2 = Math.max(0, Math.min(W, toFrac * W)), y2 = d.toY;
+      // A butted pair on the *same lane* is self-explanatory, so avoid a tiny
+      // distracting notch. Across lanes the connector still communicates the
+      // hand-off and must remain visible.
+      const cramped = d.child.s >= d.parent.e && x2 - x1 < 8;
+      if (cramped && d.parent.lane === d.child.lane) return "";
+      const overlaps = d.child.s < d.parent.e;
+      let elbow = Math.max(0, Math.min(W, d.elbowFrac * W));
       markerXs.forEach((x) => {
         if (Math.abs(elbow - x) < markerGap + 1) elbow = Math.min(W - markerGap - 1, x + markerGap + 1);
       });
-      const points = d.railY == null
+      // Overlaps leave the parent's back (right edge), travel down through the
+      // destination lane's gutter, then return to the child's start: a clear
+      // backwards-S route that never cuts through either box.
+      const points = overlaps
+        ? [[x1, y1], [Math.min(W - 2, x1 + 10), y1], [Math.min(W - 2, x1 + 10), d.child.laneTopPx + 2], [-gutter + 5, d.child.laneTopPx + 2], [-gutter + 5, y2], [x2, y2]]
+        : cramped
+          ? (() => {
+              const out = Math.min(W - 2, x1 + 10);
+              const front = Math.max(2, x2 - 7);
+              // Enter the dependent bar from its front. For a downward handoff,
+              // first clear into the destination lane's gutter, then come back
+              // left before dropping into the bar. The upward case is its exact
+              // inverse: rise into the destination lane's lower gutter, move
+              // left, then rise into the bar before entering from the front.
+              return y2 >= y1
+                ? [[x1, y1], [out, y1], [out, d.child.laneTopPx + 2], [front, d.child.laneTopPx + 2], [front, y2], [x2, y2]]
+                : (() => {
+                    const gutterY = d.child.laneTopPx + d.child.laneHeightPx - 2;
+                    return [[x1, y1], [out, y1], [out, gutterY], [front, gutterY], [front, y2], [x2, y2]];
+                  })();
+            })()
+        : d.railY == null
         ? [[x1, y1], [elbow, y1], [elbow, y2], [x2, y2]]
         : [[x1, y1], [elbow, y1], [elbow, d.railY], [x2, d.railY], [x2, y2]];
       const route = routedPath(points);
@@ -3972,7 +4066,7 @@
     // Marker lines run the full plot height; their labels are drawn in the head
     // band above the lanes (see renderTimelineHead) so they never overprint bars.
     const events = pay.events.map((e) => {
-      const x = (Math.max(0, Math.min(1, e.frac)) * W).toFixed(1);
+      const x = (Math.max(0, Math.min(1, tlFrac(e.t, pay))) * W).toFixed(1);
       return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="${m.color}" stroke-width="${m.width}" stroke-dasharray="${m.dash}" opacity="${m.opacity}"/>`;
     }).join("");
     svg.innerHTML = `<g class="tl-deps">${deps}</g>`;
@@ -3988,7 +4082,7 @@
     const W = headPlot.clientWidth; if (!W) return;
     const m = tlMarkerStyle();
     const evs = pay.events
-      .map((e) => ({ x: Math.max(0, Math.min(1, e.frac)) * W, label: e.label || "" }))
+      .map((e) => ({ x: Math.max(0, Math.min(1, tlFrac(e.t, pay))) * W, label: e.label || "" }))
       .filter((e) => e.label)
       .sort((a, b) => a.x - b.x);
     const rowEnds = []; // rightmost occupied px per stacked row
@@ -4090,10 +4184,39 @@
       const axisEl = wrap && wrap.querySelector(".tl-axis");
       const draw = () => { renderTimelineOverlay(plot, pay); renderTimelineHead(headPlot, pay); renderTimelineAxis(axisEl, pay); };
       draw();
+      const reset = wrap && wrap.querySelector(".tl-reset");
+      if (reset && !reset._tlReset) {
+        reset._tlReset = true;
+        reset.addEventListener("click", () => updateTimelineDomain(plot, pay, pay.fullT0, pay.fullT1));
+      }
       if (window.ResizeObserver && !plot._tlRO) { plot._tlRO = new ResizeObserver(draw); plot._tlRO.observe(plot); }
       const cursor = plot.querySelector(".tl-cursor");
-      if (cursor && !plot._tlCursor) {
+      const brush = plot.querySelector(".tl-brush");
+      if (cursor && brush && !plot._tlCursor) {
         plot._tlCursor = true;
+        let brushStart = null;
+        const fraction = (ev) => {
+          const r = plot.getBoundingClientRect();
+          return r.width ? Math.max(0, Math.min(1, (ev.clientX - r.left) / r.width)) : 0;
+        };
+        plot.addEventListener("mousedown", (ev) => {
+          if (ev.button !== 0) return;
+          brushStart = fraction(ev);
+          brush.style.left = (brushStart * 100) + "%"; brush.style.width = "0"; brush.classList.add("show");
+          ev.preventDefault();
+        }, true);
+        plot.addEventListener("mousemove", (ev) => {
+          if (brushStart == null) return;
+          const end = fraction(ev), lo = Math.min(brushStart, end), hi = Math.max(brushStart, end);
+          brush.style.left = (lo * 100) + "%"; brush.style.width = ((hi - lo) * 100) + "%";
+        });
+        const finishBrush = (ev) => {
+          if (brushStart == null) return;
+          const end = fraction(ev), lo = Math.min(brushStart, end), hi = Math.max(brushStart, end), span = pay.t1 - pay.t0;
+          brushStart = null; brush.classList.remove("show");
+          if (hi - lo >= 0.02) updateTimelineDomain(plot, pay, pay.t0 + span * lo, pay.t0 + span * hi);
+        };
+        plot.addEventListener("mouseup", finishBrush); plot.addEventListener("mouseleave", finishBrush);
         plot.addEventListener("mousemove", (ev) => {
           const rect = plot.getBoundingClientRect();
           if (!rect.width) return;
@@ -4109,16 +4232,18 @@
             readout.style.transform = "none";
             const w = readout.offsetWidth;
             const headRect = headPlot.getBoundingClientRect();
-            // Once the timeline header has scrolled away, keep the time in the
-            // viewport rather than leaving it above the visible part of a tall
-            // timeline. It returns to the header as soon as that is visible.
-            const pinToViewport = headRect.bottom < 0 || headRect.top > window.innerHeight;
-            const hw = pinToViewport ? window.innerWidth : (headPlot.clientWidth || rect.width);
-            const x = pinToViewport ? ev.clientX : fx * hw;
+            const viewport = plot.closest(".panels-scroll");
+            const viewportRect = viewport ? viewport.getBoundingClientRect() : { left: 0, right: window.innerWidth, top: 0, bottom: window.innerHeight, width: window.innerWidth };
+            // Pin inside the active scroll viewport, not the browser window.
+            // This keeps a tall timeline's readout attached to the session pane.
+            const pinToViewport = headRect.bottom < viewportRect.top || headRect.top > viewportRect.bottom;
+            const hw = pinToViewport ? viewportRect.width : (headPlot.clientWidth || rect.width);
+            const x = pinToViewport ? ev.clientX - viewportRect.left : fx * hw;
             readout.style.position = pinToViewport ? "fixed" : "absolute";
-            readout.style.top = pinToViewport ? "8px" : (readout.dataset.headTop || "0px");
+            readout.style.top = pinToViewport ? (viewportRect.top + 8) + "px" : (readout.dataset.headTop || "0px");
             // Centre the pill on the cursor, then clamp it to the visible edge.
-            readout.style.left = Math.max(2, Math.min(x - w / 2, hw - w - 2)) + "px";
+            const left = Math.max(2, Math.min(x - w / 2, hw - w - 2));
+            readout.style.left = (pinToViewport ? viewportRect.left + left : left) + "px";
           }
         });
         plot.addEventListener("mouseleave", () => {
