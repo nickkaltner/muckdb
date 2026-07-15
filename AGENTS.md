@@ -438,6 +438,18 @@ cargo release patch --execute --no-confirm  # actually bump + commit + tag + pus
 
 Then confirm the build started with `gh run list --workflow=release.yml`.
 
+**After every release, update the local daemon too.** `cargo release` updates
+the source version and remote tag, but not the already-running local binary.
+Rebuild and restart it so `http://localhost:11000` serves the released version:
+
+```sh
+cargo build --release
+./target/release/muckdb --stop
+./target/release/muckdb start
+```
+
+If `--stop` reports that no daemon is running, continue with `start` anyway.
+
 The convention is **one bump commit per release, and that commit is what gets
 tagged** (the `vX.Y.Z` tag points at the commit that sets `version = "X.Y.Z"`) —
 `cargo release` produces exactly that. Commit any other changes *before* releasing
