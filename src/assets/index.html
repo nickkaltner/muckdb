@@ -3787,13 +3787,27 @@
   // auto-detected. Dependency connectors, --event markers and a hover cursor
   // are drawn by hydrateTimelines() over an SVG overlay (see below).
   const TL_ROW_H = 26, TL_BAR_H = 18, TL_LANE_PAD = 6;
+  // Let short trace spans be inspected down to 1ms, regardless of how broad
+  // the original timeline was. A brush can be nested repeatedly to reach that
+  // precision even when one physical screen pixel covers more time initially.
+  const TL_MIN_ZOOM_NUMERIC = 0.001, TL_MIN_ZOOM_ABSOLUTE = 1;
+  const TL_MIN_BRUSH_FRACTION = 0.001;
   let tlSeq = 0;
   const tlPayloads = {};   // per-render overlay payloads, consumed on hydrate
 
   function tlFmtDur(s) {
-    s = Math.round(Number(s));
+    s = Number(s);
     if (!isFinite(s)) return "—";
     const neg = s < 0 ? "-" : ""; s = Math.abs(s);
+    if (s < 1) {
+      const ms = Math.round(s * 1000 * 1000) / 1000;
+      return neg + `${ms}ms`;
+    }
+    if (s < 60) {
+      const secs = Math.round(s * 100) / 100;
+      return neg + `${secs}s`;
+    }
+    s = Math.round(s);
     if (s < 60) return neg + s + "s";
     const m = Math.floor(s / 60), sec = s % 60;
     if (m < 60) return neg + (sec ? `${m}m ${String(sec).padStart(2, "0")}s` : `${m}m`);
@@ -4033,8 +4047,8 @@
   }
   function tlFrac(t, pay) { return (t - pay.t0) / (pay.t1 - pay.t0); }
   function updateTimelineDomain(plot, pay, t0, t1) {
-    const fullSpan = pay.fullT1 - pay.fullT0;
-    if (!(t1 > t0) || t1 - t0 < fullSpan * 0.002) return;
+    const minSpan = pay.numeric ? TL_MIN_ZOOM_NUMERIC : TL_MIN_ZOOM_ABSOLUTE;
+    if (!(t1 > t0) || t1 - t0 < minSpan) return;
     pay.t0 = Math.max(pay.fullT0, t0); pay.t1 = Math.min(pay.fullT1, t1);
     pay.bars.forEach((b) => {
       const el = plot.querySelector(`.tl-bar[data-tlri="${b.ri}"]`); if (!el) return;
@@ -4181,7 +4195,8 @@
   // "Nice" axis steps in seconds (1s … 1y); the absolute axis multiplies by 1000
   // to work in ms. Ticks land on multiples of the chosen step so they read as
   // regular round intervals.
-  const TL_NICE_SECS = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
+  const TL_NICE_SECS = [0.001, 0.002, 0.005, 0.01, 0.02, 0.05, 0.1, 0.2, 0.5,
+    1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600,
     7200, 14400, 21600, 43200, 86400, 172800, 604800, 1209600, 2592000, 7776000, 31536000];
   function tlNiceStep(rawUnit, numeric) {
     const unit = numeric ? 1 : 1000; // rawUnit is seconds (numeric) or ms (absolute)
@@ -4260,7 +4275,7 @@
           if (brushStart == null) return;
           const end = fraction(ev), lo = Math.min(brushStart, end), hi = Math.max(brushStart, end), span = pay.t1 - pay.t0;
           brushStart = null; brush.classList.remove("show");
-          if (hi - lo >= 0.02) updateTimelineDomain(plot, pay, pay.t0 + span * lo, pay.t0 + span * hi);
+          if (hi - lo >= TL_MIN_BRUSH_FRACTION) updateTimelineDomain(plot, pay, pay.t0 + span * lo, pay.t0 + span * hi);
         };
         plot.addEventListener("mouseup", finishBrush); plot.addEventListener("mouseleave", finishBrush);
         plot.addEventListener("mousemove", (ev) => {

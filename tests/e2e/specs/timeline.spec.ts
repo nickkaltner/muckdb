@@ -76,6 +76,41 @@ test.describe('timeline tile', () => {
     }
   });
 
+  test('brush zoom enlarges bars and recalculates time ticks', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="timeline"]');
+    const plot = panel.locator('.tl-plot');
+    const compile = panel.locator('.tl-bar', { hasText: 'compile' });
+    const marker = panel.locator('svg.tl-event-overlay .tl-events line');
+    const beforeBar = await compile.boundingBox();
+    const beforeMarker = await marker.boundingBox();
+    const beforeTicks = await panel.locator('.tl-axis .tl-tick').allTextContents();
+    const box = await plot.boundingBox();
+
+    // Focus on the first 55% of the domain: compile (0–40s) should occupy a
+    // much larger share of the fixed-width plot, and 10-second ticks replace
+    // the original coarser scale.
+    // Dispatch directly on the plot: the event handlers are intentionally
+    // delegated because bars sit above the plot's background.
+    await plot.evaluate((el) => {
+      const r = el.getBoundingClientRect(), y = r.top + r.height / 2;
+      const fire = (type: string, x: number) => el.dispatchEvent(new MouseEvent(type, {
+        bubbles: true, button: 0, clientX: x, clientY: y,
+      }));
+      fire('mousedown', r.left + 2);
+      fire('mousemove', r.left + r.width * 0.55);
+      fire('mouseup', r.left + r.width * 0.55);
+    });
+
+    const afterBar = await compile.boundingBox();
+    const afterMarker = await marker.boundingBox();
+    const afterTicks = await panel.locator('.tl-axis .tl-tick').allTextContents();
+    expect(afterBar!.width).toBeGreaterThan(beforeBar!.width * 1.5);
+    expect(afterMarker!.x).toBeGreaterThan(beforeMarker!.x);
+    expect(afterTicks).not.toEqual(beforeTicks);
+    await expect(panel.locator('.tl-reset')).toBeVisible();
+  });
+
   test('hover readout stays within the tile when near the right edge', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="timeline-ts"]');
