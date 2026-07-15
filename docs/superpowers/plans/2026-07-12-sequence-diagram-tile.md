@@ -597,7 +597,7 @@ Insert near the timeline CSS (after the `.tl-*` rules, ~`src/assets/index.html:5
   .seq-head { fill: var(--fg); stroke: none; }
   .seq-head-open { stroke: var(--fg); stroke-width: 1.4; fill: none; }
   .seq-msg-lbl { fill: var(--fg); font-size: 11px; }
-  .seq-num { fill: var(--teal); }
+  .seq-num { fill: var(--sequence-number); }
   .seq-num-txt { fill: var(--on-accent); font-size: 9px; }
   .seq-frame { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
   .seq-frame-tab { fill: var(--surface); stroke: var(--muted); stroke-width: 1; }

@@ -723,7 +723,7 @@ Replace the stub `function hydrateTimelines(_scope) { … }` (from Task 3) with:
     svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
     svg.setAttribute("width", W); svg.setAttribute("height", H);
     const line = cssVar("--muted") || "#9b958a";
-    const evCol = cssVar("--anno-event") || cssVar("--teal") || "#b8b2a6";
+    const evCol = cssVar("--anno-event") || "#b8b2a6";
     const deps = pay.deps.map((d) => {
       const x1 = d.fromFrac * W, y1 = d.fromY, x2 = d.toFrac * W, y2 = d.toY;
       const mx = (x1 + x2) / 2;

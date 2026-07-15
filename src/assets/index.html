@@ -924,6 +924,7 @@
 <script src="/chart.js"></script>
 <script src="/chart-adapter.js"></script>
 <script src="/html2canvas.js"></script>
+<script src="/timeline-route.js?v=__MUCKDB_VERSION__"></script>
 <script>
 (() => {
   "use strict";
@@ -4089,36 +4090,21 @@
       markerXs.forEach((x) => {
         if (Math.abs(elbow - x) < markerGap + 1) elbow = Math.min(W - markerGap - 1, x + markerGap + 1);
       });
-      // Overlaps leave the parent's back (right edge), travel down through the
-      // destination lane's gutter, then return to the child's start: a clear
-      // backwards-S route that never cuts through either box.
-      const points = overlaps
-        ? [[x1, y1], [Math.min(W - 2, x1 + 10), y1], [Math.min(W - 2, x1 + 10), d.child.laneTopPx + 2], [-gutter + 5, d.child.laneTopPx + 2], [-gutter + 5, y2], [x2, y2]]
-        : cramped
-          ? (() => {
-              const out = Math.min(W - 2, x1 + 10);
-              const front = Math.max(2, x2 - 7);
-              // Enter the dependent bar from its front. For a downward handoff,
-              // first clear into the destination lane's gutter, then come back
-              // left before dropping into the bar. The upward case is its exact
-              // inverse: rise into the destination lane's lower gutter, move
-              // left, then rise into the bar before entering from the front.
-              return y2 >= y1
-                ? (() => {
-                    // Route along the shared edge immediately above the
-                    // destination lane. This aligns downward hand-offs with
-                    // the mirrored upward route's lower-gutter segment.
-                    const gutterY = Math.max(2, d.child.laneTopPx - 2);
-                    return [[x1, y1], [out, y1], [out, gutterY], [front, gutterY], [front, y2], [x2, y2]];
-                  })()
-                : (() => {
-                    const gutterY = d.child.laneTopPx + d.child.laneHeightPx - 2;
-                    return [[x1, y1], [out, y1], [out, gutterY], [front, gutterY], [front, y2], [x2, y2]];
-                  })();
-            })()
-        : d.railY == null
-        ? [[x1, y1], [elbow, y1], [elbow, y2], [x2, y2]]
-        : [[x1, y1], [elbow, y1], [elbow, d.railY], [x2, d.railY], [x2, y2]];
+      const box = (bar) => ({
+        left: Math.max(0, Math.min(W, tlFrac(bar.s, pay) * W)),
+        right: Math.max(0, Math.min(W, tlFrac(bar.e, pay) * W)),
+      });
+      // The router keeps every bend within the union of these two boxes plus a
+      // small 16px clearance. In particular, an overlapping cross-lane pair
+      // never takes the old long detour through the timeline's label gutter.
+      const points = globalThis.timelineDependencyRoute({
+        width: W, parentBox: box(d.parent), childBox: box(d.child),
+        fromY: y1, toY: y2, childLaneTop: d.child.laneTopPx,
+        childLaneHeight: d.child.laneHeightPx, cramped,
+        sameLane: d.parent.lane === d.child.lane, overlaps, elbowX: elbow,
+        railY: d.railY,
+      });
+      if (!points) return "";
       const route = routedPath(points);
       return `<path data-from="${attr(d.fromId)}" data-to="${attr(d.toId)}" d="${route}" fill="none" stroke="${line}" stroke-width="1" opacity="${TL_DEP_OPACITY}"/>` +
         `<circle cx="${x2.toFixed(1)}" cy="${y2}" r="2.2" fill="${line}" opacity="${TL_DEP_OPACITY}"/>`;

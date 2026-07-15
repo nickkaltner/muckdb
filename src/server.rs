@@ -77,6 +77,7 @@ pub async fn run() -> Result<()> {
         .route("/chart.js", get(chart_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/html2canvas.js", get(html2canvas_js))
+        .route("/timeline-route.js", get(timeline_route_js))
         .route("/favicon.ico", get(favicon_ico))
         .route("/favicon.svg", get(favicon_svg))
         .route("/worldmap.svg", get(worldmap_svg))
@@ -709,6 +710,16 @@ async fn html2canvas_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/html2canvas.min.js"),
+    )
+        .into_response()
+}
+
+/// Serve the small, DOM-free timeline dependency router. It is a separate
+/// asset so its geometry can be covered by fast Node unit tests.
+async fn timeline_route_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/timeline-route.js"),
     )
         .into_response()
 }
