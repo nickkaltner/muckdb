@@ -3926,7 +3926,9 @@
       return {
         parent: d.parent, child: d.child,
         fromFrac, toFrac, elbowFrac: Math.max(0.005, Math.min(0.995, elbowFrac)),
-        fromY: portY(d.parent, outIndex, outgoing.get(d.parent)),
+        // Fan-out relationships leave through one shared source port, so their
+        // first horizontal leg reads as one deliberate trunk before branching.
+        fromY: d.parent.topPx + TL_BAR_H / 2,
         toY: portY(d.child, inIndex, incoming.get(d.child)),
         railY: sameLaneHandoff ? d.parent.laneTopPx + 2 + (outIndex % 2) * 2 : null,
         fromId: d.parent.id, toId: d.child.id,
@@ -3999,24 +4001,14 @@
     const m = tlMarkerStyle();
     const markerXs = pay.events.map((e) => Math.max(0, Math.min(1, tlFrac(e.t, pay))) * W);
     const markerGap = 4; // leave the event marker itself visually uninterrupted
-    // A dependency's horizontal legs are split around event markers. The marker
-    // therefore remains a clean, continuous time reference instead of becoming
-    // a plus-sign with a relationship line. Its vertical elbow is nudged away
-    // as well when the two would otherwise be collinear.
+    // Event markers render on their own layer above dependencies, so connector
+    // paths remain continuous as they pass behind a marker.
     const routedPath = (points) => {
       let path = `M${points[0][0].toFixed(1)} ${points[0][1].toFixed(1)}`;
       for (let i = 1; i < points.length; i++) {
         const [x0, y0] = points[i - 1], [x1, y1] = points[i];
-        if (Math.abs(y1 - y0) < 0.01) {
-          const dir = x1 >= x0 ? 1 : -1;
-          const crossings = markerXs.filter((x) =>
-            (dir > 0 ? x > x0 + markerGap && x < x1 - markerGap : x < x0 - markerGap && x > x1 + markerGap));
-          crossings.forEach((x) => {
-            path += ` H${(x - dir * markerGap).toFixed(1)}`;
-            path += ` M${(x + dir * markerGap).toFixed(1)} ${y0.toFixed(1)}`;
-          });
-          path += ` H${x1.toFixed(1)}`;
-        } else path += ` V${y1.toFixed(1)}`;
+        if (Math.abs(y1 - y0) < 0.01) path += ` H${x1.toFixed(1)}`;
+        else path += ` V${y1.toFixed(1)}`;
       }
       return path;
     };
@@ -4050,7 +4042,13 @@
               // inverse: rise into the destination lane's lower gutter, move
               // left, then rise into the bar before entering from the front.
               return y2 >= y1
-                ? [[x1, y1], [out, y1], [out, d.child.laneTopPx + 2], [front, d.child.laneTopPx + 2], [front, y2], [x2, y2]]
+                ? (() => {
+                    // Route along the shared edge immediately above the
+                    // destination lane. This aligns downward hand-offs with
+                    // the mirrored upward route's lower-gutter segment.
+                    const gutterY = Math.max(2, d.child.laneTopPx - 2);
+                    return [[x1, y1], [out, y1], [out, gutterY], [front, gutterY], [front, y2], [x2, y2]];
+                  })()
                 : (() => {
                     const gutterY = d.child.laneTopPx + d.child.laneHeightPx - 2;
                     return [[x1, y1], [out, y1], [out, gutterY], [front, gutterY], [front, y2], [x2, y2]];
