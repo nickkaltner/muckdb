@@ -725,7 +725,6 @@
   .panel-grip::after { content: ""; position: absolute; right: 5px; bottom: 5px; width: 10px; height: 10px; border-right: 2px solid var(--orange); border-bottom: 2px solid var(--orange); border-radius: 0 0 3px 0; }
   .panel:hover .panel-grip { opacity: 0.3; }
   .panel-grip:hover, .panel-grip.dragging { opacity: 1; }
-  body.shot .panel-grip { display: none !important; }
   .panel.sel { box-shadow: inset 3px 0 0 0 var(--orange), var(--hi); }
   /* Motion (experimental): panels print in with a small stagger on navigation
      (rhymes with the ledger's print-in); a re-posted tile pulses its frame so
@@ -770,8 +769,9 @@
      can size the window from body scrollHeight (stamped as data-shot-h). */
   html.shot, body.shot { height: auto; }
   body.shot { background-attachment: scroll; }
-  body.shot .titlebar, body.shot .tabs, body.shot .statusline, body.shot .navrow,
-  body.shot .session-toc, body.shot .panel-actions, body.shot #session-empty { display: none !important; }
+  /* Shared capture boundary: browser poster/copy-image captures and the
+     server screenshot renderer omit anything marked as transient UI chrome. */
+  body.shot .no-screenshot { display: none !important; }
   body.shot main { height: auto; overflow: visible; }
   body.shot .session-body { display: block; overflow: visible; }
   body.shot .panels-scroll { overflow: visible; }
@@ -792,6 +792,13 @@
   .md code { font-family: var(--mono); background: var(--raised); color: var(--orange); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap; }
   .md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; overflow: auto; }
   .md pre code { background: none; color: var(--fg); padding: 0; white-space: pre; }
+  .md-code, .md-table { position: relative; }
+  .md-table { display: inline-block; max-width: 100%; vertical-align: top; }
+  .md-code .md-copy, .md-table .md-copy { position: absolute; right: 6px; top: 6px; z-index: 1; }
+  .md-table .md-copy { top: 10px; }
+  .md-copy { display: inline-flex; align-items: center; font: inherit; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 4px; padding: 4px; cursor: pointer; }
+  .md-copy svg { display: block; }
+  .md-copy:hover { color: var(--fg); border-color: var(--orange-dim); }
   .md a { color: var(--ripple, var(--orange)); }
   .md strong { color: var(--fg); }
   /* markdown tables mirror the data-panel tables: orange header on a raised bar,
@@ -843,7 +850,7 @@
 </style>
 </head>
 <body>
-  <header class="titlebar">
+  <header class="titlebar no-screenshot">
     <span class="wordmark">muck<span class="db">db</span></span>
     <span class="subtitle">live console</span>
     <span class="spacer"></span>
@@ -856,7 +863,7 @@
   </header>
   <div class="credits-overlay" id="credits-overlay" hidden></div>
 
-  <nav class="tabs" id="tabs">
+  <nav class="tabs no-screenshot" id="tabs">
     <button class="tab" data-tab="databases">databases<span class="badge-n" id="tab-n-databases">0</span></button>
     <button class="tab active" data-tab="sessions">sessions</button>
     <button class="tab" data-tab="ledger">ledger<span class="badge-n" id="tab-n-ledger">0</span></button>
@@ -864,7 +871,7 @@
 
   <main>
     <section class="view flex" id="view-databases" aria-label="Databases">
-      <div class="navrow" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span><span class="navgroup" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></span></div>
+      <div class="navrow no-screenshot" id="db-nav"><span class="rowlabel">db</span><span id="db-chips"></span><span class="navgroup" id="table-nav" hidden><span class="rowlabel">table</span><span id="table-chips"></span></span></div>
       <div class="db-body">
         <button class="facet-drawer-btn off" id="facet-drawer-btn" aria-label="open filters">filters</button>
         <div class="facet-backdrop" id="facet-backdrop"></div>
@@ -876,7 +883,7 @@
     </section>
 
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
-      <div class="navrow" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-agent" id="session-agent"></span>
+      <div class="navrow no-screenshot" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-agent" id="session-agent"></span>
         <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
         <button class="toc-toggle sess-act" id="poster-btn" title="Download a PNG poster of the whole dashboard"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.1"/><path d="M2.5 11l3.2-2.7 2.3 1.9 3-2.4 2.5 2.1"/></svg><span>poster</span></button>
         <button class="toc-toggle sess-act" id="session-rm-btn" title="Delete this session (click twice)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.8 9h6.4l.8-9M6.5 7v4M9.5 7v4"/></svg><span>delete</span></button>
@@ -884,14 +891,14 @@
       </div>
       <div class="session-body" id="session-body">
         <div class="panels-scroll" id="panels-scroll">
-          <div class="empty" id="session-empty" style="margin:18px">
+          <div class="empty no-screenshot" id="session-empty" style="margin:18px">
             No sessions yet. An agent creates one with <code>muckdb session create NAME</code>,
             then posts panels with <code>muckdb session post</code> / <code>muckdb session tile</code>.
           </div>
           <div class="panels" id="panels"></div>
         </div>
         <div class="toc-resizer" id="toc-resizer" title="Drag to resize contents (double-click to reset)"></div>
-        <aside class="session-toc" id="session-toc" aria-label="Panel contents"></aside>
+        <aside class="session-toc no-screenshot" id="session-toc" aria-label="Panel contents"></aside>
       </div>
     </section>
 
@@ -904,7 +911,7 @@
     </section>
   </main>
 
-  <footer class="statusline" id="statusline">
+  <footer class="statusline no-screenshot" id="statusline">
     <span class="seg-item seg-brand">MUCKDB</span>
     <span class="seg-item seg-state" id="sl-state">connecting</span>
     <span class="seg-item seg-counts" id="sl-counts">0 commands · 0 databases</span>
@@ -3339,8 +3346,12 @@
   // on the clipboard. The CLI `session screenshot` / `/api/shot` keep using the
   // backend renderer (there's no browser there).
   const SVG_COPYIMG = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="2" width="12" height="12" rx="1.5"/><circle cx="6" cy="6.2" r="1.2"/><path d="M2 11.5l3.5-3 3 2.5 3-2.5 2.5 2"/></svg>';
+  const SVG_COPY = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="5" width="8" height="8" rx="1.25"/><path d="M11 5V3.75A1.75 1.75 0 0 0 9.25 2h-5.5A1.75 1.75 0 0 0 2 3.75v5.5A1.75 1.75 0 0 0 3.75 11H5"/></svg>';
   function copyImgBtn(name) {
     return `<button class="panel-act icon" data-copyimg="${attr(name)}" title="Copy panel as image" aria-label="Copy panel as image">${SVG_COPYIMG}</button>`;
+  }
+  function copyTileBtn(name, title) {
+    return `<button class="panel-act icon" data-copytile="${attr(name)}" title="${attr(title)}" aria-label="${attr(title)}">${SVG_COPY}</button>`;
   }
   function flashBtn(btn, cls) { btn.classList.add("flash-" + cls); setTimeout(() => btn.classList.remove("flash-" + cls), 1400); }
   // A transient bottom-centre notification — the place errors surface, so a
@@ -3471,7 +3482,7 @@
       scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
       useCORS: true,
       logging: false,
-      ignoreElements: (el) => el.classList && el.classList.contains("panel-actions"),
+      ignoreElements: (el) => el.classList && el.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
@@ -3489,7 +3500,7 @@
       scale: 2,
       useCORS: true,
       logging: false,
-      ignoreElements: (e) => e.classList && (e.classList.contains("panel-actions") || e.classList.contains("panel-grip") || e.classList.contains("tile-filter")),
+      ignoreElements: (e) => e.classList && e.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
@@ -3562,6 +3573,56 @@
       }
     } finally { btn.classList.remove("busy"); }
   }
+  function tableClipboard(cols, rows, db, table) {
+    const textValue = (v, col) => {
+      if (v == null) return "";
+      const f = colFmt(db, col, table);
+      try { return String(f ? applyFmt(f, v) : (typeof v === "object" ? JSON.stringify(v) : v)); } catch (_) { return String(v); }
+    };
+    const plain = [cols, ...rows.map((r) => r.map((v, i) => textValue(v, cols[i])))]
+      .map((r) => r.map((v) => /[\t\n\"]/.test(v) ? `"${v.replace(/"/g, '""')}"` : v).join("\t")).join("\n");
+    const html = `<table><thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead><tbody>${rows.map((r) =>
+      `<tr>${r.map((v, i) => `<td>${esc(textValue(v, cols[i]))}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+    return { plain, html };
+  }
+  async function copyRichTable(cols, rows, db, table) {
+    const { plain, html } = tableClipboard(cols, rows, db, table);
+    try {
+      if (navigator.clipboard && window.ClipboardItem) {
+        await navigator.clipboard.write([new ClipboardItem({
+          "text/plain": new Blob([plain], { type: "text/plain" }),
+          "text/html": new Blob([html], { type: "text/html" }),
+        })]);
+      } else if (navigator.clipboard && navigator.clipboard.writeText) await navigator.clipboard.writeText(plain);
+      else throw new Error("clipboard unavailable");
+      toast(`copied ${rows.length} ${rows.length === 1 ? "row" : "rows"}`);
+    } catch (e) { toast("copy failed: " + ((e && e.message) || e), true); }
+  }
+  async function copyText(text, okMessage) {
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        await navigator.clipboard.writeText(text);
+      } else {
+        const ta = document.createElement("textarea");
+        ta.value = text; document.body.appendChild(ta); ta.select();
+        const copied = document.execCommand("copy");
+        ta.remove();
+        if (!copied) throw new Error("clipboard unavailable");
+      }
+      toast(okMessage);
+    } catch (e) { toast("copy failed: " + ((e && e.message) || e), true); }
+  }
+  function copyTileContent(name) {
+    const t = sessionTile(name); if (!t) return;
+    if (t.type === "markdown") {
+      copyText(t.markdown || "", "markdown copied");
+      return;
+    }
+    const d = tileData[name]; if (!d) { toast("table is still loading", true); return; }
+    const q = (state.tileFilter[name] || "").trim().toLowerCase();
+    const rows = q ? d.rows.filter((r) => r.some((v) => String(v ?? "").toLowerCase().includes(q))) : d.rows;
+    copyRichTable(d.cols, rows, d.db, d.table);
+  }
   // Hide a panel into the TOC's trash section (restored by clicking it there).
   const SVG_TRASH_X = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
   function trashBtn(name) {
@@ -3572,18 +3633,18 @@
       // A heading-only divider that groups the panels after it — not a boxed
       // panel. Still a .panel with data-tile so TOC spy / scroll-to work.
       const label = t.title || t.name;
-      return `<div class="panel section-panel" data-tile="${attr(t.name)}"><div class="section-bar"><h2 class="section-title">${esc(label)}</h2><span class="panel-actions">${trashBtn(t.name)}</span></div></div>`;
+      return `<div class="panel section-panel" data-tile="${attr(t.name)}"><div class="section-bar"><h2 class="section-title">${esc(label)}</h2><span class="panel-actions no-screenshot">${trashBtn(t.name)}</span></div></div>`;
     }
     if (t.type === "markdown") {
       // Markdown panels size to their prose — no resize grip (data tiles keep it).
-      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions">${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
+      return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions no-screenshot">${copyTileBtn(t.name, "Copy markdown")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
     // Table tiles get a text filter beside the title (skipped in screenshots —
     // an empty input is just noise in a PNG).
     const filt = kind === "table" && !SHOT
-      ? `<input class="tile-filter" type="text" data-tfilter="${attr(t.name)}" value="${attr(state.tileFilter[t.name] || "")}" placeholder="filter…" aria-label="filter rows">`
+      ? `<input class="tile-filter no-screenshot" type="text" data-tfilter="${attr(t.name)}" value="${attr(state.tileFilter[t.name] || "")}" placeholder="filter…" aria-label="filter rows">`
       : "";
     const shrunk = !!state.tableShrunk[t.name];
     const contractBtn = kind === "table"
@@ -3605,14 +3666,14 @@
     const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
   let tileHeights = {};
   try { tileHeights = JSON.parse(localStorage.getItem("muckdb.tileh") || "{}") || {}; } catch (_) {}
   function gripHtml(name) {
-    return `<div class="panel-grip" data-grip="${attr(name)}" title="Drag to resize height (double-click to reset)"></div>`;
+    return `<div class="panel-grip no-screenshot" data-grip="${attr(name)}" title="Drag to resize height (double-click to reset)"></div>`;
   }
   function tileHKey(name) { return (state.selSession || "") + "/" + name; }
   // The element whose height the grip controls: the chart/table slot on data
@@ -5610,7 +5671,11 @@
   function mdRender(src) {
     const e = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const blocks = [];
-    src = String(src).replace(/```([\s\S]*?)```/g, (_, c) => { blocks.push(`<pre><code>${e(c.replace(/^\n/, ""))}</code></pre>`); return `${blocks.length - 1}`; });
+    src = String(src).replace(/```([\s\S]*?)```/g, (_, c) => {
+      const code = c.replace(/^\n/, "");
+      blocks.push(`<div class="md-code"><button class="md-copy no-screenshot" data-copycode="${attr(code)}" title="Copy code" aria-label="Copy code">${SVG_COPY}</button><pre><code>${e(code)}</code></pre></div>`);
+      return `${blocks.length - 1}`;
+    });
     const inl = (s) => e(s)
       .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
@@ -5635,8 +5700,8 @@
         const head = cells(ln); i += 2;
         const body = [];
         while (i < lines.length && lines[i].includes("|") && lines[i].trim() !== "") { body.push(cells(lines[i])); i++; }
-        html += `<table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead>` +
-          `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table>`;
+        html += `<div class="md-table"><button class="md-copy no-screenshot" data-copy-mdtable title="Copy table" aria-label="Copy table">${SVG_COPY}</button><table><thead><tr>${head.map((c) => `<th>${c}</th>`).join("")}</tr></thead>` +
+          `<tbody>${body.map((r) => `<tr>${r.map((c) => `<td>${c}</td>`).join("")}</tr>`).join("")}</tbody></table></div>`;
         continue;
       }
       if (/^\s*[-*]\s+/.test(ln)) { const it = []; while (i < lines.length && /^\s*[-*]\s+/.test(lines[i])) { it.push(`<li>${inl(lines[i].replace(/^\s*[-*]\s+/, ""))}</li>`); i++; } html += `<ul>${it.join("")}</ul>`; continue; }
@@ -5905,6 +5970,20 @@
     }
     const js = ev.target.closest("[data-json]"); if (js) { showJsonValue(js.dataset.json, js.dataset.jdb || null, js.dataset.jtable || null, js.dataset.jcol || null); return; }
     const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
+    const ct = ev.target.closest("[data-copytile]"); if (ct) { copyTileContent(ct.dataset.copytile); return; }
+    const cc = ev.target.closest("[data-copycode]");
+    if (cc) {
+      copyText(cc.getAttribute("data-copycode") || "", "code copied");
+      return;
+    }
+    const mt = ev.target.closest("[data-copy-mdtable]");
+    if (mt) {
+      const table = mt.closest(".md-table").querySelector("table");
+      const cols = [...table.querySelectorAll("thead th")].map((x) => x.textContent || "");
+      const rows = [...table.querySelectorAll("tbody tr")].map((tr) => [...tr.querySelectorAll("td")].map((td) => td.textContent || ""));
+      copyRichTable(cols, rows, null, null);
+      return;
+    }
     const mmd = ev.target.closest("[data-mermaid]");
     if (mmd) {
       const t = sessionTile(mmd.dataset.mermaid);

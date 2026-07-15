@@ -21,7 +21,7 @@ test('dashboard poster exports despite color-mix styles', async ({ page }) => {
   const png = readFileSync(await download.path());
   // Metadata is injected after IHDR, before the compressed image data. Check
   // both the standard creation-time marker and the human-readable fields.
-  expect(png.toString('latin1')).toContain('Software\0muckdb 0.4.3 by Nick Kaltner');
+  expect(png.toString('latin1')).toMatch(/Software\0muckdb \d+\.\d+\.\d+ by Nick Kaltner/);
   expect(png.toString('latin1')).toContain('Creation Time\0');
   expect(png.subarray(37, 41).toString('ascii')).toBe('tIME');
 });

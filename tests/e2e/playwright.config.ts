@@ -11,6 +11,9 @@ export default defineConfig({
   reporter: [['html', { open: 'never' }], ['list']],
   use: {
     baseURL: BASE_URL,
+    // The seeded absolute-time timeline is formatted as `local`; pin the
+    // browser clock so its display-zone assertions do not inherit GitHub's UTC.
+    timezoneId: 'Australia/Brisbane',
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
   },

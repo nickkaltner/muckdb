@@ -37,7 +37,7 @@ test.describe('timeline tile', () => {
     await expect(panel.locator('svg.tl-overlay .tl-deps path')).toHaveCount(2);
     await expect(panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s3"]')).toBeVisible();
     const roomy = panel.locator('svg.tl-overlay .tl-deps path[data-from="s1"][data-to="s4"]');
-    expect((await roomy.getAttribute('d'))!.match(/M/g)!.length).toBeGreaterThan(1);
+    expect((await roomy.getAttribute('d'))!.match(/M/g)!.length).toBe(1);
     await expect(panel.locator('.tl-bar').first()).toHaveCSS('z-index', '2');
 
     // The --event '50|cutover' marker → a dashed line in the plot, and its label
