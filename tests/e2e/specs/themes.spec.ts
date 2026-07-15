@@ -10,7 +10,7 @@ test('sunroom applies its light ground and vivid chart palette', async ({ page }
     return {
       bg: style.getPropertyValue('--bg').trim(),
       surface: style.getPropertyValue('--surface').trim(),
-      accent: style.getPropertyValue('--orange').trim(),
+      accent: style.getPropertyValue('--primary').trim(),
     };
   });
 
