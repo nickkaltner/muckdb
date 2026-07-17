@@ -765,6 +765,53 @@
   .panel-act.busy { opacity: 0.5; pointer-events: none; }
   .panel-act.flash-ok { border-color: var(--ok); color: var(--ok); }
   .panel-act.flash-err { border-color: var(--fail); color: var(--fail); }
+  /* Presentation mode stays deliberately out of the dashboard chrome: `pp`
+     opens a quiet, full-viewport stage which reuses one live tile at a time. */
+  .presentation-overlay { position: fixed; inset: 0; z-index: 250; display: grid; place-items: stretch; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 0%, color-mix(in srgb, var(--primary) 13%, transparent), transparent 46%), var(--bg); }
+  .presentation-overlay::before { content: ""; position: absolute; inset: 0; pointer-events: none; opacity: 0.48;
+    background: linear-gradient(115deg, transparent 20%, color-mix(in srgb, var(--primary) 5%, transparent) 50%, transparent 80%); }
+  .presentation-stage { position: relative; z-index: 1; display: flex; align-items: stretch; justify-content: center; min-width: 0; min-height: 0; padding: 6vh 7vw 7vh; }
+  /* Maps are spatial views, so give them the room of a wall display rather
+     than the reading-column proportions used by ordinary charts. */
+  .presentation-stage.presentation-map { padding-left: 2vw; padding-right: 2vw; }
+  .presentation-stage .panel { width: min(1380px, 100%); height: 100%; display: flex; flex-direction: column; overflow: hidden;
+    border: 1px solid color-mix(in srgb, var(--primary) 34%, var(--line)); box-shadow: 0 30px 100px rgba(0,0,0,0.46), var(--hi); }
+  .presentation-stage.presentation-map .panel { width: min(100%, 1800px); height: auto; align-self: flex-start; }
+  .presentation-stage .panel.full-bleed { width: min(1380px, 100%); margin-left: 0; }
+  .presentation-stage .panel-bar { flex: none; padding: 14px 20px; }
+  .presentation-stage .panel-title { font-size: 16px; }
+  .presentation-stage .panel-actions, .presentation-stage .panel-grip { display: none; }
+  .presentation-stage .panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 20px; }
+  .presentation-stage .panel-chart { flex: 1; min-height: 0; height: auto !important; }
+  .presentation-stage .panel-caption { flex: none; margin: 12px 2px 0; font-size: 12px; }
+  /* A map has an intrinsic, width-driven height. Do not stretch its chart slot
+     like a canvas chart: that put a large, empty gulf before the caption. */
+  .presentation-stage.presentation-map .panel-body, .presentation-stage.presentation-map .panel-chart { flex: none; }
+  .presentation-stage.presentation-map .panel-caption { margin-top: 4px; }
+  /* Mark in-tile controls and truncation hints that are useful for analysis
+     but distracting to an audience. The class is intentionally generic so
+     any future tile can opt out without presentation-specific JS. */
+  .presentation-stage .hide-presentation { display: none !important; }
+  .presentation-stage .section-panel { justify-content: center; border-color: transparent; background: none; box-shadow: none; }
+  /* Section slides are rare, natural scene breaks. A single wash of the active
+     theme colour now crosses the full presentation stage, so the title card
+     feels like a real scene break instead of a glow inside its own box. */
+  .presentation-overlay.presentation-section::after { content: ""; position: absolute; z-index: 0; inset: -18% -34%; pointer-events: none; opacity: 0;
+    background: linear-gradient(105deg, transparent 29%, color-mix(in srgb, var(--primary) 44%, transparent) 48%, color-mix(in srgb, var(--primary-deep) 25%, transparent) 54%, transparent 73%);
+    transform: translateX(-32%) skewX(-10deg); animation: presentation-section-wash 620ms cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .presentation-stage .section-bar { position: relative; z-index: 1; width: min(900px, 100%); margin: auto; border-bottom-color: var(--primary-dim); }
+  .presentation-stage .section-title { font-size: clamp(30px, 5vw, 62px); }
+  .presentation-brand, .presentation-hint, .presentation-page { position: absolute; z-index: 2; font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
+  .presentation-brand { top: 22px; left: 28px; color: var(--faint); font-size: 10px; }
+  .presentation-hint { bottom: 22px; left: 28px; color: var(--faint); font-size: 10px; }
+  .presentation-page { right: 28px; bottom: 22px; color: var(--fg); font-size: 12px; font-variant-numeric: tabular-nums; }
+  body.presentation-open { overflow: hidden; }
+  @keyframes presentation-section-wash { 0% { opacity: 0; transform: translateX(-32%) skewX(-10deg); } 16% { opacity: 0.92; } 100% { opacity: 0; transform: translateX(32%) skewX(-10deg); } }
+  @media (prefers-reduced-motion: reduce) {
+    .presentation-overlay { background: var(--bg); }
+    .presentation-overlay.presentation-section::after { animation: none; opacity: 0.2; transform: none; }
+  }
   /* Screenshot mode (?shot=1[&tile=NAME]): bare panels for headless capture.
      All chrome is hidden and the page grows to its content so the capture pass
      can size the window from body scrollHeight (stamped as data-shot-h). */
@@ -3142,6 +3189,70 @@
       : "";
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }
+  // Presentation mode moves the existing, live panel into a full-viewport
+  // stage. Keeping the actual node (rather than cloning it) preserves charts,
+  // maps, and any current table state as the speaker advances.
+  let presentation = null, presentationLastP = 0;
+  function presentationResize() {
+    requestAnimationFrame(() => {
+      charts.forEach((c) => { try { c.resize(); } catch (_) {} });
+      window.dispatchEvent(new Event("resize"));
+    });
+  }
+  function presentationShow(index) {
+    if (!presentation) return;
+    const p = presentation;
+    p.index = Math.max(0, Math.min(index, p.items.length - 1));
+    if (p.active) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
+    const next = p.items[p.index];
+    const tile = (state.sessionData && state.sessionData.tiles || []).find((t) => t.name === next.panel.dataset.tile);
+    p.stage.classList.toggle("presentation-map", !!(tile && tile.chart && tile.chart.kind === "map"));
+    p.overlay.classList.toggle("presentation-section", next.panel.classList.contains("section-panel"));
+    p.stage.append(next.panel);
+    p.active = next;
+    p.page.textContent = `${p.index + 1} / ${p.items.length}`;
+    presentationResize();
+  }
+  function closePresentation({ skipFullscreen = false } = {}) {
+    if (!presentation) return;
+    const p = presentation;
+    if (p.active) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
+    p.overlay.remove();
+    document.body.classList.remove("presentation-open");
+    presentation = null;
+    if (!skipFullscreen && p.requestedFullscreen && document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    presentationResize();
+  }
+  function openPresentation() {
+    if (presentation || state.tab !== "sessions" || !state.selSession) return;
+    const panels = [...document.querySelectorAll("#panels > .panel")];
+    if (!panels.length) return;
+    const overlay = document.createElement("div");
+    overlay.className = "presentation-overlay";
+    overlay.setAttribute("role", "dialog");
+    overlay.setAttribute("aria-label", "Presentation mode");
+    overlay.innerHTML = `<div class="presentation-brand">${esc((state.sessionData && (state.sessionData.title || state.sessionData.id)) || state.selSession)}</div><div class="presentation-stage"></div><div class="presentation-hint">← → navigate &nbsp;·&nbsp; Esc return</div><div class="presentation-page" aria-live="polite"></div>`;
+    document.body.append(overlay);
+    const items = panels.map((panel) => {
+      const anchor = document.createComment("presentation tile");
+      panel.parentNode.insertBefore(anchor, panel);
+      return { panel, anchor };
+    });
+    presentation = { overlay, stage: overlay.querySelector(".presentation-stage"), page: overlay.querySelector(".presentation-page"), items, active: null, index: 0, requestedFullscreen: false };
+    document.body.classList.add("presentation-open");
+    presentationShow(0);
+    if (document.documentElement.requestFullscreen) {
+      // Mark the request immediately: Escape can land before the promise
+      // resolves, in which case the eventual fullscreen entry must unwind.
+      presentation.requestedFullscreen = true;
+      document.documentElement.requestFullscreen()
+        .then(() => { if (!presentation) document.exitFullscreen().catch(() => {}); })
+        .catch(() => { if (presentation) presentation.requestedFullscreen = false; });
+    }
+  }
+  document.addEventListener("fullscreenchange", () => {
+    if (presentation && presentation.requestedFullscreen && !document.fullscreenElement) closePresentation({ skipFullscreen: true });
+  });
   async function loadSession(id, push) {
     // Switching to a different session closes a stale expand overlay (but a live
     // refresh of the same session leaves it open).
@@ -3186,6 +3297,9 @@
     lastPanelsSession = state.selSession; lastTileSigs = sigs;
   }
   function renderPanels(s) {
+    // A live session update would replace the nodes being presented. Return to
+    // the dashboard cleanly instead of leaving a stale slide on screen.
+    if (presentation) closePresentation();
     destroyCharts();
     renderSessionHead(s);
     // Count a human open once per navigation, not per live re-render.
@@ -5003,7 +5117,7 @@
     const au = autoEpochUnits(cols, shown, db, table);
     const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i], false, r, cols)).join("") + "</tr>").join("");
     const more = rows.length > shown.length
-      ? `<div class="note" style="padding:6px 12px">+${rows.length - shown.length} more ${filtered ? "matches — narrow the filter" : "rows — filter, or explore to see them all"}.</div>` : "";
+      ? `<div class="note hide-presentation" style="padding:6px 12px">+${rows.length - shown.length} more ${filtered ? "matches — narrow the filter" : "rows — filter, or explore to see them all"}.</div>` : "";
     return `<div class="preview-wrap${shrunk ? " shrunk" : ""}"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;
   }
   // The active chart palette — set by applyTheme().
@@ -6185,9 +6299,25 @@
   });
 
   document.addEventListener("keydown", (ev) => {
+    if (presentation) {
+      if (ev.key === "ArrowRight") { ev.preventDefault(); presentationShow(presentation.index + 1); return; }
+      if (ev.key === "ArrowLeft") { ev.preventDefault(); presentationShow(presentation.index - 1); return; }
+      if (ev.key === "Escape") { ev.preventDefault(); closePresentation(); return; }
+      return;
+    }
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
     if (ev.key === "Escape") { closeZoom(); closePicker(); closeCredits(); closeFacetDrawer(); }
+    // Hidden presenter shortcut: two deliberate P presses within one second.
+    // Ignore key repeat and text fields so normal typing never opens the deck.
+    if (!ev.repeat && ev.key.toLowerCase() === "p" && state.tab === "sessions" && state.selSession
+      && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.target.matches("input, textarea, [contenteditable]")
+      && !document.querySelector(".pick-pop, .pick-overlay, .zoom-overlay")) {
+      const now = performance.now();
+      if (now - presentationLastP <= 1000) { presentationLastP = 0; ev.preventDefault(); openPresentation(); }
+      else presentationLastP = now;
+      return;
+    }
     // Space toggles the selected session panel expanded/contracted. Runs even
     // with a zoom overlay up (so it closes it), but not over a picker or inputs.
     if ((ev.key === " " || ev.key === "Spacebar") && state.tab === "sessions" && state.selSession

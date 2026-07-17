@@ -5,7 +5,7 @@ test('seeded session renders its tiles', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
 
   // Markdown tile.
-  await expect(page.locator('.panel', { hasText: 'Summary' })).toBeVisible();
+  await expect(page.locator('.panel[data-tile="summary"]')).toBeVisible();
   await expect(page.getByText('200 widgets', { exact: false })).toBeVisible();
 
   // Each chart tile's panel is present by title.
