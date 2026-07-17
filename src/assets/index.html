@@ -4608,11 +4608,20 @@
       return '<div class="note">box plots need --y with five columns: min,q1,median,q3,max.</div>';
     }
     const di = spec.desc ? cols.indexOf(spec.desc) : -1;
-    const boxes = rows.map((r) => ({
-      label: String(r[xi]),
-      desc: di >= 0 && r[di] != null ? String(r[di]) : "",
-      v: yidx.map((i) => Number(r[i])),
-    })).filter((b) => b.v.every(isFinite));
+    // Check the raw values before coercing them.  Number(null) and Number("")
+    // are both zero, which used to create a phantom zero whisker from an
+    // incomplete row and, with several boxes, incorrectly extend the shared
+    // range printed below the tile.
+    const boxes = rows.map((r) => {
+      const raw = yidx.map((i) => r[i]);
+      return {
+        label: String(r[xi]),
+        desc: di >= 0 && r[di] != null ? String(r[di]) : "",
+        v: raw.every((v) => v != null && String(v).trim() !== "")
+          ? raw.map(Number)
+          : null,
+      };
+    }).filter((b) => b.v && b.v.every(Number.isFinite));
     if (!boxes.length) return '<div class="note">no numeric box data.</div>';
     const lo = Math.min(...boxes.map((b) => b.v[0]));
     const hi = Math.max(...boxes.map((b) => b.v[4]));

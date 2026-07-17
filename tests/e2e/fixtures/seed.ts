@@ -27,6 +27,13 @@ CREATE VIEW widgets_all AS SELECT * FROM widgets;
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
 CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GROUP BY 1 ORDER BY 1;
 CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
+-- A box tile with two complete summaries and one incomplete one. The incomplete
+-- row must not be coerced into a zero-valued box or widen the shared axis.
+CREATE VIEW box_ranges AS SELECT * FROM (VALUES
+  ('Narrow distribution', 40.0, 45.0, 50.0, 55.0, 60.0),
+  ('Upper distribution',  70.0, 75.0, 80.0, 85.0, 90.0),
+  ('Incomplete summary',  NULL, NULL, NULL, NULL, NULL)
+) b(group_name, min_value, q1, median, q3, max_value);
 -- A connections/flows view: each row is an arc between two fixed cities, for
 -- the map tile's connection rendering (arcs + labels).
 CREATE VIEW widget_flows AS SELECT * FROM (VALUES
@@ -101,6 +108,10 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'by-day', '--title', 'By day',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n',
     '--caption', 'Widgets created per day.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'boxes', '--title', 'Box ranges',
+    '--db', dbPath, '--view', 'box_ranges', '--chart', 'box', '--x', 'group_name',
+    '--y', 'min_value,q1,median,q3,max_value',
+    '--caption', 'Two complete distributions share a 40–90 range; an incomplete summary is ignored.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'map', '--title', 'Widget map',
     '--db', dbPath, '--view', 'widget_map', '--chart', 'map',
     '--lat', 'latitude', '--lon', 'longitude', '--label', 'category',
