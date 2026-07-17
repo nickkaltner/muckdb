@@ -19,12 +19,24 @@ test.describe('presentation mode', () => {
     await expect(section).toBeVisible();
     await expect(deck).toHaveClass(/\bpresentation-section\b/);
     expect(await deck.evaluate((el) => getComputedStyle(el, '::after').animationName))
-      .toBe('presentation-section-wash');
+      .toBe('presentation-section-bloom');
+    expect(await deck.evaluate((el) => getComputedStyle(el, '::after').animationDuration))
+      .toBe('1s');
+    expect(await section.locator('.section-bar').evaluate((el) => getComputedStyle(el).animationName))
+      .toBe('presentation-section-title');
     await page.keyboard.press('ArrowLeft');
     await expect(deck.locator('.presentation-page')).toHaveText(/^1 \/ \d+$/);
 
+    // A Chart.js tile replays its native draw animation on presentation entry.
+    await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
+    const chartCanvas = deck.locator('.presentation-stage > .panel[data-tile="by-cat"] canvas');
+    await expect(chartCanvas).toBeVisible();
+    await expect.poll(() => chartCanvas.evaluate((canvas) => (window as any).Chart.getChart(canvas).options.animation.duration))
+      .toBe(900);
+
     // Maps use a wider stage (96vw) than ordinary presentation slides.
-    for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowRight');
+    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
     const stage = deck.locator('.presentation-stage');
     await expect(stage).toHaveClass(/\bpresentation-map\b/);
     const mapBox = await deck.locator('.presentation-stage > .panel').boundingBox();
@@ -39,6 +51,14 @@ test.describe('presentation mode', () => {
     for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
     await expect(deck.locator('.presentation-stage > .panel[data-tile="all"]')).toBeVisible();
     await expect(deck.locator('.hide-presentation')).toBeHidden();
+
+    // Every deck closes on a dedicated, non-tile final slide.
+    for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowRight');
+    const fin = deck.locator('.presentation-stage > .presentation-fin');
+    await expect(fin).toBeVisible();
+    await expect(fin).toHaveText('Fin.');
+    const [current, total] = (await deck.locator('.presentation-page').textContent())!.split(' / ');
+    expect(current).toBe(total);
 
     await page.keyboard.press('Escape');
     await expect(deck).toHaveCount(0);

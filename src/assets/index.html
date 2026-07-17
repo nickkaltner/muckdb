@@ -784,6 +784,7 @@
   .presentation-stage .panel-actions, .presentation-stage .panel-grip { display: none; }
   .presentation-stage .panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 20px; }
   .presentation-stage .panel-chart { flex: 1; min-height: 0; height: auto !important; }
+  .presentation-stage .panel-chart.presentation-chart-enter { animation: presentation-chart-fade 520ms cubic-bezier(0.23, 1, 0.32, 1) both; }
   .presentation-stage .panel-caption { flex: none; margin: 12px 2px 0; font-size: 12px; }
   /* A map has an intrinsic, width-driven height. Do not stretch its chart slot
      like a canvas chart: that put a large, empty gulf before the caption. */
@@ -794,23 +795,30 @@
      any future tile can opt out without presentation-specific JS. */
   .presentation-stage .hide-presentation { display: none !important; }
   .presentation-stage .section-panel { justify-content: center; border-color: transparent; background: none; box-shadow: none; }
-  /* Section slides are rare, natural scene breaks. A single wash of the active
-     theme colour now crosses the full presentation stage, so the title card
-     feels like a real scene break instead of a glow inside its own box. */
-  .presentation-overlay.presentation-section::after { content: ""; position: absolute; z-index: 0; inset: -18% -34%; pointer-events: none; opacity: 0;
-    background: linear-gradient(105deg, transparent 29%, color-mix(in srgb, var(--primary) 44%, transparent) 48%, color-mix(in srgb, var(--primary-deep) 25%, transparent) 54%, transparent 73%);
-    transform: translateX(-32%) skewX(-10deg); animation: presentation-section-wash 620ms cubic-bezier(0.23, 1, 0.32, 1) both; }
-  .presentation-stage .section-bar { position: relative; z-index: 1; width: min(900px, 100%); margin: auto; border-bottom-color: var(--primary-dim); }
+  /* Section slides are rare, natural scene breaks. A full-stage bloom first
+     changes the room's colour, then the title resolves into focus — a proper
+     scene transition rather than a stripe drifting behind static text. */
+  .presentation-overlay.presentation-section::after { content: ""; position: absolute; z-index: 0; inset: -12%; pointer-events: none; opacity: 0;
+    background: radial-gradient(ellipse at 50% 46%, color-mix(in srgb, var(--primary) 42%, transparent), color-mix(in srgb, var(--primary-deep) 17%, transparent) 36%, transparent 71%);
+    transform: scale(0.86); animation: presentation-section-bloom 1s cubic-bezier(0.23, 1, 0.32, 1) both; }
+  .presentation-stage .section-bar { position: relative; z-index: 1; width: min(900px, 100%); margin: auto; border-bottom-color: var(--primary-dim);
+    opacity: 0; transform: translateY(18px); animation: presentation-section-title 1.1s 760ms cubic-bezier(0.23, 1, 0.32, 1) both; }
   .presentation-stage .section-title { font-size: clamp(30px, 5vw, 62px); }
+  .presentation-stage .presentation-fin { align-items: center; justify-content: center; border-color: transparent; background: none; box-shadow: none; }
+  .presentation-fin-text { font-family: var(--sans); font-size: clamp(76px, 16vw, 260px); font-weight: 800; letter-spacing: -0.065em; color: var(--fg); }
   .presentation-brand, .presentation-hint, .presentation-page { position: absolute; z-index: 2; font-family: var(--mono); letter-spacing: 0.1em; text-transform: uppercase; }
   .presentation-brand { top: 22px; left: 28px; color: var(--faint); font-size: 10px; }
   .presentation-hint { bottom: 22px; left: 28px; color: var(--faint); font-size: 10px; }
   .presentation-page { right: 28px; bottom: 22px; color: var(--fg); font-size: 12px; font-variant-numeric: tabular-nums; }
   body.presentation-open { overflow: hidden; }
-  @keyframes presentation-section-wash { 0% { opacity: 0; transform: translateX(-32%) skewX(-10deg); } 16% { opacity: 0.92; } 100% { opacity: 0; transform: translateX(32%) skewX(-10deg); } }
+  @keyframes presentation-section-bloom { 0% { opacity: 0; transform: scale(0.86); } 18% { opacity: 0.9; } 72% { opacity: 0.38; } 100% { opacity: 0.17; transform: scale(1); } }
+  @keyframes presentation-section-title { from { opacity: 0; transform: translateY(18px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes presentation-chart-fade { from { opacity: 0; } to { opacity: 1; } }
   @media (prefers-reduced-motion: reduce) {
     .presentation-overlay { background: var(--bg); }
     .presentation-overlay.presentation-section::after { animation: none; opacity: 0.2; transform: none; }
+    .presentation-stage .section-bar { animation: none; opacity: 1; transform: none; }
+    .presentation-stage .panel-chart.presentation-chart-enter { animation: none; }
   }
   /* Screenshot mode (?shot=1[&tile=NAME]): bare panels for headless capture.
      All chrome is hidden and the page grows to its content so the capture pass
@@ -3199,11 +3207,34 @@
       window.dispatchEvent(new Event("resize"));
     });
   }
+  // Chart canvases already exist when a live dashboard panel is moved into the
+  // deck, so replay their native Chart.js entrance and fade the canvas in.
+  // Maps/tables have no Chart.js instance and are untouched.
+  function presentationReplayCharts(panel) {
+    if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    const active = charts.filter((c) => c.canvas && panel.contains(c.canvas));
+    if (!active.length) return;
+    const slot = panel.querySelector(".panel-chart");
+    if (slot) {
+      slot.classList.remove("presentation-chart-enter");
+      void slot.offsetWidth; // restart the CSS fade when revisiting a slide
+      slot.classList.add("presentation-chart-enter");
+      slot.addEventListener("animationend", () => slot.classList.remove("presentation-chart-enter"), { once: true });
+    }
+    requestAnimationFrame(() => {
+      active.forEach((c) => {
+        try {
+          c.options.animation = { duration: 900, easing: "easeOutQuart" };
+          c.resize(); c.reset(); c.update();
+        } catch (_) {}
+      });
+    });
+  }
   function presentationShow(index) {
     if (!presentation) return;
     const p = presentation;
     p.index = Math.max(0, Math.min(index, p.items.length - 1));
-    if (p.active) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
+    if (p.active && p.active.anchor) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
     const next = p.items[p.index];
     const tile = (state.sessionData && state.sessionData.tiles || []).find((t) => t.name === next.panel.dataset.tile);
     p.stage.classList.toggle("presentation-map", !!(tile && tile.chart && tile.chart.kind === "map"));
@@ -3212,11 +3243,12 @@
     p.active = next;
     p.page.textContent = `${p.index + 1} / ${p.items.length}`;
     presentationResize();
+    presentationReplayCharts(next.panel);
   }
   function closePresentation({ skipFullscreen = false } = {}) {
     if (!presentation) return;
     const p = presentation;
-    if (p.active) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
+    if (p.active && p.active.anchor) p.active.anchor.parentNode.insertBefore(p.active.panel, p.active.anchor.nextSibling);
     p.overlay.remove();
     document.body.classList.remove("presentation-open");
     presentation = null;
@@ -3226,7 +3258,6 @@
   function openPresentation() {
     if (presentation || state.tab !== "sessions" || !state.selSession) return;
     const panels = [...document.querySelectorAll("#panels > .panel")];
-    if (!panels.length) return;
     const overlay = document.createElement("div");
     overlay.className = "presentation-overlay";
     overlay.setAttribute("role", "dialog");
@@ -3238,6 +3269,10 @@
       panel.parentNode.insertBefore(anchor, panel);
       return { panel, anchor };
     });
+    const fin = document.createElement("div");
+    fin.className = "panel presentation-fin";
+    fin.innerHTML = '<div class="presentation-fin-text">Fin.</div>';
+    items.push({ panel: fin, anchor: null });
     presentation = { overlay, stage: overlay.querySelector(".presentation-stage"), page: overlay.querySelector(".presentation-page"), items, active: null, index: 0, requestedFullscreen: false };
     document.body.classList.add("presentation-open");
     presentationShow(0);
@@ -3832,7 +3867,15 @@
     const pieBg = kind === "pie" ? '<video class="pie-vid" src="/sea-static.mp4" autoplay loop muted playsinline></video>' : "";
     slot.innerHTML = pieBg + "<canvas></canvas>";
     applyTileHeight(t.name);
-    try { charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null))); }
+    try {
+      charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null)));
+      // A deck slide can become active before its async query returns. Replay
+      // now as well as on slide entry so late-loading charts get the same
+      // presentation animation instead of arriving fully drawn.
+      if (presentation && presentation.active && presentation.active.panel.dataset.tile === t.name) {
+        presentationReplayCharts(presentation.active.panel);
+      }
+    }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
   // SVG glyphs for the table-tile row-height toggle (chevrons toward / away from
