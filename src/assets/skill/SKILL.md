@@ -225,13 +225,13 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
         [--from-label COL] [--to-label COL]  (map connections: name each endpoint marker — the place at each end — shown on marker hover; auto-detects from_city/to_city etc.)
         [--label COL]  (map: per-point label shown in the hover tooltip; on a connections map it labels the arc; timeline: the text drawn in each bar; sequence: the message text)
-        [--desc COL]   (box: a per-box note column; --y is min,q1,median,q3,max)
+        [--desc COL]   (box: a per-box note; probability: a per-distribution note)
         [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
         [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
         [--color COL]  (timeline: colour bars by this category value, adds a legend)
@@ -342,6 +342,12 @@ muckdb session rm <name> [--tile TILE]
     quantile_cont(v,0.75), max(v)`); `--desc` names a text column rendered
     under each label so every box carries its own explanation. Values render
     through the median column's display format.
+  - **`probability`** to compare observed distributions without assuming a
+    shape — one density curve per `--x` group on a shared scale. `--y` takes
+    exactly one raw numeric observation column, with **one row per sample**;
+    `--desc` supplies a per-distribution note. The estimate preserves skew,
+    tails, and multiple peaks. Use `box` when you only have five-number
+    summaries instead.
   - **`map`** to plot geographic points on a compact ASCII world map. Give it
     `--lat`/`--lon` columns (or name them lat/latitude & lon/lng/longitude and
     they're auto-detected), one row per point — don't pre-aggregate; the tile

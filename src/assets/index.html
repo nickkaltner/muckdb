@@ -505,6 +505,24 @@
   .bx-med-val { font-size: 11.5px; color: var(--muted); text-align: right; }
   .bx-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; }
   .bx-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 3px; }
+  /* Probability tiles: one normal-distribution curve per row on a shared x scale. */
+  .pr { display: flex; flex-direction: column; gap: 12px; padding: 8px 4px; }
+  .pr-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 104px; gap: 14px; align-items: center; }
+  .pr-head { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .pr-label { font-size: 12.5px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pr-desc { font-size: 11px; color: var(--faint); line-height: 1.35; }
+  .pr-plot { position: relative; height: 58px; min-width: 0; border-bottom: 1px solid var(--line-soft); cursor: crosshair; }
+  .pr-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .pr-area { fill: color-mix(in srgb, var(--primary) 18%, transparent); }
+  .pr-curve { fill: none; stroke: var(--primary); stroke-width: 2.25; stroke-linejoin: round; stroke-linecap: round; vector-effect: non-scaling-stroke; shape-rendering: geometricPrecision; }
+  .pr-mean { stroke: var(--primary-deep); stroke-width: 1.25; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; opacity: .86; }
+  .pr-stats { font: 11px var(--mono); color: var(--muted); text-align: right; white-space: nowrap; }
+  .pr-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 104px; gap: 14px; }
+  .pr-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); padding-top: 3px; }
+  /* Once resized, let every curve claim an equal share of the new height. */
+  .panel-chart.probability-resized .pr { min-height: 100%; box-sizing: border-box; }
+  .panel-chart.probability-resized .pr-row { flex: 1 1 0; }
+  .panel-chart.probability-resized .pr-plot { height: 100%; min-height: 58px; }
   /* ---- timeline (Gantt-like) tile -------------------------------------- */
   .tl-wrap { --tl-gutter: 148px; padding: 6px 4px 2px; }
   .tl-legend { display: flex; flex-wrap: wrap; gap: 10px 16px; padding: 2px 4px 10px; font-size: 11.5px; color: var(--muted); }
@@ -605,7 +623,7 @@
   .fmt-affix { color: var(--muted); }
   .cell-link { color: var(--primary); text-decoration: none; }
   .cell-link:hover { text-decoration: underline; }
-  .cell-json { font: inherit; font-size: 12px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; cursor: pointer; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
+  .cell-json { font: inherit; font-size: 12px; color: var(--muted); background: var(--raised); border: 1px solid var(--line); border-radius: 4px; padding: 1px 7px; cursor: pointer; max-width: min(720px, 66vw); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: middle; }
   .cell-json:hover { border-color: var(--primary-dim); color: var(--fg); }
   .cell-json .cell-el-sel { color: var(--primary); font-weight: 700; }
   .json-box { max-width: 720px; height: auto; max-height: 82vh; margin: auto; }
@@ -641,7 +659,7 @@
      share identical metrics so the caret lines up with the coloured text. */
   .sqledit { position: relative; }
   .sqledit .sql-hl, .sqledit .sqlbox {
-    margin: 0; width: 100%; min-height: 110px; box-sizing: border-box;
+    margin: 0; width: 100%; min-height: 220px; box-sizing: border-box;
     font-family: var(--mono); font-size: 13px; line-height: 1.5;
     border: 1px solid var(--line); border-radius: 6px; padding: 11px;
     white-space: pre-wrap; word-break: break-word; overflow-wrap: break-word;
@@ -652,7 +670,13 @@
   .sqledit:focus-within .sql-hl { border-color: var(--primary-dim); }
   .sqledit .sqlbox::selection { background: var(--selection); }
   .sql-hl .s-kw { color: var(--primary); } .sql-hl .s-str { color: var(--ok); }
-  .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #7fb6ad; }
+  .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #9aa8b6; } .sql-hl .s-col { color: #7fb6ad; } .sql-hl .s-table { color: #67c9dd; } .sql-hl .s-fn { color: #bb9ef4; }
+  .sql-complete { position: absolute; z-index: 8; display: none; min-width: 220px; max-width: min(420px, calc(100% - 24px)); max-height: 220px; overflow: auto; background: var(--raised); border: 1px solid var(--primary-dim); border-radius: 6px; box-shadow: 0 12px 28px rgba(0,0,0,.38); padding: 4px; font: 12px var(--mono); }
+  .sql-complete.show { display: block; }
+  .sql-option { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 8px; background: none; color: var(--fg); border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; }
+  .sql-option:hover, .sql-option.sel { background: color-mix(in srgb, var(--primary) 18%, transparent); }
+  .sql-option small { margin-left: auto; color: var(--faint); font: 10px var(--mono); }
+  .sql-option.kind-column > span { color: #7fb6ad; } .sql-option.kind-table > span, .sql-option.kind-view > span { color: #67c9dd; } .sql-option.kind-function > span { color: #bb9ef4; } .sql-option.kind-keyword > span { color: var(--primary); }
   .runbtn { font: inherit; font-size: 12px; background: var(--grad-accent); color: var(--on-accent); font-weight: 700; border: 0; border-radius: 5px; padding: 7px 16px; cursor: pointer; box-shadow: var(--hi); }
   .runbtn:hover { filter: brightness(1.08); }
   .qhint { font-size: 11px; color: var(--faint); }
@@ -980,6 +1004,7 @@
 <script src="/chart-adapter.js"></script>
 <script src="/html2canvas.js"></script>
 <script src="/timeline-route.js?v=__MUCKDB_VERSION__"></script>
+<script src="/sql-formatter.js"></script>
 <script>
 (() => {
   "use strict";
@@ -2108,9 +2133,10 @@
       if (scalars) {
         // Inline, the affix wraps the whole list once — "1, 10, 100 Gbps" —
         // rather than repeating after every element (the overlay does that),
-        // and only 3 elements show; "…" marks more behind the click. Elements
-        // matched by an active containment filter are always among the three
-        // and render highlighted, so a filtered chip reads "1, 2.5, 100, …".
+        // and up to 24 elements show before the cell itself ellipsizes. This
+        // lets short, meaningful lists (such as cities in a metro) use the
+        // space available, while a huge array still stays compact. Elements
+        // matched by an active containment filter are always included first.
         const bare = f ? Object.assign({}, f, { prefix: undefined, suffix: undefined }) : null;
         const fmtEl = (x) => x === null ? "NULL" : String(bare ? applyFmt(bare, x) : x);
         const selVals = (db === state.selDb && table === state.selTable)
@@ -2119,7 +2145,8 @@
         const isSel = (x) => x !== null && selVals.some((sv) => String(x) === sv || Number(x) === Number(sv));
         const idxs = v.map((_, i) => i);
         const selIdx = idxs.filter((i) => isSel(v[i]));
-        const shown = [...selIdx.slice(0, 3), ...idxs.filter((i) => !isSel(v[i])).slice(0, Math.max(0, 3 - selIdx.length))]
+        const inlineLimit = 24;
+        const shown = [...selIdx.slice(0, inlineLimit), ...idxs.filter((i) => !isSel(v[i])).slice(0, Math.max(0, inlineLimit - selIdx.length))]
           .sort((a, b) => a - b);
         label = esc((f && f.prefix) || "")
           + shown.map((i) => isSel(v[i]) ? `<span class="cell-el-sel">${esc(fmtEl(v[i]))}</span>` : esc(fmtEl(v[i]))).join(", ")
@@ -2968,11 +2995,13 @@
     $("results").innerHTML = `
       <div class="qeditor">
         <div class="qbar"><span class="qtitle">query</span><span class="qhint">read-only · runs against ${esc(basename(state.selDb))}</span></div>
-        <div class="sqledit"><pre class="sql-hl" aria-hidden="true"></pre><textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea></div>
-        <div class="qrow"><button class="runbtn" data-run>▶ run</button> <button class="panel-act" data-format>format</button> <span class="qhint">⌘/Ctrl + Enter</span></div>
+        <div class="sqledit"><pre class="sql-hl" aria-hidden="true"></pre><textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea><div class="sql-complete" role="listbox"></div></div>
+        <div class="qrow"><button class="runbtn" data-run>▶ run</button> <button class="panel-act" data-format>format</button> <button class="panel-act" data-saveview>save as view</button> <span class="qhint">⌘/Ctrl + Enter · Ctrl + Space completes</span></div>
         <div id="query-result"></div>
       </div>`;
     syncEditor($("sql-input"));
+    initSqlTreeSitter();
+    loadSqlEditorSchema();
     syncUrl(true);
     if (restore && restore.sql) runQuery();
   }
@@ -2991,6 +3020,41 @@
       const body = rows.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], null, state.selDb, au[i], false, r, cols)).join("") + "</tr>").join("");
       slot.innerHTML = `<div class="preview-wrap"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div><div class="preview-foot pager"><span class="range">${plural(data.row_count, "row")}</span></div>`;
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
+  }
+  function nextViewName(name) {
+    const taken = new Set(state.tables.map((t) => t.name.toLowerCase()));
+    if (!taken.has(name.toLowerCase())) return name;
+    let i = 2; while (taken.has(`${name}_${i}`.toLowerCase())) i++;
+    return `${name}_${i}`;
+  }
+  async function persistQueryView(name, overwrite) {
+    const ta = $("sql-input"); if (!ta || !state.selDb) return;
+    try {
+      const data = await (await fetch("/api/view", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ db: state.selDb, name, sql: ta.value, overwrite }) })).json();
+      if (data.error) throw new Error(data.error);
+      const tables = await (await fetch("/api/tables?" + new URLSearchParams({ db: state.selDb }))).json();
+      if (!tables.error) { state.tables = tables.tables || []; renderTableNav(); loadSqlEditorSchema(); }
+      toast(`${overwrite ? "updated" : "saved"} view ${name}`);
+    } catch (e) { toast(`save view failed: ${e.message || e}`, true); }
+  }
+  function saveQueryAsView() {
+    const ta = $("sql-input"); if (!ta || !ta.value.trim()) { toast("write a query before saving a view", true); return; }
+    const name = window.prompt("Save query as view", "query_view");
+    if (name == null || !name.trim()) return;
+    const clean = name.trim();
+    const existing = state.tables.some((t) => t.name.toLowerCase() === clean.toLowerCase());
+    if (!existing) { persistQueryView(clean, false); return; }
+    const suggested = nextViewName(clean);
+    openPicker({
+      placeholder: `“${clean}” already exists`,
+      foot: "choose how to save this query",
+      items: [
+        { label: `save as ${suggested}`, hint: "new", sub: "keeps the existing view", go: () => persistQueryView(suggested, false) },
+        { label: `overwrite ${clean}`, hint: "replace", sub: "replaces the existing view", go: () => persistQueryView(clean, true) },
+        { label: "cancel", hint: "esc", sub: "make no changes", go: () => {} },
+      ],
+      onPick: (it) => it.go(),
+    });
   }
 
   // ---- picker (combobox popover + ⌘K palette) ---------------------------
@@ -3145,7 +3209,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
@@ -3153,6 +3217,7 @@
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "probability") { slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -3813,7 +3878,9 @@
     const mermaidBtn = kind === "sequence" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
-    // sense on them (markdown panels already skip it too).
+    // sense on them (markdown panels already skip it too). Probability tiles
+    // intentionally keep the standard grip: a taller panel gives their curves
+    // more breathing room, like a bar or line chart.
     const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
@@ -3834,7 +3901,11 @@
     if (!p) return null;
     return p.querySelector(".panel-chart") || p.querySelector(".panel-body .md") || p.querySelector(".panel-body");
   }
-  function setTileHeight(el, h) { el.style.height = h + "px"; el.style.overflowY = "auto"; }
+  function setTileHeight(el, h) {
+    el.style.height = h + "px";
+    el.style.overflowY = "auto";
+    if (el.querySelector(".pr")) el.classList.add("probability-resized");
+  }
   function applyTileHeight(name) {
     const h = tileHeights[tileHKey(name)];
     const el = tileBodyEl(name);
@@ -3858,6 +3929,7 @@
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "probability") { slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "sequence") { slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -4806,6 +4878,62 @@
     }).join("");
     const axis = `<div class="bx-axis"><span></span><div class="bx-axis-line"><span>${esc(fv(lo))}</span><span>${esc(fv(hi))}</span></div><span></span></div>`;
     return `<div class="bx">${rowsHtml}${axis}</div>`;
+  }
+
+  // A probability tile estimates one density curve per --x group from raw
+  // observations in its single --y column. This is deliberately non-parametric:
+  // skew, multiple peaks, and long tails are preserved instead of assumed away.
+  function probabilityTileHtml(cols, rows, spec, db, table) {
+    const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
+    const yidx = (spec.y || []).map((c) => cols.indexOf(c));
+    if (yidx.length !== 1 || yidx[0] < 0) return '<div class="note">probability tiles need one observed-value column in --y.</div>';
+    const di = spec.desc ? cols.indexOf(spec.desc) : -1;
+    const byLabel = new Map();
+    rows.forEach((r) => {
+      const raw = r[yidx[0]], value = Number(raw);
+      if (raw == null || String(raw).trim() === "" || !Number.isFinite(value)) return;
+      const label = String(r[xi] ?? "");
+      if (!byLabel.has(label)) byLabel.set(label, { label, desc: "", values: [] });
+      const group = byLabel.get(label);
+      group.values.push(value);
+      if (!group.desc && di >= 0 && r[di] != null) group.desc = String(r[di]);
+    });
+    const all = [...byLabel.values()].flatMap((g) => g.values);
+    if (!all.length) return '<div class="note">no numeric probability observations.</div>';
+    const rawLo = Math.min(...all), rawHi = Math.max(...all), rawSpan = rawHi - rawLo;
+    const quantile = (values, p) => {
+      const i = (values.length - 1) * p, lo = Math.floor(i), hi = Math.ceil(i);
+      return values[lo] + (values[hi] - values[lo]) * (i - lo);
+    };
+    const curves = [...byLabel.values()].map((c) => {
+      const values = [...c.values].sort((a, b) => a - b);
+      const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+      const sd = Math.sqrt(values.reduce((sum, v) => sum + (v - mean) ** 2, 0) / values.length);
+      const iqr = quantile(values, .75) - quantile(values, .25);
+      const spread = Math.min(sd || Infinity, iqr / 1.34 || Infinity);
+      const fallback = Math.max(rawSpan / 10, Math.abs(mean) * .05, 1);
+      const bandwidth = Math.max((Number.isFinite(spread) ? spread : (sd || fallback)) * 1.06 * values.length ** (-.2), fallback / 20);
+      return { ...c, values, mean, median: quantile(values, .5), bandwidth };
+    });
+    const lo = Math.min(...curves.map((c) => c.values[0] - 3 * c.bandwidth));
+    const hi = Math.max(...curves.map((c) => c.values[c.values.length - 1] + 3 * c.bandwidth));
+    const span = hi - lo || 1;
+    const f = colFmt(db, spec.y[0], table);
+    const fv = (v) => String(f ? applyFmt(f, round3(v)) : fmtNum(v));
+    const px = (v) => ((v - lo) / span) * 1000;
+    const rowsHtml = curves.map((c) => {
+      const samples = Array.from({ length: 201 }, (_, i) => lo + span * i / 200);
+      const kde = (x) => c.values.reduce((sum, v) => sum + Math.exp(-.5 * ((x - v) / c.bandwidth) ** 2), 0) / (c.values.length * c.bandwidth * Math.sqrt(2 * Math.PI));
+      const densities = samples.map(kde), peak = Math.max(...densities) || 1;
+      const points = samples.map((x, i) => [px(x), 56 - densities[i] / peak * 52]);
+      const line = points.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(2)},${y.toFixed(2)}`).join(" ");
+      const area = `${line} L1000,56 L0,56 Z`, median = px(c.median);
+      const stats = [["observations", c.values.length], ["median", fv(c.median)], ["mean", fv(c.mean)], ["bandwidth", fv(c.bandwidth)]].map(([key, value]) => `<li><span class="wm-tip-lb">${key}</span><span class="wm-tip-c">${esc(String(value))}</span></li>`).join("");
+      const tip = `<b>${esc(c.label)}</b>${c.desc ? `<br><span class="tl-tip-cat">${esc(c.desc)}</span>` : ""}<div class="tl-tip-sep"></div><ul class="wm-tip-list">${stats}</ul>`;
+      return `<div class="pr-row"><div class="pr-head"><span class="pr-label" title="${attr(c.label)}">${esc(c.label)}</span>${c.desc ? `<span class="pr-desc">${esc(c.desc)}</span>` : ""}</div><div class="pr-plot wm-x" data-tip="${attr(tip)}"><svg class="pr-svg" viewBox="0 0 1000 58" preserveAspectRatio="none" aria-label="Estimated distribution for ${attr(c.label)}"><path class="pr-area" d="${area}"></path><path class="pr-curve" d="${line}"></path><line class="pr-mean" x1="${median.toFixed(2)}" x2="${median.toFixed(2)}" y1="2" y2="56"></line></svg></div><span class="pr-stats">n ${c.values.length}<br>med ${esc(fv(c.median))}</span></div>`;
+    }).join("");
+    const axis = `<div class="pr-axis"><span></span><div class="pr-axis-line"><span>${esc(fv(lo))}</span><span>${esc(fv(hi))}</span></div><span></span></div>`;
+    return `<div class="pr">${rowsHtml}${axis}</div>`;
   }
   // A map tile: an ASCII world map (land = '*') with a coloured 'x' over every
   // grid cell that holds data, shaded by how many points fall in it (or, with
@@ -5780,13 +5908,52 @@
     "JOIN LEFT RIGHT INNER OUTER FULL CROSS UNION ALL EXCEPT INTERSECT WITH DISTINCT CASE WHEN THEN ELSE END " +
     "CREATE OR REPLACE VIEW TABLE TEMP TEMPORARY ASC DESC OVER PARTITION CAST BETWEEN LIKE ILIKE USING VALUES " +
     "INSERT INTO UPDATE SET DELETE COUNT SUM AVG MIN MAX").split(/\s+/));
+  let sqlTreeParser = null;
+  let sqlTreeLoading = null;
+  let sqlEditorSchema = { tables: [], keywords: [], functions: [] };
+  let sqlCompletionIndex = 0;
+
+  async function initSqlTreeSitter() {
+    if (sqlTreeParser) return sqlTreeParser;
+    if (!sqlTreeLoading) sqlTreeLoading = (async () => {
+      const { Parser, Language } = await import("/web-tree-sitter.js");
+      await Parser.init({ locateFile: () => "/web-tree-sitter.wasm" });
+      const parser = new Parser();
+      parser.setLanguage(await Language.load("/tree-sitter-sql.wasm"));
+      sqlTreeParser = parser;
+      const ta = $("sql-input"); if (ta) { syncEditor(ta); showSqlCompletion(ta); }
+      return parser;
+    })().catch((e) => { console.warn("Tree-sitter SQL unavailable", e); return null; });
+    return sqlTreeLoading;
+  }
+
+  async function loadSqlEditorSchema() {
+    if (!state.selDb) return;
+    try {
+      const data = await (await fetch("/api/editor-schema?" + new URLSearchParams({ db: state.selDb }))).json();
+      if (data.error) throw new Error(data.error);
+      sqlEditorSchema = { tables: data.tables || [], keywords: data.keywords || [], functions: data.functions || [] };
+      const ta = $("sql-input"); if (ta) { syncEditor(ta); showSqlCompletion(ta); }
+    } catch (e) { console.warn("SQL editor schema unavailable", e); }
+  }
+
   function sqlFormat(sql) {
+    if (globalThis.sqlFormatter) {
+      try { return globalThis.sqlFormatter.format(String(sql), { language: "duckdb", keywordCase: "upper", tabWidth: 2 }); }
+      catch (_) { /* Keep the editor usable for an incomplete query. */ }
+    }
     let s = String(sql).replace(/\s+/g, " ").trim();
     s = s.replace(/\s*\b(FROM|WHERE|GROUP BY|ORDER BY|HAVING|LIMIT|OFFSET|UNION ALL|UNION|EXCEPT|INTERSECT|(?:LEFT |RIGHT |INNER |FULL |CROSS )?JOIN)\b/gi, (m, k) => "\n" + k.toUpperCase());
     s = s.replace(/\s*,\s*/g, ",\n  "); // one column per line
     return s.replace(/^\n+/, "");
   }
   function sqlHi(src) {
+    if (sqlTreeParser) {
+      try { return sqlTreeHi(src); } catch (_) { /* use the safe fallback below */ }
+    }
+    return sqlHiFallback(src);
+  }
+  function sqlHiFallback(src) {
     const esc = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
     const re = /('(?:[^']|'')*')|(--[^\n]*|\/\*[\s\S]*?\*\/)|("(?:[^"]|"")*")|(\b\d+(?:\.\d+)?\b)|([A-Za-z_][A-Za-z0-9_]*)|([\s\S])/g;
     let out = "", m;
@@ -5799,6 +5966,88 @@
       else out += esc(m[0]);
     }
     return out;
+  }
+  // Tree-sitter supplies the actual token boundaries (including error recovery
+  // for half-typed SQL). The selected DuckDB's current keyword table augments
+  // the general SQL grammar, so new DuckDB keywords don't wait for a UI update.
+  function sqlTreeHi(src) {
+    const tree = sqlTreeParser.parse(src);
+    const spans = [];
+    const keywords = new Set([...SQL_KW, ...sqlEditorSchema.keywords.map((k) => String(k).toUpperCase())]);
+    const visit = (node) => {
+      if (node.childCount) { for (let i = 0; i < node.childCount; i++) visit(node.child(i)); return; }
+      const text = src.slice(node.startIndex, node.endIndex);
+      let cls = "";
+      if (node.type === "comment") cls = "s-com";
+      else if (node.type.startsWith("keyword_") || keywords.has(text.toUpperCase())) cls = "s-kw";
+      else if (node.type === "identifier") {
+        const parent = node.parent, grandparent = parent && parent.parent;
+        if (sqlEditorSchema.functions.some((fn) => String(fn).toLowerCase() === text.toLowerCase()) && parent && parent.type === "object_reference" && grandparent && grandparent.type === "invocation") cls = "s-fn";
+        else if (parent && parent.type === "field") cls = "s-col";
+        else if (parent && parent.type === "object_reference" && grandparent && grandparent.type === "relation") cls = "s-table";
+        else cls = "s-id";
+      }
+      else if (node.type === "literal" && text.startsWith('"')) cls = "s-id";
+      else if (node.type === "literal" && /^'/.test(text)) cls = "s-str";
+      else if (node.type === "literal" && /^[-+]?\d/.test(text)) cls = "s-num";
+      if (cls && node.endIndex > node.startIndex) spans.push({ from: node.startIndex, to: node.endIndex, cls });
+    };
+    visit(tree.rootNode); tree.delete();
+    spans.sort((a, b) => a.from - b.from || a.to - b.to);
+    const escText = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    let out = "", at = 0;
+    for (const span of spans) {
+      if (span.from < at) continue;
+      out += escText(src.slice(at, span.from)) + `<span class="${span.cls}">${escText(src.slice(span.from, span.to))}</span>`;
+      at = span.to;
+    }
+    return out + escText(src.slice(at));
+  }
+
+  function sqlCompletionItems(ta, force = false) {
+    const before = ta.value.slice(0, ta.selectionStart);
+    // Include an opening identifier quote in the replacement range. Otherwise
+    // completing `FROM "deli` inserts a second opening quote before the already
+    // typed one, yielding `""delivery_time_distributions`.
+    const token = (before.match(/"?[A-Za-z_][A-Za-z0-9_]*$/) || [""])[0];
+    const word = token.replace(/^"/, "");
+    if (!force && !word) return [];
+    const prefix = word.toLowerCase();
+    const head = before.slice(0, before.length - token.length);
+    const tableContext = /\b(?:FROM|JOIN|UPDATE|INTO|TABLE|VIEW)\s*$/i.test(head);
+    const dotted = head.match(/([A-Za-z_][A-Za-z0-9_]*)\.$/);
+    const matches = (s) => !prefix || s.toLowerCase().startsWith(prefix);
+    const items = [];
+    const add = (label, insert, kind, detail = "") => { if (matches(label) && !items.some((x) => x.label.toLowerCase() === label.toLowerCase() && x.kind === kind)) items.push({ label, insert, kind, detail }); };
+    const tables = sqlEditorSchema.tables || [];
+    const addColumns = (table) => (table.columns || []).forEach((c) => add(c.name, quoteId(c.name), "column", table.name));
+    if (dotted) {
+      const table = tables.find((t) => t.name.toLowerCase() === dotted[1].toLowerCase());
+      if (table) addColumns(table);
+    } else if (tableContext) {
+      tables.forEach((t) => add(t.name, quoteId(t.name), t.is_view ? "view" : "table", t.schema));
+    } else {
+      (sqlEditorSchema.keywords || []).forEach((k) => add(k, String(k).toUpperCase(), "keyword"));
+      (sqlEditorSchema.functions || []).forEach((fn) => add(fn, `${fn}()`, "function"));
+      tables.forEach((t) => { add(t.name, quoteId(t.name), t.is_view ? "view" : "table", t.schema); addColumns(t); });
+    }
+    return items.sort((a, b) => a.kind.localeCompare(b.kind) || a.label.localeCompare(b.label)).slice(0, 80);
+  }
+  function hideSqlCompletion() { const menu = document.querySelector(".sql-complete"); if (menu) { menu.classList.remove("show"); menu.innerHTML = ""; } }
+  function showSqlCompletion(ta, force = false) {
+    const items = sqlCompletionItems(ta, force); const menu = ta.nextElementSibling;
+    if (!items.length || !menu) { hideSqlCompletion(); return false; }
+    sqlCompletionIndex = Math.min(sqlCompletionIndex, items.length - 1);
+    menu._items = items;
+    menu.innerHTML = items.map((it, i) => `<button class="sql-option kind-${attr(it.kind)}${i === sqlCompletionIndex ? " sel" : ""}" data-sqlcomplete="${i}" role="option"><span>${esc(it.label)}</span><small>${esc(it.detail || it.kind)}</small></button>`).join("");
+    menu.classList.add("show"); return true;
+  }
+  function applySqlCompletion(ta, item) {
+    const before = ta.value.slice(0, ta.selectionStart), after = ta.value.slice(ta.selectionEnd);
+    const token = (before.match(/"?[A-Za-z_][A-Za-z0-9_]*$/) || [""])[0];
+    ta.value = before.slice(0, before.length - token.length) + item.insert + after;
+    ta.selectionStart = ta.selectionEnd = before.length - token.length + item.insert.length;
+    state.sql = ta.value; syncEditor(ta); hideSqlCompletion(); ta.focus();
   }
   // Wire a transparent textarea over a highlighted <pre> so SQL input is coloured.
   function syncEditor(ta) {
@@ -6300,6 +6549,9 @@
     const expl = ev.target.closest("[data-explore]"); if (expl) { exploreTile(expl.dataset.explore); return; }
     const ts = ev.target.closest("[data-tsql]"); if (ts) { toggleTileSql(ts.dataset.tsql); return; }
     if (ev.target.closest("[data-format]")) { const ta = $("sql-input"); if (ta) { ta.value = sqlFormat(ta.value); state.sql = ta.value; syncEditor(ta); } return; }
+    if (ev.target.closest("[data-saveview]")) { saveQueryAsView(); return; }
+    const sqlComplete = ev.target.closest("[data-sqlcomplete]");
+    if (sqlComplete) { const ta = $("sql-input"), menu = sqlComplete.parentElement; if (ta && menu && menu._items) applySqlCompletion(ta, menu._items[Number(sqlComplete.dataset.sqlcomplete)]); return; }
     if (ev.target.id === "ledger-group") { state.ledgerGroup = !state.ledgerGroup; renderLedger(); return; }
     const pg = ev.target.closest("[data-page]");
     if (pg) { if (pg.dataset.page === "prev" && state.page > 0) state.page--; else if (pg.dataset.page === "next") state.page++; loadRows(); syncUrl(false); return; }
@@ -6311,7 +6563,7 @@
       clearTimeout(searchTimer);
       searchTimer = setTimeout(() => { loadFacets(); if (state.subview === "rows") loadRows(); syncUrl(false); }, 250);
     } else if (ev.target.classList.contains("rng")) { liveRange(ev.target); }
-    else if (ev.target.id === "sql-input") { state.sql = ev.target.value; syncEditor(ev.target); }
+    else if (ev.target.id === "sql-input") { state.sql = ev.target.value; syncEditor(ev.target); sqlCompletionIndex = 0; showSqlCompletion(ev.target); }
     else if (ev.target.classList.contains("tile-filter")) {
       state.tileFilter[ev.target.dataset.tfilter] = ev.target.value;
       renderTileTable(ev.target.dataset.tfilter);
@@ -6324,6 +6576,7 @@
     if (ev.target.id === "sql-input" && ev.target.value.trim()) {
       ev.target.value = sqlFormat(ev.target.value); state.sql = ev.target.value; syncEditor(ev.target);
     }
+    if (ev.target.id === "sql-input") setTimeout(hideSqlCompletion, 120);
   });
 
   document.addEventListener("change", (ev) => {
@@ -6347,6 +6600,17 @@
       if (ev.key === "ArrowLeft") { ev.preventDefault(); presentationShow(presentation.index - 1); return; }
       if (ev.key === "Escape") { ev.preventDefault(); closePresentation(); return; }
       return;
+    }
+    if (ev.target.id === "sql-input") {
+      const menu = ev.target.nextElementSibling;
+      const items = menu && menu._items;
+      if ((ev.ctrlKey || ev.metaKey) && (ev.key === " " || ev.code === "Space")) { ev.preventDefault(); sqlCompletionIndex = 0; showSqlCompletion(ev.target, true); return; }
+      if (items && menu.classList.contains("show")) {
+        if (ev.key === "ArrowDown") { ev.preventDefault(); sqlCompletionIndex = (sqlCompletionIndex + 1) % items.length; showSqlCompletion(ev.target, true); return; }
+        if (ev.key === "ArrowUp") { ev.preventDefault(); sqlCompletionIndex = (sqlCompletionIndex + items.length - 1) % items.length; showSqlCompletion(ev.target, true); return; }
+        if (ev.key === "Tab" || (ev.key === "Enter" && !ev.ctrlKey && !ev.metaKey)) { ev.preventDefault(); applySqlCompletion(ev.target, items[sqlCompletionIndex]); return; }
+        if (ev.key === "Escape") { ev.preventDefault(); hideSqlCompletion(); return; }
+      }
     }
     if (ev.target.id === "sql-input" && (ev.metaKey || ev.ctrlKey) && ev.key === "Enter") { ev.preventDefault(); runQuery(); }
     if ((ev.metaKey || ev.ctrlKey) && (ev.key === "k" || ev.key === "K")) { ev.preventDefault(); openPalette(); }
@@ -6710,7 +6974,7 @@
     delete tileHeights[tileHKey(name)];
     saveTileHeights();
     const el = tileBodyEl(name);
-    if (el) { el.style.height = ""; el.style.overflowY = ""; }
+    if (el) { el.style.height = ""; el.style.overflowY = ""; el.classList.remove("probability-resized"); }
     const t = sessionTile(name);
     if (t && t.type === "view") loadTileChart(t); // restore the default slot height
   });

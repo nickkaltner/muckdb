@@ -126,6 +126,11 @@ heatmap` (a heatmap takes two categorical axes — `--x` and `--y` — plus a
 `--no-values` colours cells without printing the figures). `box` draws one
 box-and-whisker per row on a shared scale: `--x` labels each box, `--y` takes
 five columns in order `min,q1,median,q3,max`, and `--desc` adds a per-box note.
+`probability` estimates one density curve per `--x` group on a shared scale,
+without assuming a normal shape. Pass exactly one raw numeric observation
+column in `--y` (one row per sample); skew, tails, and multiple peaks remain
+visible. `--desc` adds a per-distribution note. Use `box` when you only have
+five-number summaries instead.
 Table tiles show the first 20 rows and carry a filter box in their title bar —
 typing narrows the rows to those containing the text in any column.
 Each data tile has an **explore** button that opens the view in the faceted

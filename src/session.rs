@@ -784,6 +784,11 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             "--chart box needs --x (the box label) and --y with exactly five columns, in order: min,q1,median,q3,max (aggregate in the view, e.g. min(v), quantile_cont(v,0.25), median(v), quantile_cont(v,0.75), max(v))"
         );
     }
+    if chart.kind == "probability" && (chart.x.is_none() || chart.y.len() != 1) {
+        bail!(
+            "--chart probability needs --x (the distribution label) and exactly one observed-value column in --y (one row per observation)"
+        );
+    }
     if chart.kind == "timeline" {
         // Core columns must be named and must exist.
         let lane = chart
@@ -1274,14 +1279,15 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip; connections: --from-lat/--from-lon/--to-lat/--to-lon per arc, --from-label/--to-label name each endpoint marker\n                       \
                  --chart box: --x the box label, --y min,q1,median,q3,max (five columns, aggregated in the view)\n                       \
+                 --chart probability: --x the distribution label, --y observed_value (one row per observation; estimates a density without assuming normality)\n                       \
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
                  --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
-                 [--desc COL]  (box: a per-box note column, shown beside each plot)\n                       \
+                 [--desc COL]  (box: a per-box note; probability: a per-distribution note)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \

@@ -671,6 +671,55 @@ pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
     })
 }
 
+/// Persist one read-only query as a named view. The caller deliberately opts
+/// into this write path from the query editor; the query itself is restricted
+/// to a single SELECT-like statement so it cannot smuggle in extra DDL/DML.
+pub fn save_view(db: &str, name: &str, sql: &str, overwrite: bool) -> Result<()> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    let name = name.trim();
+    if name.is_empty() || name.contains('\0') {
+        bail!("view name must not be empty");
+    }
+    let query = sql.trim().trim_end_matches(';').trim();
+    if query.is_empty() || query.contains(';') {
+        bail!("a saved view must contain one query (no multiple statements)");
+    }
+    let upper = query.to_ascii_uppercase();
+    if !["SELECT", "WITH", "FROM", "VALUES", "TABLE"]
+        .iter()
+        .any(|p| upper.starts_with(p))
+    {
+        bail!("a saved view must be a SELECT-like query");
+    }
+    if !overwrite
+        && list_tables(db)?
+            .iter()
+            .any(|t| t.name.eq_ignore_ascii_case(name))
+    {
+        bail!("a table or view named '{name}' already exists");
+    }
+    let ddl = if overwrite {
+        "CREATE OR REPLACE VIEW"
+    } else {
+        "CREATE VIEW"
+    };
+    let output = Command::new("duckdb")
+        .arg(db)
+        .arg("-c")
+        .arg(format!("{ddl} {} AS {query}", quote_ident(name)))
+        .output()
+        .context("failed to run duckdb while saving the view")?;
+    if !output.status.success() {
+        bail!(
+            "duckdb error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 /// One column's schema, from `DESCRIBE`.
 #[derive(Debug, Clone, Serialize)]
 pub struct ColumnSchema {

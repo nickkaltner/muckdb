@@ -18,7 +18,7 @@ SELECT i AS id,
        TIMESTAMP '2026-01-01 00:00:00' + (i * INTERVAL 6 HOUR)  AS created,
        -- an array column with a unit format; every 4th row is empty, to cover
        -- empty-list rendering (must show "—", not a bare unit suffix).
-       CASE WHEN i % 4 = 0 THEN CAST([] AS INTEGER[]) ELSE [10, 100] END AS sizes,
+       CASE WHEN i % 4 = 0 THEN CAST([] AS INTEGER[]) WHEN i = 1 THEN [10, 100, 1000, 10000] ELSE [10, 100] END AS sizes,
        -- lat/long jittered around three cities, for a map tile.
        round(([-33.87, 51.51, 40.71])[(i % 3) + 1] + ((i % 7) - 3) * 0.4, 4)   AS latitude,
        round(([151.21, -0.13, -74.01])[(i % 3) + 1] + ((i % 5) - 2) * 0.4, 4)  AS longitude
@@ -34,6 +34,17 @@ CREATE VIEW box_ranges AS SELECT * FROM (VALUES
   ('Upper distribution',  70.0, 75.0, 80.0, 85.0, 90.0),
   ('Incomplete summary',  NULL, NULL, NULL, NULL, NULL)
 ) b(group_name, min_value, q1, median, q3, max_value);
+-- Raw samples for the probability tile. These deliberately include a long
+-- right tail and an uneven shape: the tile must estimate the actual density,
+-- rather than imposing a normal curve from summary statistics.
+CREATE VIEW probability_samples AS SELECT * FROM (VALUES
+  ('Fast path',     'Short right tail', 43.0), ('Fast path',     'Short right tail', 44.0), ('Fast path',     'Short right tail', 45.0),
+  ('Fast path',     'Short right tail', 45.0), ('Fast path',     'Short right tail', 46.0), ('Fast path',     'Short right tail', 47.0), ('Fast path',     'Short right tail', 55.0),
+  ('Standard path', 'Broad middle',     53.0), ('Standard path', 'Broad middle',     55.0), ('Standard path', 'Broad middle',     57.0),
+  ('Standard path', 'Broad middle',     59.0), ('Standard path', 'Broad middle',     62.0), ('Standard path', 'Broad middle',     65.0), ('Standard path', 'Broad middle',     67.0),
+  ('Slow path',     'Long right tail',  62.0), ('Slow path',     'Long right tail',  63.0), ('Slow path',     'Long right tail',  64.0),
+  ('Slow path',     'Long right tail',  65.0), ('Slow path',     'Long right tail',  67.0), ('Slow path',     'Long right tail',  74.0), ('Slow path',     'Long right tail',  88.0)
+) p(group_name, note, observed_value);
 -- A connections/flows view: each row is an arc between two fixed cities, for
 -- the map tile's connection rendering (arcs + labels).
 CREATE VIEW widget_flows AS SELECT * FROM (VALUES
@@ -113,6 +124,10 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--db', dbPath, '--view', 'box_ranges', '--chart', 'box', '--x', 'group_name',
     '--y', 'min_value,q1,median,q3,max_value',
     '--caption', 'Two complete distributions share a 40–90 range; an incomplete summary is ignored.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'probability', '--title', 'Probability ranges',
+    '--db', dbPath, '--view', 'probability_samples', '--chart', 'probability', '--x', 'group_name',
+    '--y', 'observed_value', '--desc', 'note',
+    '--caption', 'Density estimates from raw samples; skew and tails remain visible.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'map', '--title', 'Widget map',
     '--db', dbPath, '--view', 'widget_map', '--chart', 'map',
     '--lat', 'latitude', '--lon', 'longitude', '--label', 'category',

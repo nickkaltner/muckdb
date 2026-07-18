@@ -58,7 +58,9 @@ pub async fn run() -> Result<()> {
         .route("/api/export", get(api_export))
         .route("/api/schema", get(api_schema))
         .route("/api/formats", get(api_formats))
+        .route("/api/editor-schema", get(api_editor_schema))
         .route("/api/query", get(api_query))
+        .route("/api/view", post(api_save_view))
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
         .route("/api/session/export", get(api_session_export))
@@ -78,6 +80,10 @@ pub async fn run() -> Result<()> {
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/html2canvas.js", get(html2canvas_js))
         .route("/timeline-route.js", get(timeline_route_js))
+        .route("/sql-formatter.js", get(sql_formatter_js))
+        .route("/web-tree-sitter.js", get(web_tree_sitter_js))
+        .route("/web-tree-sitter.wasm", get(web_tree_sitter_wasm))
+        .route("/tree-sitter-sql.wasm", get(tree_sitter_sql_wasm))
         .route("/favicon.ico", get(favicon_ico))
         .route("/favicon.svg", get(favicon_svg))
         .route("/worldmap.svg", get(worldmap_svg))
@@ -398,6 +404,55 @@ async fn api_formats(Query(p): Query<DbParam>) -> Response {
     Json(crate::formats::merged_for(&p.db)).into_response()
 }
 
+/// The query editor needs the selected database's real identifiers, rather
+/// than a static SQL schema: tables/views, their fields, and DuckDB's current
+/// keyword catalogue all feed completion and highlighting.
+async fn api_editor_schema(Query(p): Query<DbParam>) -> Response {
+    let result = tokio::task::spawn_blocking(move || -> Result<_> {
+        let tables = introspect::list_tables(&p.db)?;
+        let mut relations = Vec::with_capacity(tables.len());
+        for table in tables {
+            let columns = introspect::schema(&p.db, &table.name)?;
+            relations.push(json!({
+                "schema": table.schema,
+                "name": table.name,
+                "is_view": table.is_view,
+                "columns": columns,
+            }));
+        }
+        let keywords = introspect::query_json(
+            &p.db,
+            "SELECT keyword_name FROM duckdb_keywords() ORDER BY keyword_name",
+        )?
+        .into_iter()
+        .filter_map(|row| {
+            row.get("keyword_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+        let functions = introspect::query_json(
+            &p.db,
+            "SELECT DISTINCT function_name FROM duckdb_functions() \
+             WHERE function_type IN ('scalar', 'aggregate') ORDER BY function_name",
+        )?
+        .into_iter()
+        .filter_map(|row| {
+            row.get("function_name")
+                .and_then(|v| v.as_str())
+                .map(str::to_string)
+        })
+        .collect::<Vec<_>>();
+        Ok(json!({ "tables": relations, "keywords": keywords, "functions": functions }))
+    })
+    .await;
+    match result {
+        Ok(Ok(schema)) => Json(schema).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("editor schema lookup failed: {e}")),
+    }
+}
+
 async fn api_facets(Query(p): Query<FacetsParams>) -> Response {
     let filters = parse_filters(p.filter.as_deref());
     match introspect::facets(&p.db, &p.table, p.q.as_deref(), &filters) {
@@ -501,6 +556,27 @@ async fn api_query(Query(p): Query<QueryParams>) -> Response {
     match introspect::query(&p.db, &p.sql) {
         Ok(result) => Json(result).into_response(),
         Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct SaveViewParams {
+    db: String,
+    name: String,
+    sql: String,
+    #[serde(default)]
+    overwrite: bool,
+}
+
+async fn api_save_view(axum::extract::Json(p): axum::extract::Json<SaveViewParams>) -> Response {
+    let result = tokio::task::spawn_blocking(move || {
+        introspect::save_view(&p.db, &p.name, &p.sql, p.overwrite)
+    })
+    .await;
+    match result {
+        Ok(Ok(())) => Json(json!({ "ok": true })).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("save view failed: {e}")),
     }
 }
 
@@ -720,6 +796,41 @@ async fn timeline_route_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/timeline-route.js"),
+    )
+        .into_response()
+}
+
+/// DuckDB-aware formatter for the interactive query editor.
+async fn sql_formatter_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/sql-formatter.min.js"),
+    )
+        .into_response()
+}
+
+/// Tree-sitter's browser runtime and the compiled SQL grammar are kept local so
+/// the query editor works offline and never sends source text to a CDN.
+async fn web_tree_sitter_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/web-tree-sitter.js"),
+    )
+        .into_response()
+}
+
+async fn web_tree_sitter_wasm() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/wasm")],
+        include_bytes!("assets/web-tree-sitter.wasm").as_slice(),
+    )
+        .into_response()
+}
+
+async fn tree_sitter_sql_wasm() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/wasm")],
+        include_bytes!("assets/tree-sitter-sql.wasm").as_slice(),
     )
         .into_response()
 }

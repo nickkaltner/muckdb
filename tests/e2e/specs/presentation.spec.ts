@@ -36,7 +36,7 @@ test.describe('presentation mode', () => {
       .toBe(900);
 
     // Maps use a wider stage (96vw) than ordinary presentation slides.
-    for (let i = 0; i < 3; i++) await page.keyboard.press('ArrowRight');
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
     const stage = deck.locator('.presentation-stage');
     await expect(stage).toHaveClass(/\bpresentation-map\b/);
     const mapBox = await deck.locator('.presentation-stage > .panel').boundingBox();
