@@ -60,6 +60,7 @@ pub async fn run() -> Result<()> {
         .route("/api/formats", get(api_formats))
         .route("/api/editor-schema", get(api_editor_schema))
         .route("/api/query", get(api_query))
+        .route("/api/query/export", get(api_query_export))
         .route("/api/view", post(api_save_view))
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
@@ -555,6 +556,38 @@ struct QueryParams {
 async fn api_query(Query(p): Query<QueryParams>) -> Response {
     match introspect::query(&p.db, &p.sql) {
         Ok(result) => Json(result).into_response(),
+        Err(e) => error_json(&e),
+    }
+}
+
+#[derive(Deserialize)]
+struct QueryExportParams {
+    db: String,
+    sql: String,
+    format: Option<String>,
+}
+
+async fn api_query_export(Query(p): Query<QueryExportParams>) -> Response {
+    let fmt = p.format.as_deref().unwrap_or("csv").to_ascii_lowercase();
+    match introspect::export_query(&p.db, &p.sql, &fmt) {
+        Ok(body) => {
+            let (ctype, ext) = if fmt == "json" {
+                ("application/json", "json")
+            } else {
+                ("text/csv", "csv")
+            };
+            (
+                [
+                    (header::CONTENT_TYPE, ctype.to_string()),
+                    (
+                        header::CONTENT_DISPOSITION,
+                        format!("attachment; filename=\"query.{ext}\""),
+                    ),
+                ],
+                body,
+            )
+                .into_response()
+        }
         Err(e) => error_json(&e),
     }
 }

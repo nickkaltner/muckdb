@@ -613,6 +613,38 @@ pub fn export(
     Ok(String::from_utf8_lossy(&output.stdout).into_owned())
 }
 
+/// Export an ad-hoc query from the SQL editor as CSV or JSON. Like the query
+/// preview, this opens the database read-only; DuckDB owns the wire format so
+/// large result sets do not have to be held in the browser first.
+pub fn export_query(db: &str, sql: &str, format: &str) -> Result<String> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    if sql.trim().is_empty() {
+        bail!("write a query before exporting");
+    }
+    let out_flag = if format.eq_ignore_ascii_case("json") {
+        "-json"
+    } else {
+        "-csv"
+    };
+    let output = Command::new("duckdb")
+        .arg("-readonly")
+        .arg(out_flag)
+        .arg(db)
+        .arg("-c")
+        .arg(sql)
+        .output()
+        .context("failed to run `duckdb` — is it installed and on PATH?")?;
+    if !output.status.success() {
+        bail!(
+            "duckdb error: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+}
+
 /// Result of an ad-hoc read-only query from the query editor.
 #[derive(Debug, Clone, Serialize)]
 pub struct QueryResult {

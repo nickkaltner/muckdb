@@ -216,6 +216,7 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/junk?db&table&q&filter` | column health metrics + exact-duplicate column pairs |
 | `GET /api/schema?db&table` | column definitions |
 | `GET /api/query?db&sql` | run a read-only query |
+| `GET /api/query/export?db&sql&format=csv\|json` | download a query result |
 | `GET /api/export?db&table&format=csv\|json&q&filter` | download the filtered set |
 | `GET /api/sessions` | session dashboards (summaries) |
 | `GET /api/session?id=ID` | one session with its tiles |

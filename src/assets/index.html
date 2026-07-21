@@ -2996,7 +2996,7 @@
       <div class="qeditor">
         <div class="qbar"><span class="qtitle">query</span><span class="qhint">read-only · runs against ${esc(basename(state.selDb))}</span></div>
         <div class="sqledit"><pre class="sql-hl" aria-hidden="true"></pre><textarea class="sqlbox" id="sql-input" spellcheck="false">${esc(state.sql)}</textarea><div class="sql-complete" role="listbox"></div></div>
-        <div class="qrow"><button class="runbtn" data-run>▶ run</button> <button class="panel-act" data-format>format</button> <button class="panel-act" data-saveview>save as view</button> <span class="qhint">⌘/Ctrl + Enter · Ctrl + Space completes</span></div>
+        <div class="qrow"><button class="runbtn" data-run>▶ run</button> <button class="panel-act" data-format>format</button> <button class="panel-act" data-saveview>save as view</button> <span class="export"><span class="exlabel">export</span><button class="exlink" data-query-export="csv">csv</button><button class="exlink" data-query-export="json">json</button></span> <span class="qhint">⌘/Ctrl + Enter · Ctrl + Space completes</span></div>
         <div id="query-result"></div>
       </div>`;
     syncEditor($("sql-input"));
@@ -3055,6 +3055,14 @@
       ],
       onPick: (it) => it.go(),
     });
+  }
+  function downloadQueryExport(format) {
+    const ta = $("sql-input");
+    if (!ta || !ta.value.trim()) { toast("write a query before exporting", true); return; }
+    const p = new URLSearchParams({ db: state.selDb, sql: ta.value, format });
+    const a = document.createElement("a");
+    a.href = "/api/query/export?" + p.toString(); a.download = `query.${format}`;
+    document.body.appendChild(a); a.click(); a.remove();
   }
 
   // ---- picker (combobox popover + ⌘K palette) ---------------------------
@@ -6550,6 +6558,7 @@
     const ts = ev.target.closest("[data-tsql]"); if (ts) { toggleTileSql(ts.dataset.tsql); return; }
     if (ev.target.closest("[data-format]")) { const ta = $("sql-input"); if (ta) { ta.value = sqlFormat(ta.value); state.sql = ta.value; syncEditor(ta); } return; }
     if (ev.target.closest("[data-saveview]")) { saveQueryAsView(); return; }
+    const qe = ev.target.closest("[data-query-export]"); if (qe) { downloadQueryExport(qe.dataset.queryExport); return; }
     const sqlComplete = ev.target.closest("[data-sqlcomplete]");
     if (sqlComplete) { const ta = $("sql-input"), menu = sqlComplete.parentElement; if (ta && menu && menu._items) applySqlCompletion(ta, menu._items[Number(sqlComplete.dataset.sqlcomplete)]); return; }
     if (ev.target.id === "ledger-group") { state.ledgerGroup = !state.ledgerGroup; renderLedger(); return; }

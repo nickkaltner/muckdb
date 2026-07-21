@@ -60,4 +60,30 @@ test.describe('query editor intelligence', () => {
     await chooser.getByText('cancel', { exact: true }).click();
     await expect(chooser).toBeHidden();
   });
+
+  test('exports the current query as CSV or JSON', async ({ page }) => {
+    const { dbId } = readState();
+    await page.goto(`/db/${dbId}/query/`);
+    await page.locator('#sql-input').fill('select category from widgets order by category');
+
+    const csvDownload = page.waitForEvent('download');
+    await page.locator('[data-query-export="csv"]').click();
+    const csv = await csvDownload;
+    expect(csv.suggestedFilename()).toBe('query.csv');
+    expect(await csv.createReadStream().then(async (stream) => {
+      let output = '';
+      for await (const chunk of stream!) output += chunk.toString();
+      return output;
+    })).toContain('category');
+
+    const jsonDownload = page.waitForEvent('download');
+    await page.locator('[data-query-export="json"]').click();
+    const json = await jsonDownload;
+    expect(json.suggestedFilename()).toBe('query.json');
+    expect(await json.createReadStream().then(async (stream) => {
+      let output = '';
+      for await (const chunk of stream!) output += chunk.toString();
+      return output;
+    })).toContain('"category"');
+  });
 });
