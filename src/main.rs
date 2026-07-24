@@ -76,10 +76,7 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         // Start the background daemon without opening a browser.
         Some("start" | "--start") => {
             facade::ensure_daemon()?;
-            println!(
-                "muckdb daemon serving at http://localhost:{}",
-                facade::resolved_port()
-            );
+            println!("{}", daemon_start_message(facade::resolved_port()));
             Ok(0)
         }
         // muckdb's own help (duckdb's help, rebranded, with muckdb commands on top).
@@ -104,6 +101,13 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
         // Everything else is passed straight through to duckdb.
         _ => facade::passthrough(args),
     }
+}
+
+fn daemon_start_message(port: u16) -> String {
+    format!(
+        "muckdb v{} daemon serving at http://localhost:{port}",
+        env!("CARGO_PKG_VERSION")
+    )
 }
 
 /// `muckdb --help` — muckdb's own help. Leads with what muckdb adds over duckdb
@@ -272,7 +276,7 @@ fn open_browser(url: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::extract_port_flag;
+    use super::{daemon_start_message, extract_port_flag};
 
     fn v(args: &[&str]) -> Vec<String> {
         args.iter().map(|s| s.to_string()).collect()
@@ -315,5 +319,16 @@ mod tests {
         let mut args = v(&["--port"]);
         assert_eq!(extract_port_flag(&mut args), None);
         assert!(args.is_empty());
+    }
+
+    #[test]
+    fn start_message_includes_version_and_url() {
+        assert_eq!(
+            daemon_start_message(11055),
+            format!(
+                "muckdb v{} daemon serving at http://localhost:11055",
+                env!("CARGO_PKG_VERSION")
+            )
+        );
     }
 }
