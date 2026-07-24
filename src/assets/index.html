@@ -599,6 +599,17 @@
   .seq-frame-lbl { fill: var(--muted); font-size: 10px; font-weight: 600; }
   .seq-div { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
   .seq-hit { fill: transparent; }
+  .quad-wrap { overflow-x: auto; padding: 4px 0; }
+  .quad-svg { display: block; width: 100%; min-width: 440px; height: auto; font-family: inherit; }
+  .quad-bg { fill: var(--raised); stroke: var(--line); stroke-width: 1; }
+  .quad-q { fill: var(--surface); opacity: .56; }
+  .quad-axis { stroke: var(--muted); stroke-width: 1.2; }
+  .quad-grid { stroke: var(--line-soft); stroke-width: 1; stroke-dasharray: 3 4; }
+  .quad-axis-lbl { fill: var(--muted); font-size: 11px; }
+  .quad-title { fill: var(--fg); font-size: 12px; font-weight: 600; }
+  .quad-point { fill: var(--primary); stroke: var(--surface); stroke-width: 2; cursor: pointer; }
+  .quad-point:hover, .quad-label:hover + .quad-point { fill: var(--highlight); }
+  .quad-label { fill: var(--fg); font-size: 11px; cursor: pointer; paint-order: stroke; stroke: var(--surface); stroke-width: 3px; stroke-linejoin: round; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--primary); font-weight: 400; }
@@ -3217,7 +3228,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
@@ -3226,6 +3237,7 @@
       if (kind === "heatmap") { slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "probability") { slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "quadrant") { slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -3883,13 +3895,13 @@
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
-    const mermaidBtn = kind === "sequence" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
+    const mermaidBtn = kind === "sequence" || kind === "quadrant" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too). Probability tiles
     // intentionally keep the standard grip: a taller panel gives their curves
     // more breathing room, like a bar or line chart.
-    const grip = kind === "heatmap" || kind === "box" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -3938,6 +3950,7 @@
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "probability") { slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
+    if (kind === "quadrant") { slot.style.height = "auto"; slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "sequence") { slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -4551,6 +4564,62 @@
         });
       }
     });
+  }
+
+  // ---- quadrant chart tile --------------------------------------------------
+  // A prioritisation matrix with a deliberately fixed -1..1 coordinate system:
+  // --x is effort (low → high), --y is impact (low → high), and --label names
+  // each item. Keeping the scale fixed makes separate tiles directly comparable.
+  function quadrantTip(item, cols, row, spec, db, table) {
+    const core = [`<b>${esc(item.label)}</b>`, `effort: ${esc(item.x.toFixed(2))}`, `impact: ${esc(item.y.toFixed(2))}`];
+    const shown = new Set([spec.x, ...(spec.y || []), spec.label].filter(Boolean));
+    const extra = [];
+    cols.forEach((c, i) => {
+      if (shown.has(c) || row[i] == null || row[i] === "") return;
+      const f = colFmt(db, c, table);
+      let disp = f ? applyFmtHtml(f, row[i]) : esc(typeof row[i] === "object" ? JSON.stringify(row[i]) : String(row[i]));
+      if (f && f.link) {
+        const href = linkSubst(f.link, row[i], row, cols, true);
+        const txt = f.link_title ? esc(linkSubst(f.link_title, row[i], row, cols, false)) : disp;
+        disp = `<a href="${attr(href)}" target="_blank" rel="noopener noreferrer">${txt}</a>`;
+      }
+      extra.push(`${esc(c)}: ${disp}`);
+    });
+    return core.join("<br>") + (extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : "");
+  }
+  function quadrantHtml(cols, rows, spec, db, table) {
+    const xi = cols.indexOf(spec.x), yi = cols.indexOf((spec.y || [])[0]), li = cols.indexOf(spec.label);
+    if (xi < 0 || yi < 0 || li < 0) return '<div class="note">quadrant needs --x, --y and --label.</div>';
+    const items = rows.map((r, ri) => ({ ri, row: r, x: Number(r[xi]), y: Number(r[yi]), label: String(r[li] ?? "") }))
+      .filter((p) => Number.isFinite(p.x) && Number.isFinite(p.y) && p.x >= -1 && p.x <= 1 && p.y >= -1 && p.y <= 1 && p.label !== "");
+    if (!items.length) return '<div class="note">no quadrant rows with effort and impact between -1 and 1.</div>';
+    const W = 760, H = 500, L = 86, R = 32, T = 38, B = 62, PW = W - L - R, PH = H - T - B;
+    const px = (v) => L + ((v + 1) / 2) * PW, py = (v) => T + (1 - ((v + 1) / 2)) * PH;
+    const xTitle = spec.xlabel || "Effort", yTitle = spec.ylabel || "Impact";
+    const labelOffset = (i) => ({ x: i % 2 ? -8 : 8, y: i % 3 === 0 ? -10 : 15, anchor: i % 2 ? "end" : "start" });
+    const grid = [-.5, .5].map((v) => `<line class="quad-grid" x1="${px(v)}" y1="${T}" x2="${px(v)}" y2="${T + PH}"/><line class="quad-grid" x1="${L}" y1="${py(v)}" x2="${L + PW}" y2="${py(v)}"/>`).join("");
+    const marks = items.map((p, i) => {
+      const x = px(p.x), y = py(p.y), o = labelOffset(i), tip = attr(quadrantTip(p, cols, p.row, spec, db, table));
+      return `<g class="wm-x" data-tip="${tip}"><circle class="quad-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5"/><text class="quad-label" x="${(x + o.x).toFixed(1)}" y="${(y + o.y).toFixed(1)}" text-anchor="${o.anchor}">${esc(p.label)}</text></g>`;
+    }).join("");
+    return `<div class="quad-wrap"><svg class="quad-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${attr(`${yTitle} versus ${xTitle} quadrant chart`)}">
+      <rect class="quad-bg" x="${L}" y="${T}" width="${PW}" height="${PH}" rx="5"/><rect class="quad-q" x="${L + PW / 2}" y="${T}" width="${PW / 2}" height="${PH / 2}"/><rect class="quad-q" x="${L}" y="${T + PH / 2}" width="${PW / 2}" height="${PH / 2}"/>
+      ${grid}<line class="quad-axis" x1="${L + PW / 2}" y1="${T}" x2="${L + PW / 2}" y2="${T + PH}"/><line class="quad-axis" x1="${L}" y1="${T + PH / 2}" x2="${L + PW}" y2="${T + PH / 2}"/>
+      <text class="quad-title" x="${W / 2}" y="18" text-anchor="middle">${esc(yTitle)} vs ${esc(xTitle)}</text><text class="quad-axis-lbl" x="${L}" y="${H - 24}">Low ${esc(xTitle)}</text><text class="quad-axis-lbl" x="${L + PW}" y="${H - 24}" text-anchor="end">High ${esc(xTitle)}</text><text class="quad-axis-lbl" x="18" y="${T + PH}" transform="rotate(-90 18 ${T + PH})">Low ${esc(yTitle)}</text><text class="quad-axis-lbl" x="18" y="${T + 70}" transform="rotate(-90 18 ${T + 70})">High ${esc(yTitle)}</text>${marks}
+    </svg></div>`;
+  }
+  function quadrantMermaidText(v) { return String(v ?? "").replace(/\s*\n\s*/g, " ").replace(/[\[\]"]+/g, "'"); }
+  function quadrantToMermaid(cols, rows, spec) {
+    const xi = cols.indexOf(spec.x), yi = cols.indexOf((spec.y || [])[0]), li = cols.indexOf(spec.label);
+    if (xi < 0 || yi < 0 || li < 0) return "quadrantChart\n";
+    const x = quadrantMermaidText(spec.xlabel || "Effort"), y = quadrantMermaidText(spec.ylabel || "Impact");
+    const lines = ["quadrantChart", `  x-axis Low ${x} --> High ${x}`, `  y-axis Low ${y} --> High ${y}`];
+    rows.forEach((r) => {
+      const xv = Number(r[xi]), yv = Number(r[yi]), label = quadrantMermaidText(r[li]);
+      if (!label || !Number.isFinite(xv) || !Number.isFinite(yv) || xv < -1 || xv > 1 || yv < -1 || yv > 1) return;
+      lines.push(`  ${label}: [${((xv + 1) / 2).toFixed(3)}, ${((yv + 1) / 2).toFixed(3)}]`);
+    });
+    return lines.join("\n") + "\n";
   }
 
   // ---- sequence diagram tile ------------------------------------------------
@@ -6418,7 +6487,10 @@
         .then((r) => r.json())
         .then((data) => {
           if (data.error) throw new Error(data.error);
-          const text = seqToMermaid(data.columns || [], data.rows || [], t.chart || {});
+          const spec = t.chart || {};
+          const text = spec.kind === "quadrant"
+            ? quadrantToMermaid(data.columns || [], data.rows || [], spec)
+            : seqToMermaid(data.columns || [], data.rows || [], spec);
           const done = () => toast("mermaid copied to clipboard");
           if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(text).then(done).catch(() => toast("copy failed", true));
           else { const ta = document.createElement("textarea"); ta.value = text; document.body.appendChild(ta); ta.select(); try { document.execCommand("copy"); done(); } catch (_) { toast("copy failed", true); } ta.remove(); }

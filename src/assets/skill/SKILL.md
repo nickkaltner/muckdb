@@ -225,7 +225,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
@@ -237,6 +237,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--color COL]  (timeline: colour bars by this category value, adds a legend)
         [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
         [--chart sequence]  (sequence diagram — service comms; one row per message)
+        [--chart quadrant]  (prioritisation matrix — --x effort, --y impact, --label item; values are -1..1)
         [--from COL] [--to COL]  (sequence: source/destination participant; --from == --to is a self-message; message text = --label)
         [--message-type COL]  (sequence: sync (default) | reply | async | lost)
         [--from-type COL] [--to-type COL]  (sequence: participant (default) | actor | database | boundary)
@@ -300,7 +301,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | probability | quadrant | map | timeline | sequence`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -348,6 +349,13 @@ muckdb session rm <name> [--tile TILE]
     `--desc` supplies a per-distribution note. The estimate preserves skew,
     tails, and multiple peaks. Use `box` when you only have five-number
     summaries instead.
+  - **`quadrant`** for prioritisation decisions such as effort vs impact. Pass
+    `--x effort --y impact --label item`, with both measures normalised to the
+    fixed **-1 to 1** scale (one row per item). The centre lines divide low/high
+    effort and impact; the item label and point both reveal a rich tooltip with
+    every other row column. Use `--xlabel`/`--ylabel` to name the dimensions.
+    Its **mermaid** toolbar button copies a Mermaid `quadrantChart` (coordinates
+    are converted to Mermaid's 0..1 scale) for use in docs or a Mermaid editor.
   - **`map`** to plot geographic points on a compact ASCII world map. Give it
     `--lat`/`--lon` columns (or name them lat/latitude & lon/lng/longitude and
     they're auto-detected), one row per point — don't pre-aggregate; the tile

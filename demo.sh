@@ -90,6 +90,16 @@ CREATE OR REPLACE TABLE incident AS SELECT * FROM (VALUES
   ('oncall',   'mitigate',        TIMESTAMP '2026-05-01 14:30:00', TIMESTAMP '2026-05-01 14:41:00', 'info',     'INC-4023')
 ) t(system, phase, started, ended, severity, ticket);
 
+-- A prioritisation matrix: both dimensions are deliberately normalised to the
+-- fixed -1..1 quadrant scale. Extra fields become the rich hover tooltip.
+CREATE OR REPLACE TABLE priorities AS SELECT * FROM (VALUES
+  ('Simplify signup',  -0.55,  0.82, 'Growth',   'Fewer funnel drop-offs',       'Quick win: experiment-ready copy and flow changes'),
+  ('Rewrite billing',   0.72,  0.66, 'Platform', 'Unlock enterprise contracts',  'Large dependency before annual-plan rollout'),
+  ('Tidy docs',        -0.68, -0.30, 'DX',       'Reduce support friction',     'Worth scheduling, but not a growth lever'),
+  ('New analytics',     0.42, -0.25, 'Product',  'Better product instrumentation','Defer until the metrics plan is agreed'),
+  ('Mobile checkout',   0.18,  0.54, 'Growth',   'Lift mobile conversion',       'Validate demand with a prototype first')
+) t(initiative, effort, impact, owner, outcome, detail);
+
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
@@ -174,6 +184,11 @@ CREATE OR REPLACE VIEW pipeline_timeline AS
 CREATE OR REPLACE VIEW incident_timeline AS
   SELECT system, phase, started, ended, severity, ticket FROM incident ORDER BY started;
 
+-- One row per initiative: x = effort, y = impact, with the remaining columns
+-- available in the quadrant chart's hover tooltip.
+CREATE OR REPLACE VIEW priority_quadrant AS
+  SELECT initiative, effort, impact, owner, outcome, detail FROM priorities;
+
 -- Sequence diagram view: one row per message in a checkout flow across services.
 -- Participants are typed (actor/boundary/database/participant), messages carry an
 -- arrow kind, and an alt group splits the session-valid path from the expired one.
@@ -239,6 +254,7 @@ A quick tour of what muckdb can do, all driven from the command line.
 - 🌡️ A **regular** hourly time series (\`sensors\`)
 - ⚡ An **irregular** event stream (\`events\`) — notice how the points per time period vary a lot
 - 🔥 A **heatmap** (weekday × hour density) and 📦 **box plots** comparing whole distributions on one scale, each box with its own note
+- 🎯 A **quadrant chart** for low/high effort versus low/high impact priorities
 
 ## What's in this database
 
@@ -247,6 +263,7 @@ A quick tour of what muckdb can do, all driven from the command line.
 | sales     |   600 | 🛒 orders by region / product / category |
 | sensors   |   720 | 🌡️ 30 days of hourly temp + humidity     |
 | events    |  ~1.4k | ⚡ irregular event stream over 30 days   |
+| priorities |     5 | 🎯 initiatives scored by effort / impact |
 
 Click **explore** on any data panel to open it in the faceted table browser
 (search, facets, range/date sliders, sorting, stats, CSV/JSON export)." >/dev/null
@@ -333,6 +350,13 @@ MD
   --db "$DB" --view events_heat --chart heatmap --x hour --y weekday --value events \
   --caption "A heatmap crosses two categoricals and shades cells by a value — the midday hump shows as a bright column, quieter days as dim rows." >/dev/null
 
+"$MUCKDB" session section "$SESSION" --name sec-priority --title "Prioritisation" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name priority_matrix --title "Effort vs impact" \
+  --db "$DB" --view priority_quadrant --chart quadrant \
+  --x effort --y impact --label initiative --xlabel Effort --ylabel Impact \
+  --caption "Five initiatives on a fixed -1 to 1 effort/impact scale: labels and points reveal owner, outcome and decision detail on hover; use the mermaid button to copy a quadrantChart." >/dev/null
+
 "$MUCKDB" session section "$SESSION" --name sec-geo --title "Geography" >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name map --title "Where our customers are" \
@@ -385,12 +409,13 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Each event**      | scatter                        | raw points show where activity bunched   |
 | **Activity heat**   | heatmap (weekday × hour)       | two categoricals × a value → density at a glance |
 | **Value spread**    | box plots on a shared scale    | compare whole distributions, each with a note |
+| **Priorities**      | quadrant chart                 | compare low/high effort against low/high impact |
 | **Customers**       | map (lat/long → world map)     | geographic points, brighter = denser      |
 | **CI pipeline**     | timeline (relative seconds)    | tasks over time, sublanes for overlap, dep arrows |
 | **Incident**        | timeline (absolute time)       | phases per system, severity colour, event markers |
 | **Checkout flow**   | sequence diagram               | service comms — typed participants, arrow kinds, an alt frame |
 
-Section headers (**Sales**, **Time series**, **Distributions**, **Geography**, **Timelines**, **Sequences**)
+Section headers (**Sales**, **Time series**, **Distributions**, **Prioritisation**, **Geography**, **Timelines**, **Sequences**)
 group the panels and appear in the contents.
 
 Every figure here is backed by a **view** you can open (hit **explore**),
