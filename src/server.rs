@@ -4,7 +4,9 @@
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::mpsc;
+use std::sync::{Arc, RwLock};
 use std::thread;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
 use axum::Json;
@@ -20,18 +22,20 @@ use serde_json::json;
 use tokio::sync::broadcast;
 
 use crate::facade;
-use crate::{introspect, paths, session, store};
+use crate::{introspect, paths, session, store, update};
 
 const PREVIEW_LIMIT: u32 = 25;
 
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<String>,
+    update: Arc<RwLock<update::Status>>,
 }
 
 /// Entry point for the daemon: start mDNS, the file watcher, and the server.
 pub async fn run() -> Result<()> {
     let (tx, _rx) = broadcast::channel::<String>(64);
+    let update = Arc::new(RwLock::new(update::cached_status()?));
 
     let _mdns = match register_mdns() {
         Ok(handle) => Some(handle),
@@ -41,9 +45,10 @@ pub async fn run() -> Result<()> {
         }
     };
 
-    spawn_watcher(tx.clone())?;
+    let state = AppState { tx, update };
+    spawn_watcher(state.clone())?;
+    spawn_update_checker(state.clone());
 
-    let state = AppState { tx };
     let app = Router::new()
         .route("/", get(index))
         .route("/api/state", get(api_state))
@@ -150,7 +155,7 @@ fn register_mdns() -> Result<mdns_sd::ServiceDaemon> {
 }
 
 /// The full snapshot pushed to browsers: history + databases + session summaries.
-fn snapshot_json() -> Option<String> {
+fn snapshot_json(app: &AppState) -> Option<String> {
     let state = store::load_state().ok()?;
     let sessions: Vec<_> = session::list()
         .unwrap_or_default()
@@ -169,6 +174,7 @@ fn snapshot_json() -> Option<String> {
         // different value is running JS from a previous build — it reloads
         // itself so open tabs can never go stale across an upgrade/restart.
         "boot": boot_stamp(),
+        "update": app.update.read().ok()?.clone(),
     }))
     .ok()
 }
@@ -186,7 +192,7 @@ fn boot_stamp() -> u64 {
 }
 
 /// Watch the history store and session files; broadcast fresh state on changes.
-fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
+fn spawn_watcher(state: AppState) -> Result<()> {
     let data_dir = paths::data_dir()?;
     let sessions_dir = session::sessions_dir()?;
     let (raw_tx, raw_rx) = mpsc::channel();
@@ -223,15 +229,39 @@ fn spawn_watcher(tx: broadcast::Sender<String>) -> Result<()> {
         // filesystem event never turns into a client-side refresh storm.
         let mut last_sent = String::new();
         for _ in raw_rx {
-            if let Some(s) = snapshot_json()
+            if let Some(s) = snapshot_json(&state)
                 && s != last_sent
             {
                 last_sent.clone_from(&s);
-                let _ = tx.send(s);
+                let _ = state.tx.send(s);
             }
         }
     });
     Ok(())
+}
+
+/// Check on daemon boot when the daily cache is stale, then sleep until the
+/// next due time. The slow network request never occupies an HTTP worker.
+fn spawn_update_checker(state: AppState) {
+    thread::spawn(move || {
+        loop {
+            match update::check_if_due() {
+                Ok(Some(status)) => {
+                    if let Ok(mut current) = state.update.write() {
+                        *current = status;
+                    }
+                    if let Some(snapshot) = snapshot_json(&state) {
+                        let _ = state.tx.send(snapshot);
+                    }
+                }
+                Ok(None) => {}
+                Err(e) => eprintln!("muckdb: could not persist update check: {e:#}"),
+            }
+            // Waking hourly gives a long-running daemon a timely daily refresh,
+            // while the persistent last_checked_at value still enforces the cap.
+            thread::sleep(Duration::from_secs(60 * 60));
+        }
+    });
 }
 
 async fn index() -> Response {
@@ -262,15 +292,10 @@ async fn index() -> Response {
 }
 
 /// Serialize the current derived state, or an error response.
-fn state_response() -> Response {
-    match store::load_state() {
-        Ok(state) => Json(state).into_response(),
-        Err(e) => error_json(&e),
-    }
-}
-
-async fn api_state() -> Response {
-    state_response()
+async fn api_state(State(state): State<AppState>) -> Response {
+    snapshot_json(&state)
+        .map(|snapshot| ([(header::CONTENT_TYPE, "application/json")], snapshot).into_response())
+        .unwrap_or_else(|| error_json(&anyhow::anyhow!("loading daemon state")))
 }
 
 async fn api_databases() -> Response {
@@ -928,7 +953,7 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Resp
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
     // Send the current snapshot immediately so a fresh client is populated.
-    if let Some(s) = snapshot_json()
+    if let Some(s) = snapshot_json(&state)
         && socket.send(Message::Text(s.into())).await.is_err()
     {
         return;

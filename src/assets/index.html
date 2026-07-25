@@ -926,6 +926,8 @@
   .statusline.live .seg-state { color: var(--fg); }
   .seg-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--faint); margin-right: 8px; }
   .statusline.live .seg-state::before { background: var(--ok); }
+  .statusline.live .seg-state.update-available { color: var(--fail); }
+  .statusline.live .seg-state.update-available::before { background: var(--fail); box-shadow: 0 0 8px color-mix(in srgb, var(--fail) 55%, transparent); }
   .seg-db { flex: 1; min-width: 0; color: var(--primary-dim); display: flex; align-items: center; gap: 6px; }
   .seg-db::before { content: "⛁"; color: var(--faint); flex: none; }
   .seg-db:empty::before { content: ""; }
@@ -1023,7 +1025,7 @@
 
   <footer class="statusline no-screenshot" id="statusline">
     <span class="seg-item seg-brand">MUCKDB</span>
-    <span class="seg-item seg-state" id="sl-state">connecting</span>
+    <span class="seg-item seg-state wm-x" id="sl-state">connecting</span>
     <span class="seg-item seg-counts" id="sl-counts">0 commands · 0 databases</span>
     <span class="seg-item seg-db" id="sl-db"></span>
     <span class="seg-item seg-clock" id="sl-clock">--:--:--</span>
@@ -6923,6 +6925,19 @@
   // The bottom bar shows the build version while connected (the green dot
   // already says "live"); the titlebar indicator keeps the state word.
   function setStatus(live, text) { $("status").classList.toggle("live", live); $("status-text").textContent = text; $("statusline").classList.toggle("live", live); $("sl-state").textContent = live ? "v__MUCKDB_VERSION__" : text; }
+  function setUpdateStatus(update) {
+    const el = $("sl-state"); if (!el) return;
+    const latest = update && update.latest_version;
+    const newer = !!(update && update.update_available && latest);
+    el.classList.toggle("update-available", newer);
+    if (newer) {
+      el.dataset.tip = `<b>Update available</b><br>Running: v__MUCKDB_VERSION__<br>Newest version: <b>${esc(latest)}</b><div class="tl-tip-sep"></div>Install the newest muckdb release to update.`;
+    } else if (latest) {
+      el.dataset.tip = `<b>muckdb is up to date</b><br>Running: v__MUCKDB_VERSION__<br>Latest checked: ${esc(latest)}`;
+    } else {
+      el.dataset.tip = `<b>muckdb v__MUCKDB_VERSION__</b><br>Checking GitHub for new releases once per day.`;
+    }
+  }
   let formatsRev = null; // last-seen fingerprint of the format registry
   let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
@@ -6934,6 +6949,7 @@
     }
     state.history = s.history || [];
     state.sessions = s.sessions || [];
+    setUpdateStatus(s.update);
     // A changed format registry invalidates every cached format map so the
     // open view (and any session tiles) re-render with the new formats.
     if (s.formats_rev !== undefined) {

@@ -32,6 +32,13 @@ export default async function globalSetup(): Promise<void> {
   const tmpDir = mkdtempSync(join(tmpdir(), 'muckdb-e2e-'));
   mkdirSync(join(tmpDir, 'data'), { recursive: true });
   mkdirSync(join(tmpDir, 'state'), { recursive: true });
+  // Seed a fresh cached release result: browser tests remain fully offline and
+  // exercise the red update indicator without triggering a real GitHub call.
+  const muckdbData = join(tmpDir, 'data', 'muckdb');
+  mkdirSync(muckdbData, { recursive: true });
+  writeFileSync(join(muckdbData, 'update-check.json'), JSON.stringify({
+    last_checked_at: Date.now(), latest_version: 'v99.0.0',
+  }));
   const env = isolatedEnv(tmpDir);
   const dbPath = join(tmpDir, 'widgets.duckdb');
 

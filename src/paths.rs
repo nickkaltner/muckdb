@@ -40,6 +40,12 @@ pub fn history_file() -> Result<PathBuf> {
     Ok(data_dir()?.join("history.jsonl"))
 }
 
+/// Cached result of the daily GitHub release check. This lives beside the
+/// history ledger so it follows the same XDG-backed persistent data location.
+pub fn update_check_file() -> Result<PathBuf> {
+    Ok(data_dir()?.join("update-check.json"))
+}
+
 /// Pidfile used as the single-instance guard for the daemon on `port`.
 ///
 /// The default port keeps the historic `daemon.pid` name for backward

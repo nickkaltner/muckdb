@@ -13,6 +13,7 @@ mod session;
 mod shot;
 mod skill;
 mod store;
+mod update;
 
 use std::process::exit;
 
