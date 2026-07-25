@@ -600,14 +600,13 @@
   @media (max-width: 520px) { .inc { --inc-time: 82px; --inc-rail: 20px; } .inc-time { font-size: 10px; padding-right: 8px; } .inc-legend { margin-left: calc(var(--inc-time) + var(--inc-rail) + 8px); } .inc-main { padding-left: 8px; } }
   .seq-wrap { overflow-x: auto; padding: 4px 0; }
   .seq-svg { display: block; max-width: 100%; height: auto; font-family: inherit; }
-  .seq-part { fill: var(--raised); stroke: var(--line); stroke-width: 1.2; }
+  .seq-part { fill: var(--raised); stroke: var(--seq-glyph, var(--line)); stroke-width: var(--seq-glyph-width, 1.2); }
   .seq-part-lbl { fill: var(--fg); font-size: 12px; }
   .seq-life { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 4; }
   .seq-line { stroke: var(--fg); stroke-width: 1.4; fill: none; }
-  /* Participant-glyph strokes (actor body, boundary bars) — the same subtle
-     outline colour the filled shapes (box/cylinder/circle) use, so each icon
-     is one consistent colour rather than half --line, half --fg. */
-  .seq-glyph { stroke: var(--line); stroke-width: 1.2; fill: none; }
+  /* Participant-glyph strokes (actor body, boundary bars). Themes can lift
+     these independently when their structural outline is intentionally quiet. */
+  .seq-glyph { stroke: var(--seq-glyph, var(--line)); stroke-width: var(--seq-glyph-width, 1.2); fill: none; }
   .seq-line.reply { stroke-dasharray: 5 4; }
   .seq-head { fill: var(--fg); stroke: none; }
   .seq-head-open { stroke: var(--fg); stroke-width: 1.4; fill: none; }
@@ -1170,7 +1169,7 @@
       label: "mono", vars: {
         bg: "#101113", surface: "#181a1d", raised: "#202327", line: "#34373d", "line-soft": "#1e2024",
         fg: "#e8eaec", muted: "#969aa1", faint: "#5e636b", "on-accent": "#101113", mist: "#b3b8bf",
-        primary: "#d6a45e", highlight: "#e6bd86", 'primary-deep': "#b07f3f", "primary-dim": "#7e6238", "anno-event": "#9aa0a8", "sequence-number": "#9aa0a8",
+        primary: "#d6a45e", highlight: "#e6bd86", 'primary-deep': "#b07f3f", "primary-dim": "#7e6238", "anno-event": "#9aa0a8", "sequence-number": "#9aa0a8", "seq-glyph": "#b3b8bf", "seq-glyph-width": "1.5",
         ok: "#9bbf8a", fail: "#cf8f88",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(214,164,94,0.045), transparent 70%)",
       },
@@ -1186,7 +1185,7 @@
       label: "ink", vars: {
         bg: "#0c0c0b", surface: "#151514", raised: "#1d1d1b", line: "#3d3d39", "line-soft": "#282825",
         fg: "#f4f1e8", muted: "#c0beb5", faint: "#85837d", "on-accent": "#0c0c0b", mist: "#d5d2c9",
-        primary: "#ff5a1f", highlight: "#ff8a4c", 'primary-deep': "#b52c0c", "primary-dim": "#bf4828", "anno-event": "#20d7d2", "sequence-number": "#20d7d2",
+        primary: "#ff5a1f", highlight: "#ff8a4c", 'primary-deep': "#b52c0c", "primary-dim": "#bf4828", "anno-event": "#20d7d2", "sequence-number": "#20d7d2", "seq-glyph": "#d5d2c9", "seq-glyph-width": "1.5",
         ok: "#b8ef38", fail: "#ff4d5e",
         glow: "none", "grad-panel": "none", hi: "inset 0 1px 0 rgba(255,255,255,0.045)",
         selection: "rgba(255, 90, 31, 0.34)",
@@ -1205,7 +1204,7 @@
       label: "carbon", vars: {
         bg: "#07080a", surface: "#101216", raised: "#181b20", line: "#313640", "line-soft": "#16181d",
         fg: "#f5f6f8", muted: "#9aa0a8", faint: "#5e636c", "on-accent": "#07080a", mist: "#bcc1c9",
-        primary: "#ffb000", highlight: "#ffc845", 'primary-deep': "#d98e00", "primary-dim": "#9e6a00", "anno-event": "#c8ccd2", "sequence-number": "#ffb000",
+        primary: "#ffb000", highlight: "#ffc845", 'primary-deep': "#d98e00", "primary-dim": "#9e6a00", "anno-event": "#c8ccd2", "sequence-number": "#ffb000", "seq-glyph": "#bcc1c9", "seq-glyph-width": "1.5",
         ok: "#a6d07a", fail: "#ff7a6b",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,176,0,0.07), transparent 70%)",
       },
@@ -1218,7 +1217,7 @@
       label: "ember", vars: {
         bg: "#08070a", surface: "#13100c", raised: "#1b1711", line: "#362a1d", "line-soft": "#16110b",
         fg: "#f3e7d6", muted: "#b39a82", faint: "#786350", "on-accent": "#0f0b07",
-        primary: "#ff8c2e", highlight: "#ffb454", 'primary-deep': "#e0531c", "primary-dim": "#b1521f", "anno-event": "#4bc4a8", "sequence-number": "#4bc4a8",
+        primary: "#ff8c2e", highlight: "#ffb454", 'primary-deep': "#e0531c", "primary-dim": "#b1521f", "anno-event": "#4bc4a8", "sequence-number": "#4bc4a8", "seq-glyph": "#ffb454", "seq-glyph-width": "1.7",
         ok: "#b8c46a", fail: "#ff6a4d",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(255,140,46,0.09), transparent 70%)",
       },
@@ -1407,7 +1406,7 @@
       label: "glacier", light: true, vars: {
         bg: "#e9eff4", surface: "#f4f8fb", raised: "#fdfeff", line: "#c3d2dd", "line-soft": "#dae4ec",
         fg: "#14212b", muted: "#55707f", faint: "#8aa0ad", "on-accent": "#f4fbff", mist: "#6f8b9c",
-        primary: "#0e7fc0", highlight: "#2ba5d8", 'primary-deep': "#085e8e", "primary-dim": "#3f7fa0", "anno-event": "#0f8f7a", "sequence-number": "#2ba5d8",
+        primary: "#0e7fc0", highlight: "#2ba5d8", 'primary-deep': "#085e8e", "primary-dim": "#3f7fa0", "anno-event": "#0f8f7a", "sequence-number": "#2ba5d8", "seq-glyph": "#55707f", "seq-glyph-width": "1.5",
         ok: "#3f8f4f", fail: "#c43d4b",
         glow: "radial-gradient(1000px 460px at 80% -14%, rgba(14,143,190,0.07), transparent 70%)",
         "grad-panel": "linear-gradient(180deg, rgba(20,33,43,0.03), rgba(20,33,43,0) 58%)",
@@ -1431,7 +1430,7 @@
       label: "hearth", flat: true, vars: {
         bg: "#1d1510", surface: "#241a13", raised: "#30231a", line: "#3f2e21", "line-soft": "#281d15",
         fg: "#f1e7db", muted: "#b49d87", faint: "#806852", "on-accent": "#1d1510",
-        primary: "#ff7e2e", highlight: "#ffa758", 'primary-deep': "#e0641c", "primary-dim": "#9c5e2e", "anno-event": "#bca78f", "sequence-number": "#ff7e2e",
+        primary: "#ff7e2e", highlight: "#ffa758", 'primary-deep': "#e0641c", "primary-dim": "#9c5e2e", "anno-event": "#bca78f", "sequence-number": "#ff7e2e", "seq-glyph": "#ffb066", "seq-glyph-width": "1.7",
         ok: "#b6c97a", fail: "#ec7d5e",
       },
       grad2: ["#ffb066", "#e0601c"],
@@ -1445,7 +1444,7 @@
   // theme's grad-panel/hi) fall back to the :root defaults when not provided.
   const THEME_VARS = ["bg", "surface", "raised", "line", "line-soft", "fg", "muted", "faint",
     "on-accent", "mist", "primary", "highlight", "primary-deep", "primary-dim", "ok", "fail", "glow", "grad-panel", "hi",
-    "selection", "anno-target", "anno-threshold", "anno-event", "sequence-number",
+    "selection", "anno-target", "anno-threshold", "anno-event", "sequence-number", "seq-glyph", "seq-glyph-width",
     "tl-marker-color", "tl-marker-width", "tl-marker-dash", "tl-marker-opacity"];
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.hearth;
