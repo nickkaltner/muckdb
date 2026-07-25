@@ -370,6 +370,7 @@
 
   /* ---- predict subview -------------------------------------------------- */
   .predict-view { max-width: 1100px; display: flex; flex-direction: column; gap: 16px; }
+  .pd-tabs-row { align-self: flex-start; display: flex; align-items: center; gap: 6px; }
   .pd-tabs { align-self: flex-start; }
   .pd-tab-body { display: flex; flex-direction: column; gap: 16px; }
   .pd-ts { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
@@ -2293,8 +2294,9 @@
   let statsTsMetricCol = null; // numeric column the non-count aggregate applies to
   function statsScaffold(slot) {
     const tb = (id, l) => `<button data-pdtab="${id}" class="${statsTab === id ? "active" : ""}">${l}</button>`;
-    const tabs = `<span class="seg pd-tabs">${tb("columns", "per column")}${tb("correlation", "correlation")}${statsHasTime ? tb("timeseries", "time series") : ""}${tb("junk", "junk data")}</span>`;
-    const bar = slot.querySelector(".pd-tabs"), body = slot.querySelector("#stats-tab-body");
+    const tabLabel = statsTab === "columns" ? "per-column analysis" : statsTab;
+    const tabs = `<div class="pd-tabs-row"><span class="seg pd-tabs">${tb("columns", "per column")}${tb("correlation", "correlation")}${statsHasTime ? tb("timeseries", "time series") : ""}${tb("junk", "junk data")}</span><button class="panel-act icon no-screenshot" data-stats-shot="${attr(statsTab)}" title="Download ${attr(tabLabel)} screenshot" aria-label="Download ${attr(tabLabel)} screenshot">${SVG_COPYIMG}</button></div>`;
+    const bar = slot.querySelector(".pd-tabs-row"), body = slot.querySelector("#stats-tab-body");
     if (bar && body) { bar.outerHTML = tabs; return body; }
     slot.innerHTML = `<div class="predict-view">${tabs}<div class="pd-tab-body" id="stats-tab-body"></div></div>`;
     return slot.querySelector("#stats-tab-body");
@@ -3784,12 +3786,11 @@
   // action buttons are dropped from the capture and the app background is
   // painted behind the panel so the PNG isn't transparent where the panel's
   // own surface doesn't reach.
-  function renderPanelBlob(name) {
-    const panel = document.querySelector(`#panels .panel[data-tile="${cssEsc(name)}"]`);
-    if (!panel) return Promise.reject(new Error("panel not found"));
+  function renderElementBlob(el) {
+    if (!el) return Promise.reject(new Error("capture target not found"));
     if (typeof html2canvas !== "function") return Promise.reject(new Error("html2canvas not loaded"));
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1a1712";
-    return html2canvas(panel, {
+    return html2canvas(el, {
       backgroundColor: bg,
       scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
       useCORS: true,
@@ -3799,6 +3800,10 @@
     }).then((canvas) => new Promise((resolve, reject) => {
       canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("PNG encode failed"))), "image/png");
     })).then(stampPngMetadata);
+  }
+  function renderPanelBlob(name) {
+    const panel = document.querySelector(`#panels .panel[data-tile="${cssEsc(name)}"]`);
+    return renderElementBlob(panel);
   }
   // Rasterize the whole dashboard (every visible tile, stacked) to a PNG blob —
   // the "poster" export. Drops the per-panel controls from the capture.
@@ -3883,6 +3888,27 @@
         toast("copy image failed: " + ((e3 && e3.message) || e3), true);
         flashBtn(btn, "err");
       }
+    } finally { btn.classList.remove("busy"); }
+  }
+  async function downloadStatsImage(tab, btn) {
+    if (btn.classList.contains("busy")) return;
+    const view = document.querySelector("#result-body .predict-view");
+    if (!view) { toast("analysis view not found", true); return; }
+    btn.classList.add("busy");
+    toast("rendering analysis screenshot…", false, true);
+    try {
+      const blob = await deadline(renderElementBlob(view), null, 90000, "screenshot render timed out");
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = `${state.selTable || "analysis"}-${tab}.png`;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 10000);
+      toast("downloaded analysis screenshot");
+      flashBtn(btn, "ok");
+    } catch (e) {
+      console.warn("analysis screenshot:", e);
+      toast("analysis screenshot failed: " + ((e && e.message) || e), true);
+      flashBtn(btn, "err");
     } finally { btn.classList.remove("busy"); }
   }
   function tableClipboard(cols, rows, db, table) {
@@ -6610,6 +6636,7 @@
       return;
     }
     const js = ev.target.closest("[data-json]"); if (js) { showJsonValue(js.dataset.json, js.dataset.jdb || null, js.dataset.jtable || null, js.dataset.jcol || null); return; }
+    const ss = ev.target.closest("[data-stats-shot]"); if (ss) { downloadStatsImage(ss.dataset.statsShot, ss); return; }
     const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
     const ct = ev.target.closest("[data-copytile]"); if (ct) { copyTileContent(ct.dataset.copytile); return; }
     const cc = ev.target.closest("[data-copycode]");
