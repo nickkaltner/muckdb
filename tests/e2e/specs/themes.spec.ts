@@ -59,3 +59,20 @@ test('ink uses a flat monochrome shell with signal colours', async ({ page }) =>
   });
   await expect(page.locator('.panel', { hasText: 'By category' }).locator('canvas')).toBeVisible();
 });
+
+test('arctic keeps mono restrained while giving categorical charts a blue palette', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/?theme=arctic`);
+
+  const vars = await page.locator('html').evaluate((el) => {
+    const style = getComputedStyle(el);
+    return {
+      bg: style.getPropertyValue('--bg').trim(),
+      surface: style.getPropertyValue('--surface').trim(),
+      accent: style.getPropertyValue('--primary').trim(),
+      annotation: style.getPropertyValue('--anno-event').trim(),
+    };
+  });
+
+  expect(vars).toEqual({ bg: '#101216', surface: '#181c23', accent: '#6eb6ff', annotation: '#55d3d1' });
+  await expect(page.locator('.panel', { hasText: 'By category' }).locator('canvas')).toBeVisible();
+});
