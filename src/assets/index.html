@@ -578,6 +578,25 @@
   .tl-tick { position: absolute; top: 6px; transform: translateX(-50%); font-size: 10.5px; color: var(--faint); white-space: nowrap; }
   .tl-tip-cat { color: var(--muted); font-weight: 400; }
   .tl-tip-sep { border-top: 1px solid var(--line-soft); margin: 4px 0; }
+  /* ---- incident timeline ------------------------------------------------ */
+  .inc { --inc-time: 132px; --inc-rail: 24px; padding: 6px 4px 2px; }
+  .inc-legend { display: flex; flex-wrap: wrap; gap: 8px 14px; margin: 0 0 10px calc(var(--inc-time) + var(--inc-rail) + 12px); font-size: 11.5px; color: var(--muted); }
+  .inc-leg { display: inline-flex; align-items: center; gap: 6px; }
+  .inc-leg i { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+  .inc-row { display: grid; grid-template-columns: var(--inc-time) var(--inc-rail) minmax(0, 1fr); min-height: 54px; }
+  .inc-time { padding: 4px 12px 12px 0; text-align: right; font-size: 11px; line-height: 1.35; color: var(--muted); font-variant-numeric: tabular-nums; }
+  .inc-date { color: var(--faint); white-space: nowrap; }
+  .inc-clock { color: var(--fg); white-space: nowrap; }
+  .inc-rail { position: relative; min-height: 100%; }
+  .inc-rail::before { content: ""; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: var(--line); }
+  .inc-row:first-child .inc-rail::before { top: 13px; }
+  .inc-row:last-child .inc-rail::before { bottom: calc(100% - 13px); }
+  .inc-dot { position: absolute; z-index: 1; top: 8px; left: 50%; width: 11px; height: 11px; box-sizing: border-box; transform: translateX(-50%); border: 2px solid var(--surface); border-radius: 50%; box-shadow: 0 0 0 1px color-mix(in srgb, var(--fg) 16%, transparent); }
+  .inc-main { padding: 1px 0 16px 12px; min-width: 0; }
+  .inc-title { color: var(--fg); font-size: 13px; font-weight: 650; line-height: 1.35; }
+  .inc-category { margin-left: 7px; color: var(--muted); font-size: 10.5px; font-weight: 500; }
+  .inc-desc { margin-top: 3px; color: var(--muted); font-size: 12px; line-height: 1.45; white-space: pre-wrap; }
+  @media (max-width: 520px) { .inc { --inc-time: 82px; --inc-rail: 20px; } .inc-time { font-size: 10px; padding-right: 8px; } .inc-legend { margin-left: calc(var(--inc-time) + var(--inc-rail) + 8px); } .inc-main { padding-left: 8px; } }
   .seq-wrap { overflow-x: auto; padding: 4px 0; }
   .seq-svg { display: block; max-width: 100%; height: auto; font-family: inherit; }
   .seq-part { fill: var(--raised); stroke: var(--line); stroke-width: 1.2; }
@@ -682,7 +701,7 @@
   .sqledit .sqlbox::selection { background: var(--selection); }
   .sql-hl .s-kw { color: var(--primary); } .sql-hl .s-str { color: var(--ok); }
   .sql-hl .s-num { color: #e8a33d; } .sql-hl .s-com { color: var(--faint); font-style: italic; } .sql-hl .s-id { color: #9aa8b6; } .sql-hl .s-col { color: #7fb6ad; } .sql-hl .s-table { color: #67c9dd; } .sql-hl .s-fn { color: #bb9ef4; }
-  .sql-complete { position: absolute; z-index: 8; display: none; min-width: 220px; max-width: min(420px, calc(100% - 24px)); max-height: 220px; overflow: auto; background: var(--raised); border: 1px solid var(--primary-dim); border-radius: 6px; box-shadow: 0 12px 28px rgba(0,0,0,.38); padding: 4px; font: 12px var(--mono); }
+  .sql-complete { position: absolute; z-index: 8; top: 12px; left: 12px; display: none; min-width: 220px; max-width: min(420px, calc(100% - 24px)); max-height: 220px; overflow: auto; background: var(--raised); border: 1px solid var(--primary-dim); border-radius: 6px; box-shadow: 0 12px 28px rgba(0,0,0,.38); padding: 4px; font: 12px var(--mono); }
   .sql-complete.show { display: block; }
   .sql-option { display: flex; align-items: baseline; gap: 10px; width: 100%; padding: 6px 8px; background: none; color: var(--fg); border: 0; border-radius: 4px; text-align: left; cursor: pointer; font: inherit; }
   .sql-option:hover, .sql-option.sel { background: color-mix(in srgb, var(--primary) 18%, transparent); }
@@ -1156,6 +1175,29 @@
       bargrad: ["#fff8ec", "#d6a45e", "#3a3d42"],
       chart: ["#d6a45e", "#9aa6ad", "#cfd3d8", "#7e858d", "#e6c794", "#b3b9bf", "#8f969e", "#5f656d"],
     },
+    // "ink": an instrument panel, not a glowing terminal. The monochrome
+    // shell leaves orange for the principal signal, cyan for annotations, and
+    // magenta for a deliberate contrasting series. Surfaces and data marks are
+    // flat; gradients are reserved for charts whose values are continuous.
+    ink: {
+      label: "ink", vars: {
+        bg: "#0c0c0b", surface: "#151514", raised: "#1d1d1b", line: "#3d3d39", "line-soft": "#282825",
+        fg: "#f4f1e8", muted: "#c0beb5", faint: "#85837d", "on-accent": "#0c0c0b", mist: "#d5d2c9",
+        primary: "#ff5a1f", highlight: "#ff8a4c", 'primary-deep': "#b52c0c", "primary-dim": "#bf4828", "anno-event": "#20d7d2", "sequence-number": "#20d7d2",
+        ok: "#b8ef38", fail: "#ff4d5e",
+        glow: "none", "grad-panel": "none", hi: "inset 0 1px 0 rgba(255,255,255,0.045)",
+        selection: "rgba(255, 90, 31, 0.34)",
+        "anno-target": "#20d7d2", "anno-threshold": "#ff4d5e",
+      },
+      // Keep the default bar/area fill solid. A continuous ramp still comes
+      // from an explicitly shaped heatmap or chart, not ambient UI decoration.
+      grad2: ["#ff5a1f", "#ff5a1f"],
+      bargrad: ["#ff5a1f"],
+      flat: true, barRadius: 0, roundLinks: false,
+      arcOpacity: 0.56, arcGap: 1.08, labelBg: "var(--raised)", labelBgAlpha: 0.96,
+      seaStatic: 0.025, landOpacity: 0.20,
+      chart: ["#ff5a1f", "#20d7d2", "#f24fa5", "#b8ef38", "#ffc928", "#9b7cff", "#f4f1e8", "#ff8a4c"],
+    },
     carbon: {
       label: "carbon", vars: {
         bg: "#07080a", surface: "#101216", raised: "#181b20", line: "#313640", "line-soft": "#16181d",
@@ -1296,6 +1338,29 @@
       bargrad: ["#fdfcf7", "#3f86a8@0.2", "#1f5470@0.8", "#122c42"],
       chart: ["#2d6e8e", "#3f8f6e", "#a23b34", "#c98a1f", "#6b5ca8", "#bf6b3f", "#398a9e", "#8a4b7a"],
     },
+    // "strong paper": a field notebook printed with dense letterpress ink.
+    // It deliberately keeps paper's warm stock, but raises the structural
+    // contrast: panels are clearly separate sheets, utility copy is readable,
+    // and the map's land has enough ink to remain a useful spatial reference.
+    'strong-paper': {
+      label: "strong paper", light: true, vars: {
+        bg: "#e6dac0", surface: "#f7f0df", raised: "#fffaf0", line: "#9b896e", "line-soft": "#c8b99e",
+        fg: "#202a2b", muted: "#48595a", faint: "#6d7773", "on-accent": "#fffaf0", mist: "#5d6d6c",
+        primary: "#b8481c", highlight: "#dd7134", 'primary-deep': "#7f2d19", "primary-dim": "#965033", "anno-event": "#176c6b", "sequence-number": "#176c6b",
+        ok: "#4f7c3d", fail: "#a53b31",
+        glow: "radial-gradient(960px 460px at 86% -14%, rgba(184,72,28,0.11), transparent 68%), radial-gradient(660px 400px at 4% 108%, rgba(23,108,107,0.055), transparent 72%)",
+        "grad-panel": "linear-gradient(180deg, rgba(255,255,255,0.50), rgba(81,57,35,0.045) 100%)",
+        hi: "inset 0 1px 0 rgba(255,255,255,0.9), 0 1px 2px rgba(68,47,28,0.10)",
+        selection: "rgba(184, 72, 28, 0.24)",
+        "anno-target": "#176c6b", "anno-threshold": "#a53b31", "anno-event": "#b8481c",
+      },
+      grad2: ["#e58b4c", "#7f2d19"],
+      bargrad: ["#fff8e9", "#dd7134@0.24", "#b8481c@0.68", "#642416"],
+      barRadius: 3,
+      arcOpacity: 0.52, arcGap: 1.12, labelBg: "var(--raised)", labelBgAlpha: 0.94,
+      seaStatic: 0.045, landOpacity: 0.34,
+      chart: ["#b8481c", "#176c6b", "#8a6222", "#485f75", "#7c3d5d", "#55733d", "#9a5830", "#5d5b89"],
+    },
     // "sunroom": a bright, lived-in light mode. The warm paper ground is
     // deliberately visible behind clean white surfaces, while ink-blue,
     // coral, mint and violet keep dense charts unmistakably categorical.
@@ -1395,7 +1460,7 @@
     // .wm-light CSS) so it lightens rather than darkens, and can run a touch stronger.
     root.setProperty("--wm-static-opacity", String(t.seaStatic != null ? t.seaStatic : (t.light ? 0.1 : 0.08)));
     // Land opacity: light themes need more contrast so coastlines read on pale sea.
-    root.setProperty("--wm-land-opacity", String(t.light ? 0.22 : 0.12));
+    root.setProperty("--wm-land-opacity", String(t.landOpacity != null ? t.landOpacity : (t.light ? 0.22 : 0.12)));
     // Mark light themes so the sea-static video can be inverted + contrast-boosted
     // (a dark clip over pale water otherwise just darkens it and hides the motion).
     document.documentElement.classList.toggle("wm-light", !!t.light);
@@ -3228,7 +3293,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
@@ -3240,6 +3305,7 @@
       if (kind === "quadrant") { slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
+      if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
@@ -3889,7 +3955,7 @@
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
     const wide = !!state.tileWide[t.name];
-    const widenBtn = kind === "table" || kind === "timeline"
+    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
@@ -3901,7 +3967,7 @@
     // sense on them (markdown panels already skip it too). Probability tiles
     // intentionally keep the standard grip: a taller panel gives their curves
     // more breathing room, like a bar or line chart.
-    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "sequence" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -3953,6 +4019,7 @@
     if (kind === "quadrant") { slot.style.height = "auto"; slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
     if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
+    if (kind === "incident") { slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
@@ -4108,6 +4175,76 @@
     });
     const extraHtml = extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : "";
     return `${core.join("<br>")}${extraHtml}`;
+  }
+
+  // ---- incident timeline ---------------------------------------------------
+  // A chronological narrative rather than a Gantt chart: one event per row,
+  // with the clock on the left, a continuous rail, and optional prose on the
+  // right.  It deliberately consumes the same --start/--label/--desc/--color
+  // fields as other tiles so incident views remain ordinary explorable views.
+  function incidentTimeParts(t, numeric, fmt, previousDay) {
+    if (numeric) return { day: "", clock: tlFmtDur(t), dayKey: "" };
+    const zone = fmt && fmt.tz && fmt.tz !== "local" ? fmt.tz : "UTC";
+    try {
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+      }).formatToParts(new Date(t));
+      const get = (type) => parts.find((p) => p.type === type)?.value || "";
+      const dayKey = `${get("year")}-${get("month")}-${get("day")}`;
+      return { day: dayKey === previousDay ? "" : dayKey, clock: `${get("hour")}:${get("minute")}`, dayKey };
+    } catch (_) {
+      const fallback = tlFmtAbs(t, fmt), split = fallback.split(" ");
+      return { day: split[0] === previousDay ? "" : split[0], clock: split.slice(1).join(" "), dayKey: split[0] || "" };
+    }
+  }
+  function incidentTip(event, cols, row, spec, db, table, fmtT) {
+    const core = [`<b>${esc(event.label)}</b>`, esc(fmtT(event.t))];
+    if (event.category != null) core.push(`${esc(spec.color)}: ${esc(event.category)}`);
+    if (event.desc) core.push(esc(event.desc));
+    const shown = new Set([spec.start, spec.label, spec.desc, spec.color].filter(Boolean));
+    const extra = [];
+    cols.forEach((c, i) => {
+      if (shown.has(c)) return;
+      const v = row[i]; if (v === null || v === undefined || v === "") return;
+      const f = colFmt(db, c, table);
+      let disp = f ? applyFmtHtml(f, v) : esc(typeof v === "object" ? JSON.stringify(v) : String(v));
+      if (f && f.link) {
+        const href = linkSubst(f.link, v, row, cols, true);
+        const text = f.link_title ? esc(linkSubst(f.link_title, v, row, cols, false)) : disp;
+        disp = `<a href="${attr(href)}" target="_blank" rel="noopener noreferrer">${text}</a>`;
+      }
+      extra.push(`${esc(c)}: ${disp}`);
+    });
+    return `${core.join("<br>")}${extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : ""}`;
+  }
+  function incidentHtml(cols, rows, spec, db, table) {
+    const li = cols.indexOf(spec.label), si = cols.indexOf(spec.start);
+    const di = spec.desc ? cols.indexOf(spec.desc) : -1, ci = spec.color ? cols.indexOf(spec.color) : -1;
+    if (li < 0 || si < 0) return '<div class="note">incident needs --start and --label.</div>';
+    const numeric = tlIsNumeric(rows.map((r) => r[si]));
+    const toT = (v) => numeric ? Number(v) : parseTs(v);
+    const events = rows.map((row, ri) => ({
+      row, ri, t: toT(row[si]), label: row[li] == null ? "" : String(row[li]),
+      desc: di >= 0 && row[di] != null ? String(row[di]) : "",
+      category: ci >= 0 && row[ci] != null ? String(row[ci]) : null,
+    })).filter((e) => isFinite(e.t)).sort((a, b) => a.t - b.t || a.ri - b.ri);
+    if (!events.length) return '<div class="note">no incident events with a valid start time.</div>';
+    const cats = ci >= 0 ? [...new Set(events.filter((e) => e.category != null).map((e) => e.category))] : [];
+    const colors = catColors(Math.max(1, cats.length || 1));
+    const catIndex = Object.fromEntries(cats.map((cat, i) => [cat, i]));
+    const fmt = colFmt(db, spec.start, table), fmtT = (t) => numeric ? tlFmtDur(t) : tlFmtAbs(t, fmt);
+    let previousDay = null;
+    const body = events.map((event) => {
+      const time = incidentTimeParts(event.t, numeric, fmt, previousDay); previousDay = time.dayKey;
+      const color = event.category != null ? colors[catIndex[event.category] % colors.length] : "var(--primary)";
+      const tip = incidentTip(event, cols, event.row, spec, db, table, fmtT);
+      const category = event.category != null ? `<span class="inc-category">${esc(event.category)}</span>` : "";
+      const desc = event.desc ? `<div class="inc-desc">${esc(event.desc)}</div>` : "";
+      return `<div class="inc-row wm-x" data-tip="${attr(tip)}"><div class="inc-time">${time.day ? `<div class="inc-date">${esc(time.day)}</div>` : ""}<div class="inc-clock">${esc(time.clock)}</div></div><div class="inc-rail"><i class="inc-dot" style="background:${attr(color)}"></i></div><div class="inc-main"><div class="inc-title">${esc(event.label)}${category}</div>${desc}</div></div>`;
+    }).join("");
+    const legend = cats.length ? `<div class="inc-legend">${cats.map((cat, i) => `<span class="inc-leg"><i style="background:${attr(colors[i % colors.length])}"></i>${esc(cat)}</span>`).join("")}</div>` : "";
+    return `<div class="inc">${legend}${body}</div>`;
   }
 
   function timelineHtml(cols, rows, spec, db, table) {

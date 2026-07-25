@@ -225,16 +225,16 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
         [--from-label COL] [--to-label COL]  (map connections: name each endpoint marker — the place at each end — shown on marker hover; auto-detects from_city/to_city etc.)
-        [--label COL]  (map: per-point label shown in the hover tooltip; on a connections map it labels the arc; timeline: the text drawn in each bar; sequence: the message text)
-        [--desc COL]   (box: a per-box note; probability: a per-distribution note)
+        [--label COL]  (map: per-point label shown in the hover tooltip; on a connections map it labels the arc; timeline: the text drawn in each bar; incident: event name; sequence: the message text)
+        [--desc COL]   (box: a per-box note; probability: a per-distribution note; incident: optional event narrative)
         [--lane COL]   (timeline: the horizontal lane/row each bar belongs to)
-        [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration)
-        [--color COL]  (timeline: colour bars by this category value, adds a legend)
+        [--start COL] [--end COL] [--duration COL]  (timeline: bar start, and its end OR a numeric-seconds duration; incident: event time)
+        [--color COL]  (timeline: colour bars by this category value, adds a legend; incident: severity/category)
         [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
         [--chart sequence]  (sequence diagram — service comms; one row per message)
         [--chart quadrant]  (prioritisation matrix — --x effort, --y impact, --label item; values are -1..1)
@@ -408,7 +408,30 @@ muckdb session rm <name> [--tile TILE]
   time series' direction unmistakable — add it by default to records-over-time
   and metric-over-time charts. Ignored on stacked/multi-series tiles.
 
-## Timeline tiles (Gantt / trace / incident view)
+## Incident timeline tiles
+
+Use `--chart incident` for a human incident narrative: one row per milestone,
+laid out vertically with a continuous rail and dot, time at left, and the event
+name plus optional multi-line explanatory text at right. It is intentionally not
+a Gantt chart — use `timeline` below when phases have duration, lanes, or
+dependencies.
+
+Required: `--start` (timestamp/date or relative seconds) and `--label` (event
+name). Optional: `--desc` for the narrative, `--color` for severity/category
+(adds a dot-colour legend), and `--id` for a reference surfaced in the rich
+hover tooltip. Events are sorted chronologically. Dates appear only on the first
+event and when the date changes; timestamps honour the `--tz` format on the
+`--start` column. Hover an event for all remaining columns, including formatted
+links.
+
+```sh
+muckdb format incident.db occurred_at --table incident_events --tz local
+muckdb session tile ops --name narrative --db incident.db --view incident_events --chart incident \
+  --start occurred_at --label event_name --desc explanation --color severity \
+  --caption "Incident milestones in order; dot colour indicates severity."
+```
+
+## Timeline tiles (Gantt / trace view)
 
 A `timeline` tile draws each **row of your view as one horizontal bar** on a
 shared time axis, grouped into labelled **lanes**. Reach for it whenever the

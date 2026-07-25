@@ -46,9 +46,14 @@ test.describe('presentation mode', () => {
     expect(captionBox!.y - (worldMapBox!.y + worldMapBox!.height)).toBeLessThanOrEqual(30);
     expect(mapBox!.y + mapBox!.height - (captionBox!.y + captionBox!.height)).toBeLessThanOrEqual(22);
 
+    // The incident narrative is a normal slide between the Gantt view and the
+    // table, preserving its readable chronological order in a presentation.
+    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await expect(deck.locator('.presentation-stage > .panel[data-tile="incident"]')).toBeVisible();
+
     // The table's "more rows" exploration hint is useful in the dashboard,
     // but not to an audience. The reusable opt-out class hides it in slides.
-    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
     await expect(deck.locator('.presentation-stage > .panel[data-tile="all"]')).toBeVisible();
     await expect(deck.locator('.hide-presentation')).toBeHidden();
 

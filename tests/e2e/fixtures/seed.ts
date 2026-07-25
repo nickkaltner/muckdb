@@ -68,6 +68,14 @@ CREATE VIEW ts_timeline AS SELECT * FROM (VALUES
   ('db',  'failover', TIMESTAMP '2026-05-01 14:10:00', TIMESTAMP '2026-05-01 14:25:00')
 ) t(sys, phase, started, ended);
 
+-- Incident narrative fixture: intentionally unordered so the tile's chronological
+-- ordering, date changes, optional description, and severity legend are covered.
+CREATE VIEW incident_events AS SELECT * FROM (VALUES
+  (TIMESTAMP '2026-05-02 00:08:00', 'Mitigation verified', 'Error rate returned to baseline.', 'resolved'),
+  (TIMESTAMP '2026-05-01 23:59:00', 'Incident declared', 'On-call began coordinating the response.', 'critical'),
+  (TIMESTAMP '2026-05-02 00:03:00', 'Traffic shifted', NULL, 'mitigating')
+) t(occurred_at, event_name, narrative, severity);
+
 -- Sequence diagram fixture: one row per message, each participant type, all four
 -- arrow kinds, a self-message, and an alt/else group. 'trace' carries a --link
 -- format (tooltip-link coverage); 'note' carries a hostile value (XSS coverage).
@@ -152,6 +160,10 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--lane', 'sys', '--label', 'phase', '--start', 'started', '--end', 'ended',
     '--event', '2026-05-01 14:15|escalated',
     '--caption', 'Absolute-time timeline shown in local zone; hover shows UTC too.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'incident', '--title', 'Incident narrative',
+    '--db', dbPath, '--view', 'incident_events', '--chart', 'incident',
+    '--start', 'occurred_at', '--label', 'event_name', '--desc', 'narrative', '--color', 'severity',
+    '--caption', 'Chronological incident milestones; colour indicates severity and descriptions add response context.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);

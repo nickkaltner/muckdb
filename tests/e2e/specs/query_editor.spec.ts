@@ -46,7 +46,7 @@ test.describe('query editor intelligence', () => {
       await dialog.accept('saved_widget_categories');
     });
     await page.locator('[data-saveview]').click();
-    await expect(page.locator('.toast')).toContainText('saved view saved_widget_categories');
+    await expect(page.locator('#toast')).toContainText('saved view saved_widget_categories');
 
     page.once('dialog', async (dialog) => {
       await dialog.accept('saved_widget_categories');

@@ -28,7 +28,7 @@ pub struct Marker {
 /// How a data tile should be charted.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Chart {
-    /// bar | stacked | line | area | scatter | pie | table | heatmap | quadrant
+    /// bar | stacked | line | area | scatter | pie | table | heatmap | quadrant | incident
     pub kind: String,
     #[serde(default)]
     pub x: Option<String>,
@@ -903,6 +903,22 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             );
         }
     }
+    if chart.kind == "incident" {
+        chart
+            .label
+            .as_deref()
+            .context("--chart incident needs --label <column> (the event name)")?;
+        let start = chart
+            .start
+            .as_deref()
+            .context("--chart incident needs --start <column> (the event time)")?;
+        check("--start", start)?;
+        for (flag, col) in [("--color", &chart.color), ("--id", &chart.id)] {
+            if let Some(c) = col {
+                check(flag, c)?;
+            }
+        }
+    }
     if chart.kind == "sequence" {
         // One row per message: --from, --to and --label (the message text) are
         // required; every optional column flag must exist if named.
@@ -1310,7 +1326,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip; connections: --from-lat/--from-lon/--to-lat/--to-lon per arc, --from-label/--to-label name each endpoint marker\n                       \
@@ -1318,8 +1334,9 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  --chart probability: --x the distribution label, --y observed_value (one row per observation; estimates a density without assuming normality)\n                       \
                  --chart quadrant: --x effort and --y impact on a fixed -1..1 scale, --label item (one row per item; exports as Mermaid quadrantChart)\n                       \
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
+                 --chart incident: --start COL --label COL; optional --desc COL for narrative and --color CAT for severity/category\n                       \
                  --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
-                 [--desc COL]  (box: a per-box note; probability: a per-distribution note)\n                       \
+                 [--desc COL]  (box: a per-box note; probability: a per-distribution note; incident: event narrative)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \

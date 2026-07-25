@@ -3,6 +3,7 @@
 
 use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
@@ -737,12 +738,32 @@ pub fn save_view(db: &str, name: &str, sql: &str, overwrite: bool) -> Result<()>
     } else {
         "CREATE VIEW"
     };
-    let output = Command::new("duckdb")
+    let statement = format!("{ddl} {} AS {query}", quote_ident(name));
+    // The web UI can still be completing a read-only schema/query request when
+    // the user clicks save. DuckDB gives that reader a shared file lock, so a
+    // new writer may briefly fail rather than wait. Retrying the short-lived
+    // contention keeps the save action reliable without masking real DDL
+    // errors (which return immediately).
+    let mut output = Command::new("duckdb")
         .arg(db)
         .arg("-c")
-        .arg(format!("{ddl} {} AS {query}", quote_ident(name)))
+        .arg(&statement)
         .output()
         .context("failed to run duckdb while saving the view")?;
+    for _ in 0..20 {
+        if output.status.success()
+            || !String::from_utf8_lossy(&output.stderr).contains("Could not set lock on file")
+        {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(25));
+        output = Command::new("duckdb")
+            .arg(db)
+            .arg("-c")
+            .arg(&statement)
+            .output()
+            .context("failed to run duckdb while saving the view")?;
+    }
     if !output.status.success() {
         bail!(
             "duckdb error: {}",
