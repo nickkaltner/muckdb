@@ -391,6 +391,36 @@ pub fn save(session: &Session) -> Result<()> {
     store::write_atomic(&path, json.as_bytes())
 }
 
+/// Resolve a dashboard name or the UUID of its linked agent conversation.
+///
+/// Session names remain the primary lookup, so a dashboard whose name happens
+/// to resemble a UUID is addressed by name. Agent-session UUIDs are useful to
+/// agents that receive the conversation identifier but not the dashboard name.
+fn resolve_session_or_agent_session(input: &str) -> Result<String> {
+    let id = slug(input);
+    if load(&id)?.is_some() {
+        return Ok(id);
+    }
+
+    find_agent_session_id(&list()?, input)?.map_or_else(|| Ok(id), Ok)
+}
+
+fn find_agent_session_id(sessions: &[Session], input: &str) -> Result<Option<String>> {
+    let matches: Vec<_> = sessions
+        .iter()
+        .filter(|session| session.agent_session.as_deref() == Some(input))
+        .map(|session| session.id.clone())
+        .collect();
+    match matches.as_slice() {
+        [] => Ok(None),
+        [id] => Ok(Some(id.clone())),
+        _ => bail!(
+            "agent session UID '{input}' is linked to multiple dashboards: {}",
+            matches.join(", ")
+        ),
+    }
+}
+
 /// A held advisory lock on a session, released when dropped.
 pub struct SessionLock {
     _file: fs::File,
@@ -1081,8 +1111,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
         // source feeding the session and durable notes about its assumptions.
         "context" | "agent-metadata" => {
             let name = session_arg
-                .context("usage: muckdb session context <name> <read|save> [--md <text|->]")?;
-            let id = slug(&name);
+                .context("usage: muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]")?;
+            let id = resolve_session_or_agent_session(&name)?;
             let op = p
                 .positionals
                 .get(1)
@@ -1324,7 +1354,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  \n  create <name> [--title T] [--agent-session UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
-                 context <name> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
+                 context <name|agent-session-uid> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
@@ -1732,6 +1762,24 @@ mod tests {
         assert_eq!(
             value["agent_context"],
             "# Data sources\n\n- warehouse.duckdb"
+        );
+    }
+
+    #[test]
+    fn resolves_agent_session_uid_to_its_dashboard() {
+        let uid = "019f9683-c1a1-7a20-b402-6ee115be61ec";
+        let session = Session {
+            id: "firmware-crash-review".into(),
+            title: None,
+            agent_context: None,
+            agent_session: Some(uid.into()),
+            created: 1,
+            updated: 1,
+            tiles: vec![],
+        };
+        assert_eq!(
+            find_agent_session_id(&[session], uid).unwrap().as_deref(),
+            Some("firmware-crash-review")
         );
     }
 

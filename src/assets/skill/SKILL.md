@@ -31,14 +31,14 @@ dashboard tile; it is working context that travels with the session export.
 context before changing it:**
 
 ```sh
-muckdb session context <session> read
+muckdb session context <session-name|agent-session-uid> read
 ```
 
 **Save it whenever data sources change or a session-wide consideration changes.**
 Use `--md -` for a complete Markdown handoff, not a terse status line:
 
 ```sh
-muckdb session context <session> save --md - <<'MD'
+muckdb session context <session-name|agent-session-uid> save --md - <<'MD'
 # Data sources
 
 - `~/data/orders.duckdb`, table `orders`: daily warehouse export; refreshed 2026-07-13.
@@ -222,7 +222,7 @@ muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
 muckdb session section <name> --name TILE --title HEADING
-muckdb session context <name> <read|save> [--md <text|->]
+muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
@@ -257,8 +257,8 @@ muckdb session rm <name> [--tile TILE]
   shown at the top of the session view and returned by `muckdb ls session <id>`
   (`agent_session`), so a human can tell which conversation produced a dashboard.
 - **Read and maintain the agent context.** On an existing session, start with
-  `muckdb session context <name> read`. Save a Markdown update with `context
-  <name> save --md -` whenever a contributing datasource, its provenance, or a
+  `muckdb session context <name|agent-session-uid> read`. Save a Markdown update with `context
+  <name|agent-session-uid> save --md -` whenever a contributing datasource, its provenance, or a
   session-wide assumption/decision changes. This handoff is stored with the
   session and is included in `session export` / `session import`; it is not a
   visible dashboard tile.
