@@ -100,6 +100,12 @@ muckdb mydb.db -c "CREATE VIEW by_species AS SELECT species, count(*) n FROM rea
 muckdb session tile analysis --name species --db mydb.db --view by_species \
   --chart bar --x species --y n --title "By species" --trend
 
+# a line chart can shade an interval between lower/upper confidence columns;
+# keep those columns out of --y so they are not also drawn as boundary lines
+muckdb session tile analysis --name forecast --db mydb.db --view forecast_series \
+  --chart line --x day --y actual,forecast --band lower_90,upper_90 \
+  --title "Forecast with confidence band"
+
 # or straight from inline SQL, as a scatter
 muckdb session tile analysis --name temp --db mydb.db \
   --sql "SELECT temp_c, ph FROM readings" --chart scatter --x temp_c --y ph

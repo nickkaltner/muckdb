@@ -93,6 +93,10 @@ pub struct Chart {
     /// Vertical event lines at an x-position (timestamp or category).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub events: Vec<Marker>,
+    /// Line charts: lower and upper columns for a shaded confidence band
+    /// (`--band lower,upper`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub band: Option<[String; 2]>,
     /// Overlay a smoothed trendline (LOESS; single-series bar/line/area/scatter).
     #[serde(default, skip_serializing_if = "is_false")]
     pub trend: bool,
@@ -783,6 +787,13 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             check(flag, c)?;
         }
     }
+    if let Some([lower, upper]) = &chart.band {
+        check("--band", lower)?;
+        check("--band", upper)?;
+        if chart.kind != "line" {
+            bail!("--band is only supported with --chart line");
+        }
+    }
     if chart.kind == "map" {
         // A map needs latitude and longitude: explicit --lat/--lon, else a
         // column named lat/latitude and lon/lng/long/longitude (case-insensitive).
@@ -1190,6 +1201,20 @@ pub fn cli(args: &[String]) -> Result<i32> {
                         .collect()
                 })
                 .unwrap_or_default();
+            let band = if let Some(raw) = p.get("band") {
+                let cols: Vec<_> = raw
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|x| !x.is_empty())
+                    .map(str::to_string)
+                    .collect();
+                if cols.len() != 2 {
+                    bail!("--band needs exactly two columns: lower,upper");
+                }
+                Some([cols[0].clone(), cols[1].clone()])
+            } else {
+                None
+            };
             let tile = Tile::View {
                 name: tile_name.clone(),
                 title: p.get("title").map(str::to_string),
@@ -1218,6 +1243,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     targets: parse_markers(&p.get_all("target")),
                     thresholds: parse_markers(&p.get_all("threshold")),
                     events: parse_markers(&p.get_all("event")),
+                    band,
                     trend: p.get("trend").is_some(),
                     lane: p.get("lane").map(str::to_string),
                     start: p.get("start").map(str::to_string),
@@ -1370,6 +1396,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \
+                 [--band LOWER,UPPER]  (line-chart confidence band, shaded between two columns)\n                       \
                  [--trend]  (overlay a smoothed trendline; single-series bar/line/area/scatter)\n  \
                  screenshot <name> [--tile TILE] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
                  export <name> [--out FILE.muckdb]  (bundle session + database snapshots into a portable zip)\n  \
@@ -1433,6 +1460,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: None,
             start: None,
@@ -1483,6 +1511,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: None,
             start: None,
@@ -1539,6 +1568,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: Some("resource".into()),
             start: Some("started_at".into()),
@@ -1603,6 +1633,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: None,
             start: None,
@@ -1872,6 +1903,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: Some("lane".into()),
             start: Some("t0".into()),
@@ -1953,6 +1985,7 @@ mod tests {
             targets: vec![],
             thresholds: vec![],
             events: vec![],
+            band: None,
             trend: false,
             lane: None,
             start: None,

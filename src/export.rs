@@ -416,6 +416,7 @@ mod tests {
                         targets: vec![],
                         thresholds: vec![],
                         events: vec![],
+                        band: None,
                         trend: false,
                         lane: None,
                         start: None,

@@ -245,7 +245,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--group-branch COL]  (sequence: else/and compartment label within a frame)
         [--autonumber]  (sequence: number the messages)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
-        [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
+        [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
@@ -407,6 +407,10 @@ muckdb session rm <name> [--tile TILE]
   single-series `bar`/`line`/`area`/`scatter` tile. The quickest way to make a
   time series' direction unmistakable — add it by default to records-over-time
   and metric-over-time charts. Ignored on stacked/multi-series tiles.
+- **Confidence band — `--band LOWER,UPPER`.** On a `line` chart, shades the
+  region between two numeric columns (for example a forecast's lower and upper
+  interval). Keep those columns out of `--y`: the band replaces their boundary
+  lines while the selected series stay crisp above it.
 
 ## Incident timeline tiles
 

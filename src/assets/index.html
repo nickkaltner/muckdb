@@ -810,6 +810,10 @@
   .panel-act.active { background: var(--primary); color: var(--on-accent); border-color: var(--primary); font-weight: 700; }
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 300px; }
+  .chart-reset { position: absolute; z-index: 2; top: 7px; right: 7px; font: inherit; font-size: 10.5px; color: var(--muted); background: var(--raised); border: 1px solid var(--line);
+    border-radius: 4px; padding: 2px 6px; cursor: pointer; }
+  .chart-reset:hover { color: var(--fg); border-color: var(--primary-dim); }
+  .chart-reset[hidden] { display: none; }
   /* Pie tiles: the looping static clip behind the canvas (same per-theme opacity
      + light-theme invert as the map sea). */
   .panel-chart .pie-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; z-index: 0; opacity: var(--wm-static-opacity, 0.08); }
@@ -5845,8 +5849,25 @@
     const y = { grid: { color: gridMinor } };
     if (stacked) y.stacked = true;
     return { responsive: true, maintainAspectRatio: false,
+      events: ["mousemove", "mouseout", "click", "mousedown", "mouseup", "touchstart", "touchmove", "touchend"],
       scales: { x, y },
-      plugins: { legend: { display: true, position: "bottom" } } };
+      plugins: {
+        legend: {
+          display: true,
+          position: "bottom",
+          // Clicks are handled by muckLegendFade at the canvas boundary. Leave
+          // this as a no-op so Chart.js never falls back to hide/show.
+          onClick: () => {},
+          labels: {
+            filter: (item, data) => !data.datasets[item.datasetIndex]?._muckBand,
+            color: (ctx) => ctx.chart.$muckFadedDatasets?.[ctx.datasetIndex]
+              ? (cssVar("--faint") || "#777") : (cssVar("--fg") || "#e8eaec"),
+          },
+        },
+        muckBrushZoom: { enabled: true },
+        muckLegendFade: { enabled: true },
+        muckConfidenceBand: { enabled: true },
+      } };
   }
   // Chart.js's stock `nearest` mode targets data points. That still leaves the
   // stroke between points frustratingly thin, so line charts get a small hit
@@ -5875,6 +5896,193 @@
       return nearest ? [nearest] : [];
     };
   }
+  // Legend clicks toggle a dataset between its normal rendering and a faint
+  // contextual trace. The alpha is applied while that dataset is painted, so it
+  // works equally for solid colours, gradients, lines, areas, and points.
+  const muckLegendFade = {
+    id: "muckLegendFade",
+    afterUpdate(chart, _args, opts) {
+      if (!opts || !opts.enabled || chart.$muckLegendFadeControl) return;
+      const slot = chart.canvas.parentElement;
+      if (!slot) return;
+      const onClick = (event) => {
+        const legend = chart.legend;
+        if (!legend || !legend.legendHitBoxes) return;
+        const r = chart.canvas.getBoundingClientRect();
+        const x = (event.clientX - r.left) * chart.width / r.width;
+        const y = (event.clientY - r.top) * chart.height / r.height;
+        const index = legend.legendHitBoxes.findIndex((box) =>
+          x >= box.left && x <= box.left + box.width && y >= box.top && y <= box.top + box.height);
+        if (index < 0 || !chart.data.datasets[index]) return;
+        // Prevent Chart.js's native legend listener from hiding the dataset.
+        event.stopPropagation();
+        const faded = chart.$muckFadedDatasets || (chart.$muckFadedDatasets = {});
+        if (faded[index]) delete faded[index]; else faded[index] = true;
+        chart.update();
+      };
+      slot.addEventListener("click", onClick, true);
+      chart.$muckLegendFadeControl = { slot, onClick };
+    },
+    beforeDatasetDraw(chart, args, opts) {
+      if (!opts || !opts.enabled || !chart.$muckFadedDatasets?.[args.index]) return;
+      chart.ctx.save();
+      chart.ctx.globalAlpha = 0.12;
+      args.meta.$muckLegendFade = true;
+    },
+    afterDatasetDraw(chart, args) {
+      if (!args.meta.$muckLegendFade) return;
+      args.meta.$muckLegendFade = false;
+      chart.ctx.restore();
+    },
+    beforeDestroy(chart) {
+      const control = chart.$muckLegendFadeControl;
+      if (control) control.slot.removeEventListener("click", control.onClick, true);
+    },
+  };
+  // Draw confidence bands ourselves instead of relying on Chart.js's filler:
+  // this keeps a band continuous between its lower/upper series while still
+  // respecting NULL gaps at either edge.
+  const muckConfidenceBand = {
+    id: "muckConfidenceBand",
+    beforeDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled) return;
+      const lowerIndex = chart.data.datasets.findIndex((d) => d._muckBandLower);
+      const upperIndex = chart.data.datasets.findIndex((d) => d._muckBandUpper);
+      if (lowerIndex < 0 || upperIndex < 0) return;
+      const lower = chart.getDatasetMeta(lowerIndex).data;
+      const upper = chart.getDatasetMeta(upperIndex).data;
+      const draw = (points) => {
+        if (points.length < 2) return;
+        const ctx = chart.ctx;
+        ctx.beginPath();
+        ctx.moveTo(points[0].lower.x, points[0].lower.y);
+        points.slice(1).forEach((p) => ctx.lineTo(p.lower.x, p.lower.y));
+        points.slice().reverse().forEach((p) => ctx.lineTo(p.upper.x, p.upper.y));
+        ctx.closePath(); ctx.fill();
+      };
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = hexA(PAL[1], 0.32);
+      let run = [];
+      for (let i = 0; i < Math.min(lower.length, upper.length); i++) {
+        if (lower[i].skip || upper[i].skip) { draw(run); run = []; }
+        else run.push({ lower: lower[i], upper: upper[i] });
+      }
+      draw(run); ctx.restore();
+    },
+  };
+  // Drag across any Cartesian chart to focus its x-range. This is deliberately
+  // local rather than a dependency on chartjs-plugin-zoom: it works for both
+  // time and category scales, leaves vertical scrolling alone, and keeps the
+  // interaction consistent with timeline brushing.
+  const muckBrushZoom = {
+    id: "muckBrushZoom",
+    afterUpdate(chart, _args, opts) {
+      if (!opts || !opts.enabled || !chart.scales.x || chart.$muckBrushZoom) return;
+      const slot = chart.canvas.parentElement;
+      if (!slot) return;
+      const reset = document.createElement("button");
+      reset.className = "chart-reset";
+      reset.type = "button";
+      reset.textContent = "reset zoom";
+      reset.title = "Reset chart zoom";
+      reset.hidden = true;
+      reset.addEventListener("click", () => {
+        const z = chart.$muckBrushZoom;
+        if (!z) return;
+        const scale = chart.options.scales && chart.options.scales.x;
+        if (!scale) return;
+        if (z.min === undefined) delete scale.min; else scale.min = z.min;
+        if (z.max === undefined) delete scale.max; else scale.max = z.max;
+        reset.hidden = true;
+        chart.update();
+      });
+      slot.appendChild(reset);
+      chart.$muckBrushZoom = {
+        min: chart.options.scales && chart.options.scales.x && chart.options.scales.x.min,
+        max: chart.options.scales && chart.options.scales.x && chart.options.scales.x.max,
+        reset,
+        startX: null,
+        currentX: null,
+      };
+      const z = chart.$muckBrushZoom;
+      const point = (event) => {
+        const e = event.touches ? event.touches[0] : event.changedTouches ? event.changedTouches[0] : event;
+        const r = chart.canvas.getBoundingClientRect();
+        return {
+          x: (e.clientX - r.left) * chart.width / r.width,
+          y: (e.clientY - r.top) * chart.height / r.height,
+        };
+      };
+      const clampX = (x) => Math.max(chart.chartArea.left, Math.min(chart.chartArea.right, x));
+      z.onDown = (event) => {
+        if (event.button != null && event.button !== 0) return;
+        const p = point(event), a = chart.chartArea;
+        // The legend is painted inside the canvas, below the chart area. Only
+        // begin a brush inside the actual plot so its keys stay clickable.
+        if (p.x < a.left || p.x > a.right || p.y < a.top || p.y > a.bottom) return;
+        z.startX = p.x; z.currentX = p.x;
+        chart.draw();
+      };
+      z.onMove = (event) => {
+        if (z.startX == null) return;
+        z.currentX = clampX(point(event).x);
+        chart.draw();
+      };
+      z.onUp = (event) => {
+        if (z.startX == null) return;
+        const start = z.startX, end = clampX(point(event).x);
+        z.startX = null; z.currentX = null;
+        if (Math.abs(end - start) < 8) { chart.draw(); return; }
+        const x = chart.scales.x;
+        const lo = x.getValueForPixel(Math.min(start, end));
+        const hi = x.getValueForPixel(Math.max(start, end));
+        const scale = chart.options.scales && chart.options.scales.x;
+        if (lo != null && hi != null && lo !== hi && scale) {
+          scale.min = lo; scale.max = hi; z.reset.hidden = false; chart.update();
+        } else chart.draw();
+      };
+      slot.addEventListener("pointerdown", z.onDown, true);
+      slot.addEventListener("pointermove", z.onMove, true);
+      slot.addEventListener("pointerup", z.onUp, true);
+      slot.addEventListener("mousedown", z.onDown, true);
+      slot.addEventListener("mousemove", z.onMove, true);
+      slot.addEventListener("mouseup", z.onUp, true);
+      slot.addEventListener("touchstart", z.onDown, { capture: true, passive: true });
+      slot.addEventListener("touchmove", z.onMove, { capture: true, passive: true });
+      slot.addEventListener("touchend", z.onUp, { capture: true, passive: true });
+    },
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled) return;
+      const z = chart.$muckBrushZoom, area = chart.chartArea;
+      if (!z || z.startX == null || z.currentX == null || !area) return;
+      const left = Math.min(z.startX, z.currentX), width = Math.abs(z.currentX - z.startX);
+      const ctx = chart.ctx;
+      ctx.save();
+      ctx.fillStyle = hexA(cssVar("--primary") || "#ff7e2e", 0.16);
+      ctx.strokeStyle = cssVar("--primary") || "#ff7e2e";
+      ctx.fillRect(left, area.top, width, area.bottom - area.top);
+      ctx.strokeRect(left + .5, area.top + .5, Math.max(0, width - 1), area.bottom - area.top - 1);
+      ctx.restore();
+    },
+    beforeDestroy(chart) {
+      const z = chart.$muckBrushZoom;
+      if (!z) return;
+      const slot = chart.canvas.parentElement;
+      if (slot) {
+        slot.removeEventListener("pointerdown", z.onDown, true);
+        slot.removeEventListener("pointermove", z.onMove, true);
+        slot.removeEventListener("pointerup", z.onUp, true);
+        slot.removeEventListener("mousedown", z.onDown, true);
+        slot.removeEventListener("mousemove", z.onMove, true);
+        slot.removeEventListener("mouseup", z.onUp, true);
+        slot.removeEventListener("touchstart", z.onDown, true);
+        slot.removeEventListener("touchmove", z.onMove, true);
+        slot.removeEventListener("touchend", z.onUp, true);
+      }
+      if (z.reset) z.reset.remove();
+    },
+  };
   // Chart.js plugin: draws a tile's reference lines on top of the data. Reads
   // its spec from options.plugins.muckAnno (set by chartConfig via annoSpec).
   function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
@@ -6019,6 +6227,13 @@
     const toX = (v) => (epoch != null && isFinite(Number(v))
       ? pinMs(epochToMs(Number(v), epoch), axisTz) : pinMs(parseTs(v), axisTz));
     const xv = (r) => (timeX ? toX(r[xi]) : +r[xi]);
+    // SQL NULL means "this series has not started yet", not zero. Keeping it
+    // as null lets Chart.js leave a genuine gap instead of drawing a misleading
+    // plunge to the baseline.
+    const yv = (r, yi) => {
+      const value = r[yi];
+      return value == null || value === "" || !isFinite(Number(value)) ? null : Number(value);
+    };
     const anno = annoSpec(spec, timeX ? toX : null);
     // Apply column display formats to the y-axis ticks and tooltips.
     const applyYFmt = (o) => {
@@ -6060,7 +6275,7 @@
         addZoneTitle(o, axisTz, (item) => chartTimeTitle(rows[item.dataIndex]?.[xi], xf, axisTz));
       }
       o.plugins.legend.display = false; // one series — the title already names it
-      const pts = rows.map((r) => ({ x: xv(r), y: +r[yi] }));
+      const pts = rows.map((r) => ({ x: xv(r), y: yv(r, yi) }));
       const sets = [{ label: ys[0], data: pts, backgroundColor: hexA(PAL[0], 0.7), borderWidth: 0, pointRadius: 2.5, pointHoverRadius: 4 }];
       if (spec.trend) { const t = trendDataset(pts, true); if (t) sets.push(t); }
       return { type: "scatter", data: { datasets: sets }, options: o };
@@ -6068,6 +6283,8 @@
     const stacked = kind === "stacked";
     const type = kind === "line" || kind === "area" ? "line" : "bar";
     const single = ys.length === 1 && !stacked;
+    const band = kind === "line" && Array.isArray(spec.band) && spec.band.length === 2
+      && spec.band.every((c) => cols.includes(c)) ? spec.band : null;
     // Round the top of bars when the active theme opts in (theme.barRadius).
     const barRadius = BAR_RADIUS
       ? { topLeft: BAR_RADIUS, topRight: BAR_RADIUS, bottomLeft: 0, bottomRight: 0 } : 0;
@@ -6075,7 +6292,25 @@
     // series from the same scale as solid bars, so a dashboard speaks one colour
     // language. For ≤ CAT_CURATED series this is just the curated palette.
     const seriesCols = catColors(ys.length);
-    const datasets = ys.map((c, i) => {
+    const bandDatasets = band ? band.flatMap((c, i) => {
+      const yi = cols.indexOf(c);
+      const data = timeX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
+      return [{
+        label: i === 0 ? "confidence lower" : "confidence band",
+        data,
+        _muckBand: true,
+        _muckBandLower: i === 0,
+        _muckBandUpper: i === 1,
+        borderWidth: 0,
+        pointRadius: 0,
+        pointHoverRadius: 0,
+        borderColor: "transparent",
+        backgroundColor: "transparent",
+        fill: false,
+        spanGaps: false,
+      }];
+    }) : [];
+    const datasets = [...bandDatasets, ...ys.map((c, i) => {
       const yi = cols.indexOf(c);
       const col = seriesCols[i % seriesCols.length];
       // Bars: a single series is either one left→right gradient (continuous data,
@@ -6099,21 +6334,26 @@
       } else {
         bg = col;
       }
+      const values = timeX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
+      // A small marker on a late-starting series makes its real first point
+      // explicit without turning every point on a dense history into a dot.
+      const firstPresent = values.findIndex((v) => (v && typeof v === "object" ? v.y != null : v != null));
       return { label: c,
-        data: timeX ? rows.map((r) => ({ x: xv(r), y: +r[yi] })) : rows.map((r) => +r[yi]),
+        data: values,
         borderColor: border, borderWidth: type === "line" ? 2 : 0,
         // monotone: smooth but never overshoots past the data points, so a
         // line between two low days can't dip below both of them.
         backgroundColor: bg, fill: kind === "area", cubicInterpolationMode: "monotone",
-        pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: col,
+        spanGaps: false, pointRadius: (ctx) => ctx.dataIndex === firstPresent && firstPresent > 0 ? 4.5 : 0,
+        pointHoverRadius: 4, pointBackgroundColor: col,
         borderRadius: type !== "bar" ? 0 : (stacked ? (i === ys.length - 1 ? barRadius : 0) : barRadius), borderSkipped: false, maxBarThickness: 120,
         barPercentage: 0.96, categoryPercentage: 0.9 };
-    });
+    })];
     // Optional fitted trendline over the first series (single-series charts).
     if (spec.trend && single) {
       const pts = timeX
-        ? datasets[0].data
-        : datasets[0].data.map((y, i) => ({ x: i, y: +y }));
+        ? datasets[bandDatasets.length].data.filter((p) => p && isFinite(p.y))
+        : datasets[bandDatasets.length].data.map((y, i) => ({ x: i, y: y == null ? NaN : +y })).filter((p) => isFinite(p.y));
       const t = trendDataset(pts, timeX);
       if (t) {
         if (!timeX) t.data = t.data.map((p) => p.y); // category axis: align by index
@@ -6135,6 +6375,7 @@
       o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
     }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
+    o.plugins.tooltip.filter = (ctx) => !ctx.dataset._muckBand;
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
   }
@@ -7085,6 +7326,9 @@
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
+    try { Chart.register(muckBrushZoom); } catch (_) {}
+    try { Chart.register(muckLegendFade); } catch (_) {}
+    try { Chart.register(muckConfidenceBand); } catch (_) {}
     try { Chart.register(muckHoverCursor); } catch (_) {}
     try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
