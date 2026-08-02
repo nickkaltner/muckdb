@@ -5951,13 +5951,39 @@
       if (lowerIndex < 0 || upperIndex < 0) return;
       const lower = chart.getDatasetMeta(lowerIndex).data;
       const upper = chart.getDatasetMeta(upperIndex).data;
+      // Monotone cubic interpolation passes through every observed bound while
+      // smoothing between them. Unlike midpoint quadratics it never rounds away
+      // from the confidence values themselves.
+      const smoothPath = (points, edge, moveTo = true) => {
+        const ps = points.map((p) => p[edge]);
+        if (moveTo) chart.ctx.moveTo(ps[0].x, ps[0].y);
+        else chart.ctx.lineTo(ps[0].x, ps[0].y);
+        if (ps.length < 2) return;
+        const slopes = ps.slice(1).map((p, i) => (p.y - ps[i].y) / (p.x - ps[i].x));
+        const tangents = ps.map((_p, i) => {
+          if (i === 0) return slopes[0];
+          if (i === ps.length - 1) return slopes[slopes.length - 1];
+          const a = slopes[i - 1], b = slopes[i];
+          if (a === 0 || b === 0 || a * b < 0) return 0;
+          const h0 = ps[i].x - ps[i - 1].x, h1 = ps[i + 1].x - ps[i].x;
+          const w1 = 2 * h1 + h0, w2 = h1 + 2 * h0;
+          return (w1 + w2) / (w1 / a + w2 / b);
+        });
+        for (let i = 0; i < ps.length - 1; i++) {
+          const a = ps[i], b = ps[i + 1], dx = b.x - a.x;
+          chart.ctx.bezierCurveTo(
+            a.x + dx / 3, a.y + tangents[i] * dx / 3,
+            b.x - dx / 3, b.y - tangents[i + 1] * dx / 3,
+            b.x, b.y,
+          );
+        }
+      };
       const draw = (points) => {
         if (points.length < 2) return;
         const ctx = chart.ctx;
         ctx.beginPath();
-        ctx.moveTo(points[0].lower.x, points[0].lower.y);
-        points.slice(1).forEach((p) => ctx.lineTo(p.lower.x, p.lower.y));
-        points.slice().reverse().forEach((p) => ctx.lineTo(p.upper.x, p.upper.y));
+        smoothPath(points, "lower");
+        smoothPath(points.slice().reverse(), "upper", false);
         ctx.closePath(); ctx.fill();
       };
       const ctx = chart.ctx;
