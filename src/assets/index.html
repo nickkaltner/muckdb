@@ -614,7 +614,7 @@
   .seq-num { fill: var(--sequence-number); }
   .seq-num-txt { fill: var(--on-accent); font-size: 9px; }
   .seq-frame { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
-  .seq-frame-tab { fill: var(--surface); stroke: var(--muted); stroke-width: 1; }
+  .seq-frame-tab { fill: var(--raised); stroke: var(--muted); stroke-width: 1; }
   .seq-frame-lbl { fill: var(--muted); font-size: 10px; font-weight: 600; }
   .seq-div { stroke: var(--muted); stroke-width: 1; stroke-dasharray: 4 3; }
   .seq-hit { fill: transparent; }
@@ -4805,7 +4805,7 @@
   // responsive hydrate step. Tooltips use the delegated .wm-x/data-tip
   // mechanism; the mermaid-export button (see the click handler) regenerates
   // from the rows on demand.
-  const SEQ_COL_W = 160, SEQ_MSG_H = 46, SEQ_SELF_H = 60, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 12;
+  const SEQ_COL_W = 160, SEQ_MSG_H = 46, SEQ_SELF_H = 60, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 18;
   const SEQ_PART_TYPES = ["actor", "database", "boundary", "participant"];
   const SEQ_MSG_TYPES = ["sync", "reply", "async", "lost"];
 
@@ -4908,9 +4908,15 @@
     parts.forEach((p, i) => { xOf[p] = SEQ_PAD + i * SEQ_COL_W + SEQ_COL_W / 2; });
 
     // Per-message vertical slots (self-messages are taller); line drawn 22px
-    // below the slot top, label 10px below the top.
+    // below the slot top, label 10px below the top. A group gets a header row
+    // before its first message, keeping the frame label clear of that message.
     let cur = SEQ_HEAD_H + SEQ_PAD;
-    const ys = msgs.map((m) => { const top = cur; cur += (m.from === m.to ? SEQ_SELF_H : SEQ_MSG_H); return top; });
+    const ys = msgs.map((m, i) => {
+      if (m.grp && (i === 0 || !msgs[i - 1].grp || msgs[i - 1].grp.raw !== m.grp.raw)) cur += SEQ_GPAD;
+      const top = cur;
+      cur += m.from === m.to ? SEQ_SELF_H : SEQ_MSG_H;
+      return top;
+    });
     const bottomY = cur + 6;
     const W = SEQ_PAD * 2 + parts.length * SEQ_COL_W;
     const H = bottomY + SEQ_PAD;
@@ -4928,7 +4934,10 @@
       }
       if (lo === Infinity) { i = j; continue; }
       const x1 = SEQ_PAD + lo * SEQ_COL_W + 10, x2 = SEQ_PAD + (hi + 1) * SEQ_COL_W - 10;
-      const y1 = ys[i] - 4, y2 = (j < msgs.length ? ys[j] : bottomY) - 8;
+      // Reserve the group-header padding above the first message. The matching
+      // addition in the slot layout keeps the frame's top stable while pushing
+      // its first flow down.
+      const y1 = ys[i] - 4 - SEQ_GPAD, y2 = (j < msgs.length ? ys[j] : bottomY) - 8;
       const tab = `${esc(g.kind)}${g.label ? " " + esc(g.label) : ""}`;
       const tabW = tab.length * 6 + 14;
       framesSvg += `<rect class="seq-frame" x="${x1}" y="${y1}" width="${x2 - x1}" height="${y2 - y1}" rx="3"/>`
@@ -4994,7 +5003,9 @@
     });
 
     return `<div class="seq-wrap"><svg class="seq-svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img">`
-      + framesSvg + lifeSvg + headSvg + msgSvg + `</svg></div>`;
+      // Lifelines sit beneath group frames so an opaque frame tab cleanly
+      // masks any vertical line that passes through its heading.
+      + lifeSvg + framesSvg + headSvg + msgSvg + `</svg></div>`;
   }
 
   // A mermaid-safe participant id, plus whether an "as <original>" alias is needed.

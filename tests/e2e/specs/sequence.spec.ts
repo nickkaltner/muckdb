@@ -26,6 +26,21 @@ test.describe('sequence tile', () => {
     await expect(panel.locator('.seq-frame').first()).toBeVisible();
     await expect(panel.locator('.seq-div')).toHaveCount(1);
 
+    // A frame reserves a header row, so its tab text cannot overlap the first
+    // flow inside the group (the second fixture message starts this alt frame).
+    const frameY = Number(await panel.locator('.seq-frame').first().getAttribute('y'));
+    const firstGroupedFlowY = Number(await panel.locator('.seq-hit').nth(1).getAttribute('y'));
+    expect(firstGroupedFlowY - frameY).toBeGreaterThanOrEqual(22);
+    // Lifelines render beneath the frame tab, so they cannot show through its
+    // opaque group-heading background.
+    const lifelineIndex = await panel.locator('.seq-life').first().evaluate((line) =>
+      Array.from(line.ownerSVGElement!.children).indexOf(line),
+    );
+    const frameTabIndex = await panel.locator('.seq-frame-tab').first().evaluate((tab) =>
+      Array.from(tab.ownerSVGElement!.children).indexOf(tab),
+    );
+    expect(lifelineIndex).toBeLessThan(frameTabIndex);
+
     // Autonumber badges.
     await expect(panel.locator('.seq-num').first()).toBeVisible();
 
