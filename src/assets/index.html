@@ -485,6 +485,10 @@
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
   .wm-tip.show { display: block; }
+  /* Canvas ticks cannot use a native title attribute. Keep their timestamp
+     tooltip visually consistent with the rich SVG hover card. */
+  .chart-time-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 280px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+  .chart-time-tip.show { display: block; }
   .wm-tip-head { font-family: var(--mono); font-size: 10px; color: var(--faint); }
   .wm-tip-sub { color: var(--muted); margin: 1px 0 4px; }
   .wm-tip-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 1px; }
@@ -4369,7 +4373,7 @@
     }).join("");
     const gutterHtml = laneRows.map((lr) => {
       const tip = `<b>Lane</b><br>${esc(lr.lane)}`;
-      return `<div class="tl-lane-label wm-x" data-tip="${attr(tip)}" style="top:${lr.top}px;height:${lr.height}px" title="${attr(lr.lane)}">${esc(lr.lane)}</div>`;
+      return `<div class="tl-lane-label wm-x" data-tip="${attr(tip)}" style="top:${lr.top}px;height:${lr.height}px">${esc(lr.lane)}</div>`;
     }).join("");
     const bandsHtml = laneRows.map((lr, i) =>
       `<div class="tl-band${i % 2 ? " alt" : ""}" style="top:${lr.top}px;height:${lr.height}px"></div>`).join("");
@@ -4805,7 +4809,9 @@
   // responsive hydrate step. Tooltips use the delegated .wm-x/data-tip
   // mechanism; the mermaid-export button (see the click handler) regenerates
   // from the rows on demand.
-  const SEQ_COL_W = 160, SEQ_MSG_H = 46, SEQ_SELF_H = 60, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 18;
+  const SEQ_COL_W = 160, SEQ_MSG_H = 54, SEQ_SELF_H = 68, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 18;
+  const SEQ_LABEL_VIEWPORT_W = 760, SEQ_LABEL_VIEWPORT_RIGHT = 1040, SEQ_LABEL_LINE_H = 12;
+  let seqMeasureCtx = null;
   const SEQ_PART_TYPES = ["actor", "database", "boundary", "participant"];
   const SEQ_MSG_TYPES = ["sync", "reply", "async", "lost"];
 
@@ -4883,6 +4889,40 @@
     }
     return `<path class="seq-head" d="M${x},${y} L${x - w},${y - h} L${x - w},${y + h} Z"/>`;
   }
+  function seqTextWidth(text) {
+    if (!seqMeasureCtx) {
+      seqMeasureCtx = document.createElement("canvas").getContext("2d");
+      if (seqMeasureCtx) seqMeasureCtx.font = "11px ui-monospace, Menlo, Consolas, monospace";
+    }
+    return seqMeasureCtx ? seqMeasureCtx.measureText(text).width : String(text).length * 6.7;
+  }
+  // SVG does not wrap <text> for us. Measure the actual monospace font,
+  // preserving words where possible and splitting an unbroken token only as a
+  // last resort. The resulting tspans get their own vertical slot below.
+  function seqWrapLabel(label, maxWidth) {
+    const words = String(label).trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return [""];
+    const lines = []; let line = "";
+    const push = () => { if (line) { lines.push(line); line = ""; } };
+    words.forEach((word) => {
+      if (seqTextWidth(word) > maxWidth) {
+        push();
+        let fragment = "";
+        for (const ch of word) {
+          if (fragment && seqTextWidth(fragment + ch) > maxWidth) { lines.push(fragment); fragment = ch; }
+          else fragment += ch;
+        }
+        if (fragment) lines.push(fragment);
+      } else if (!line) line = word;
+      else if (seqTextWidth(line + " " + word) <= maxWidth) line += " " + word;
+      else { push(); line = word; }
+    });
+    push(); return lines;
+  }
+  function seqLineLabelX(message, xOf) {
+    return Math.max(SEQ_PAD + 4, Math.min(xOf[message.from], xOf[message.to]) + 20);
+  }
+  function seqLabelX(message, xOf) { return message.labelX ?? seqLineLabelX(message, xOf); }
 
   function sequenceHtml(cols, rows, spec, db, table) {
     const fi = cols.indexOf(spec.from_participant), ti = cols.indexOf(spec.to_participant), lbi = cols.indexOf(spec.label);
@@ -4906,19 +4946,58 @@
     const parts = order.filter((n) => n !== "");
     const xOf = {};
     parts.forEach((p, i) => { xOf[p] = SEQ_PAD + i * SEQ_COL_W + SEQ_COL_W / 2; });
+    const W = SEQ_PAD * 2 + parts.length * SEQ_COL_W;
+    // Ungrouped labels get the full readable viewport width, but always begin
+    // at their message line. Their text may extend into the scrollable diagram;
+    // shifting it left makes the label look attached to a different message.
+    const viewportLabelW = Math.min(SEQ_LABEL_VIEWPORT_W, SEQ_LABEL_VIEWPORT_RIGHT - SEQ_PAD - 4);
+    msgs.forEach((m) => {
+      const preferred = seqLabelX(m, xOf);
+      m.labelWidth = viewportLabelW;
+      m.labelX = preferred;
+    });
+    // A group frame is a stronger local boundary than the viewport: messages
+    // inside it wrap to that frame's participant span.
+    for (let i = 0; i < msgs.length;) {
+      const g = msgs[i].grp;
+      if (!g) { i++; continue; }
+      let j = i;
+      while (j < msgs.length && msgs[j].grp && msgs[j].grp.raw === g.raw) j++;
+      let lo = Infinity, hi = -Infinity;
+      for (let k = i; k < j; k++) [msgs[k].from, msgs[k].to].forEach((p) => {
+        const idx = parts.indexOf(p); if (idx >= 0) { lo = Math.min(lo, idx); hi = Math.max(hi, idx); }
+      });
+      if (lo !== Infinity) {
+        const groupLeft = SEQ_PAD + lo * SEQ_COL_W + 10;
+        const groupRight = SEQ_PAD + (hi + 1) * SEQ_COL_W - 10;
+        for (let k = i; k < j; k++) {
+          // Keep each label tied to its own message line, while measuring the
+          // remaining group space precisely so it cannot cross the frame edge.
+          msgs[k].labelX = Math.max(groupLeft + 10, seqLineLabelX(msgs[k], xOf));
+          msgs[k].labelWidth = Math.max(48, Math.min(viewportLabelW, groupRight - msgs[k].labelX - 16));
+        }
+      }
+      i = j;
+    }
+    msgs.forEach((m) => {
+      m.labelLines = seqWrapLabel(m.label, m.labelWidth);
+      m.lineOffset = m.labelLines.length * SEQ_LABEL_LINE_H + 16;
+      m.slotH = Math.max(m.from === m.to ? SEQ_SELF_H : SEQ_MSG_H,
+        m.lineOffset + (m.from === m.to ? 40 : 26));
+    });
 
-    // Per-message vertical slots (self-messages are taller); line drawn 22px
-    // below the slot top, label 10px below the top. A group gets a header row
+    // Per-message vertical slots expand for wrapped labels. The line stays 16px
+    // below the final label line, so a group gets a header row without crowding
+    // its first flow.
     // before its first message, keeping the frame label clear of that message.
     let cur = SEQ_HEAD_H + SEQ_PAD;
     const ys = msgs.map((m, i) => {
       if (m.grp && (i === 0 || !msgs[i - 1].grp || msgs[i - 1].grp.raw !== m.grp.raw)) cur += SEQ_GPAD;
       const top = cur;
-      cur += m.from === m.to ? SEQ_SELF_H : SEQ_MSG_H;
+      cur += m.slotH;
       return top;
     });
     const bottomY = cur + 6;
-    const W = SEQ_PAD * 2 + parts.length * SEQ_COL_W;
     const H = bottomY + SEQ_PAD;
 
     // Group frames: contiguous runs of equal grp.raw.
@@ -4980,25 +5059,32 @@
     // Messages.
     let msgSvg = "";
     msgs.forEach((m, k) => {
-      const ly = ys[k] + 22, lty = ys[k] + 12;
+      const ly = ys[k] + m.lineOffset, lty = ys[k] + 12;
       const tip = attr(seqTip(m, cols, rows, spec, db, table));
       const num = spec.autonumber ? k + 1 : null;
+      const labelSvg = (x, y) => `<text class="seq-msg-lbl" x="${x}" y="${y}">${m.labelLines.map((line, i) =>
+        `<tspan x="${x}" dy="${i ? SEQ_LABEL_LINE_H : 0}">${esc(line)}</tspan>`).join("")}</text>`;
       if (m.from === m.to) {
         const x = xOf[m.from];
         msgSvg += `<path class="seq-line${m.type === "reply" ? " reply" : ""}" d="M${x},${ly} h34 v16 h-34"/>`
           + seqArrow(x, ly + 16, -1, m.type)
-          + `<text class="seq-msg-lbl" x="${x + 40}" y="${ly + 6}">${esc(m.label)}</text>`;
+          + labelSvg(x + 40, lty);
         if (num != null) msgSvg += `<circle class="seq-num" cx="${x - 12}" cy="${ly}" r="8"/><text class="seq-num-txt" x="${x - 12}" y="${ly + 3}" text-anchor="middle">${num}</text>`;
-        msgSvg += `<rect class="seq-hit wm-x" x="${x - 6}" y="${ys[k]}" width="90" height="${SEQ_SELF_H}" data-tip="${tip}"/>`;
+        msgSvg += `<rect class="seq-hit wm-x" x="${x - 6}" y="${ys[k]}" width="90" height="${m.slotH}" data-tip="${tip}"/>`;
       } else {
         const x1 = xOf[m.from], x2 = xOf[m.to], dir = x2 > x1 ? 1 : -1;
         const ex = x2 - dir * 1; // stop at the lifeline
+        // Start labels just inside the visible diagram, then let their prose
+        // continue rightward beyond the arrow when needed. Constraining text to
+        // the arrow span made the first step terse even though the diagram has
+        // horizontal scroll space available.
+        const labelX = seqLabelX(m, xOf);
         msgSvg += `<line class="seq-line${m.type === "reply" ? " reply" : ""}" x1="${x1}" y1="${ly}" x2="${ex}" y2="${ly}"/>`
           + seqArrow(ex, ly, dir, m.type)
-          + `<text class="seq-msg-lbl" x="${(x1 + x2) / 2}" y="${lty}" text-anchor="middle">${esc(m.label)}</text>`;
+          + labelSvg(labelX, lty);
         if (num != null) msgSvg += `<circle class="seq-num" cx="${x1 + dir * 12}" cy="${ly}" r="8"/><text class="seq-num-txt" x="${x1 + dir * 12}" y="${ly + 3}" text-anchor="middle">${num}</text>`;
         const hx = Math.min(x1, x2), hw = Math.abs(x2 - x1);
-        msgSvg += `<rect class="seq-hit wm-x" x="${hx}" y="${ys[k]}" width="${hw}" height="${SEQ_MSG_H}" data-tip="${tip}"/>`;
+        msgSvg += `<rect class="seq-hit wm-x" x="${hx}" y="${ys[k]}" width="${hw}" height="${m.slotH}" data-tip="${tip}"/>`;
       }
     });
 
@@ -5836,6 +5922,30 @@
     try { return new Date(t).toLocaleString("sv-SE", { timeZone: zone }); }
     catch (_) { return new Date(t).toISOString().slice(0, 19).replace("T", " "); }
   }
+  // Chart.js sees the display-pinned timestamp on a zoned time axis. Convert
+  // it back to its real instant before formatting a tick-hover tooltip. The
+  // short iteration settles an IANA zone offset across DST boundaries.
+  function unpinMs(pinned, tz) {
+    if (tz === "local") return pinned;
+    let instant = pinned;
+    for (let i = 0; i < 3; i++) {
+      instant = pinned - (tz && tz !== "utc" ? zoneOffsetMs(instant, tz) : 0)
+        - new Date(instant).getTimezoneOffset() * 60000;
+    }
+    return instant;
+  }
+  function chartTickTimeTitle(pinned, tz) {
+    const instant = unpinMs(pinned, tz);
+    const zone = tz === "local" ? undefined : tz === "utc" ? "UTC" : tz;
+    try {
+      return new Date(instant).toLocaleString("sv-SE", {
+        timeZone: zone, year: "numeric", month: "2-digit", day: "2-digit",
+        hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23",
+      }) + " · " + zoneLabel(tz);
+    } catch (_) {
+      return new Date(instant).toISOString().slice(0, 19).replace("T", " ") + " · UTC";
+    }
+  }
   function chartOpts(scatter, time, stacked, minUnit, offset) {
     // Grid lines are the theme foreground mixed toward the surface (an opaque soft
     // grey — light on dark themes, a soft mid-grey on light ones), so they read on
@@ -5853,7 +5963,7 @@
             tooltipFormat: minUnit === "day" ? "MMM d, yyyy" : minUnit === "month" ? "MMM yyyy" : "MMM d yyyy, HH:mm",
           }, minUnit ? { minUnit } : {}),
           offset: !!offset, grid: { color: gridCol, offset: !!offset },
-          ticks: { autoSkip: true, maxRotation: 0, major: { enabled: true },
+          ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, major: { enabled: true },
             font: (ctx) => (ctx.tick && ctx.tick.major ? { weight: "bold" } : {}) } }
       : { type: scatter ? "linear" : "category", grid: { color: gridMinor } };
     if (stacked) x.stacked = true;
@@ -6248,6 +6358,43 @@
       ctx.restore();
     },
   };
+  // Canvas tick labels are not DOM elements, so add a small tooltip when the
+  // pointer is over a rendered label. Plot hovering remains data-focused.
+  const muckTimeTickTooltip = {
+    id: "muckTimeTickTooltip",
+    afterEvent(chart, args, opts) {
+      if (!opts || !opts.enabled) return;
+      const event = args.event, scale = chart.scales.x;
+      const hide = () => { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.classList.remove("show"); };
+      if (!scale || event.type === "mouseout" || event.type === "touchstart" || event.type === "touchmove") { hide(); return; }
+      if (event.y < scale.top || event.y > scale.bottom || !scale.ticks?.length) { hide(); return; }
+      const pixels = scale.ticks.map((_tick, i) => scale.getPixelForTick(i));
+      let nearest = 0;
+      for (let i = 1; i < pixels.length; i++) if (Math.abs(event.x - pixels[i]) < Math.abs(event.x - pixels[nearest])) nearest = i;
+      const left = nearest > 0 ? pixels[nearest] - pixels[nearest - 1] : Infinity;
+      const right = nearest + 1 < pixels.length ? pixels[nearest + 1] - pixels[nearest] : Infinity;
+      if (Math.abs(event.x - pixels[nearest]) > Math.max(14, Math.min(left, right) * 0.42)) { hide(); return; }
+      // Chart.js can omit the original browser event for replayed/normalised
+      // events. Convert its canvas coordinates instead, so tick hovering works
+      // in both ordinary pointer movement and the screenshot/test harness.
+      const rect = chart.canvas.getBoundingClientRect();
+      const clientX = rect.left + event.x * rect.width / chart.width;
+      const clientY = rect.top + event.y * rect.height / chart.height;
+      let tip = chart.$muckTimeTickTip;
+      if (!tip) {
+        tip = document.createElement("div"); tip.className = "chart-time-tip";
+        document.body.appendChild(tip); chart.$muckTimeTickTip = tip;
+      }
+      tip.textContent = chartTickTimeTitle(scale.ticks[nearest].value, opts.tz || "utc");
+      tip.classList.add("show");
+      const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
+      let x = clientX + pad, y = clientY + pad;
+      if (x + w > window.innerWidth - 6) x = clientX - w - pad;
+      if (y + h > window.innerHeight - 6) y = clientY - h - pad;
+      tip.style.left = Math.max(6, x) + "px"; tip.style.top = Math.max(6, y) + "px";
+    },
+    beforeDestroy(chart) { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.remove(); },
+  };
   function chartConfig(kind, spec, cols, rows, db, table) {
     const xi = Math.max(0, cols.indexOf(spec.x || cols[0]));
     let ys = (spec.y && spec.y.length ? spec.y : [cols[1]]).filter((c) => cols.includes(c));
@@ -6327,6 +6474,7 @@
         // Scatter points have {x, y} data but no category label, so Chart.js's
         // default title is empty. Read the original x column for every hover.
         addZoneTitle(o, axisTz, (item) => chartTimeTitle(rows[item.dataIndex]?.[xi], xf, axisTz));
+        o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
       }
       o.plugins.legend.display = false; // one series — the title already names it
       const pts = rows.map((r) => ({ x: xv(r), y: yv(r, yi) }));
@@ -6416,6 +6564,7 @@
     }
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const o = applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))); if (anno) o.plugins.muckAnno = anno;
+    if (timeX) o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
     if (type === "bar") {
       // Event bars may be only a few pixels wide. Pick the whole time/category
       // column, instead of requiring the pointer to land on the painted bar.
@@ -7384,6 +7533,7 @@
     try { Chart.register(muckLegendFade); } catch (_) {}
     try { Chart.register(muckConfidenceBand); } catch (_) {}
     try { Chart.register(muckHoverCursor); } catch (_) {}
+    try { Chart.register(muckTimeTickTooltip); } catch (_) {}
     try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }

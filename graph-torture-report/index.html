@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Graph Torture Lab — visual review</title>
+  <style>
+    :root { color-scheme: dark; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background:#17110d; color:#f4e8d9; }
+    body { max-width: 1180px; margin: 0 auto; padding: 32px 20px 64px; }
+    h1 { margin:0 0 8px; font-size: 30px; } h2 { margin-top: 42px; }
+    a { color:#ffb66f; } .lede { color:#cfbba8; max-width: 80ch; line-height:1.55; }
+    .meta { display:flex; flex-wrap:wrap; gap:12px; margin:20px 0 32px; }
+    .pill { border:1px solid #71533b; border-radius:99px; padding:7px 10px; color:#e0c5ab; }
+    .bug { background:#261a13; border:1px solid #553725; border-left:5px solid #ff7d35; border-radius:8px; margin:18px 0; padding:18px; }
+    .bug h3 { margin:0 0 8px; color:#ffd1a0; } .bug p { margin:7px 0; line-height:1.5; }
+    .severity { font-weight:bold; color:#ffae77; } .evidence { color:#c9aa8d; }
+    figure { margin:16px 0 0; } img { width:100%; display:block; border-radius:5px; border:1px solid #4c3324; background:#0e0a08; }
+    figcaption { margin-top:7px; color:#b99b81; font-size: 13px; }
+    .note { background:#211811; border-left:4px solid #b88857; padding:14px 16px; line-height:1.5; }
+  </style>
+</head>
+<body>
+  <h1>Graph Torture Lab</h1>
+  <p class="lede">A deliberately adversarial rendering pass using 11 chart tiles at a 1280 × 900 viewport. These are visual findings, not a claim that every awkward input must be supported perfectly; the report is a shortlist for deciding which degraded states deserve product work.</p>
+  <div class="meta">
+    <span class="pill">11 chart types rendered</span>
+    <span class="pill">12 numbered findings</span>
+    <a class="pill" href="http://localhost:11000/session/graph-torture-lab/">Open live muckdb session →</a>
+  </div>
+  <p class="note">Test fixtures intentionally use long labels, too many categories, overlapping marks, and extreme values. Each finding identifies what becomes unusable in the rendered output, with the screenshot as evidence. The time-axis and sequence-label improvements were verified after this report was created; the refreshed sequence screenshot below shows Bug 12's first-label clipping resolved.</p>
+
+  <h2>Findings</h2>
+  <article class="bug"><h3>Bug 1 — Bar chart category labels overlap into an unreadable band</h3><p><span class="severity">High</span> · The 60 diagonal labels collide horizontally and vertically; only fragments can be read. The x-axis consumes much of the panel without restoring meaning.</p><p class="evidence">Candidate mitigation: density-aware thinning, shortening/truncation with hover, or switch guidance when category count exceeds the available width.</p><figure><img src="screenshots/bar_overload.png" alt="Bar chart with colliding labels and one outlier"><figcaption>bar_overload</figcaption></figure></article>
+  <article class="bug"><h3>Bug 2 — One extreme bar erases the rest of the bar chart</h3><p><span class="severity">High</span> · The million-scale first category makes the other 59 bars effectively a one-pixel baseline. This makes the underlying variation impossible to inspect.</p><figure><img src="screenshots/bar_overload.png" alt="Bar chart with a dominating outlier"><figcaption>bar_overload</figcaption></figure></article>
+  <article class="bug"><h3>Bug 3 — Stacked bars preserve their legend but not their category labels</h3><p><span class="severity">Medium</span> · Six series remain colour-distinguishable, but the 36 long x labels collide exactly as in the bar chart. The legend competes with the axis for limited vertical space.</p><figure><img src="screenshots/stacked_overload.png" alt="Crowded stacked bar chart"><figcaption>stacked_overload</figcaption></figure></article>
+  <article class="bug"><h3>Bug 4 — Line scale collapses normal observations around a single spike</h3><p><span class="severity">High</span> · A normal range around 75–125 renders as a near-flat baseline against a 1,000,000 spike. The trendline becomes visually misleading because it is also dominated by the anomaly.</p><figure><img src="screenshots/line_spike.png" alt="Line chart dominated by an extreme spike"><figcaption>line_spike</figcaption></figure></article>
+  <article class="bug"><h3>Bug 5 — Four signed area series are difficult to separate after overlap</h3><p><span class="severity">Medium</span> · In the crossing regions, translucent fills blend into similar brown shades. The legend identifies series, but the overlapping area is not reliably attributable to any series.</p><figure><img src="screenshots/area_crossing.png" alt="Four overlapping signed area series"><figcaption>area_crossing</figcaption></figure></article>
+  <article class="bug"><h3>Bug 6 — Scatterplot overplotting hides multiplicity</h3><p><span class="severity">Medium</span> · Hundreds of points share a small set of coordinates, but marks look like single dots. The reader cannot distinguish one observation from many without hovering each position.</p><figure><img src="screenshots/scatter_cloud.png" alt="Dense scatterplot with overlapping points"><figcaption>scatter_cloud</figcaption></figure></article>
+  <article class="bug"><h3>Bug 7 — Pie legend silently cuts off after 24 of 36 segments</h3><p><span class="severity">High</span> · The rendered legend shows segments 1–24 only; segments 25–36 have no visible legend entry in the screenshot. The pie still contains all slices, so colour-to-category mapping is incomplete.</p><figure><img src="screenshots/pie_slices.png" alt="Pie chart whose legend only shows part of its categories"><figcaption>pie_slices</figcaption></figure></article>
+  <article class="bug"><h3>Bug 8 — Dense heatmap has clipped axes and exceeds the viewport</h3><p><span class="severity">High</span> · The rightmost column labels/cells are cut at the panel edge and lower rows extend beyond the screenshot. At this density it has neither an overview nor a clearly discoverable way to inspect omitted cells.</p><figure><img src="screenshots/heatmap_dense.png" alt="30 by 30 heatmap clipped on right and bottom"><figcaption>heatmap_dense</figcaption></figure></article>
+  <article class="bug"><h3>Bug 9 — Box plot uses extreme horizontal whitespace while scale hides boxes</h3><p><span class="severity">High</span> · One huge whisker pushes the compact distributions into tiny marks near the left. Thirty verbose cohort descriptions produce an unusually tall tile, so the comparison is not visible above the fold.</p><figure><img src="screenshots/box_many.png" alt="Tall box plot with tiny boxes due to one huge whisker"><figcaption>box_many</figcaption></figure></article>
+  <article class="bug"><h3>Bug 10 — Co-located map data reduces 299 points to one unexplained cell</h3><p><span class="severity">Medium</span> · The summary says “299 plotted · 1 cells”, but the dense point cluster is represented by a single small mark. Its aggregation and labels are not visible without interaction, making this failure mode easy to miss.</p><figure><img src="screenshots/map_collisions.png" alt="Map with 299 points collapsed to one cell"><figcaption>map_collisions</figcaption></figure></article>
+  <article class="bug"><h3>Bug 11 — Timeline starts clipping lane names and grows beyond the viewport</h3><p><span class="severity">High</span> · The left gutter truncates every verbose worker name (for example, “worker 1 — extraord…”). Fifty-four heavily overlapping bars create a very tall visual with substantial content below the captured viewport.</p><figure><img src="screenshots/timeline_clash.png" alt="Timeline with truncated lane names and many overlaps"><figcaption>timeline_clash</figcaption></figure></article>
+  <article class="bug"><h3>Bug 12 — Sequence diagram clips message text at both edges</h3><p><span class="severity">Resolved locally</span> · The message-to-arrow gap is now 16px. Labels begin inside the SVG and wrap on word boundaries to the narrower of their group frame or available viewport space; the row expands so the next arrow remains clear.</p><figure><img src="screenshots/sequence_crowded.png" alt="Crowded sequence diagram with visibly wrapped labels"><figcaption>sequence_crowded — refreshed after the wrapping fix</figcaption></figure></article>
+
+  <h2>Rendered clean enough to defer</h2>
+  <p class="lede">The stacked chart’s series colours and the timeline’s bar stacking remained legible despite their density. This is not an approval of the underlying cases—only an observation that the screenshot did not reveal an additional discrete rendering failure beyond the findings above.</p>
+</body>
+</html>

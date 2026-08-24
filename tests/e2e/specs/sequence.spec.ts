@@ -44,6 +44,22 @@ test.describe('sequence tile', () => {
     // Autonumber badges.
     await expect(panel.locator('.seq-num').first()).toBeVisible();
 
+    // A message label begins inside the diagram rather than off-screen, while
+    // still being free to continue beyond its arrow to the right.
+    const firstLabelX = await panel.locator('.seq-msg-lbl').first().evaluate((label) => label.getBBox().x);
+    expect(firstLabelX).toBeGreaterThanOrEqual(0);
+
+    // Long labels wrap inside their group/viewport allowance and the enlarged
+    // message slot keeps the following flow clear of the wrapped text.
+    expect(await panel.locator('.seq-msg-lbl').nth(1).locator('tspan').count()).toBeGreaterThan(1);
+    const wrappedLabel = panel.locator('.seq-msg-lbl').nth(1);
+    const nextFlow = panel.locator('.seq-hit').nth(2);
+    const labelBottom = await wrappedLabel.evaluate((label) => {
+      const box = (label as SVGGraphicsElement).getBBox();
+      return box.y + box.height;
+    });
+    expect(labelBottom).toBeLessThan(Number(await nextFlow.getAttribute('y')));
+
     // No full-width toggle — the diagram sizes to its participants intrinsically.
     await expect(panel.locator('[data-widen]')).toHaveCount(0);
   });

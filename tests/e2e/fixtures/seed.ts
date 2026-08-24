@@ -81,7 +81,7 @@ CREATE VIEW incident_events AS SELECT * FROM (VALUES
 -- format (tooltip-link coverage); 'note' carries a hostile value (XSS coverage).
 CREATE VIEW messages AS SELECT * FROM (VALUES
   (1,'user','gateway','GET /orders','sync','actor','participant',NULL,NULL,'t-1','<img src=x onerror=alert(1)>'),
-  (2,'gateway','auth','verify','sync','participant','boundary','alt:token valid','valid','t-2','ok'),
+  (2,'gateway','auth','verify an intentionally long token-validation request with enough detail to wrap inside the alt group instead of colliding with the sequence arrow or overflowing its frame','sync','participant','boundary','alt:token valid','valid','t-2','ok'),
   (3,'auth','db','SELECT session','sync','boundary','database','alt:token valid','valid','t-3','ok'),
   (4,'gateway','user','401','reply','participant','actor','alt:token valid','expired','t-4','denied'),
   (5,'orders','orders','retry','async','participant','participant',NULL,NULL,'t-5','backoff'),
