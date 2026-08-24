@@ -60,6 +60,18 @@ test.describe('sequence tile', () => {
     });
     expect(labelBottom).toBeLessThan(Number(await nextFlow.getAttribute('y')));
 
+    // Labels near the final participants wrap before the SVG boundary instead
+    // of being clipped off the right side of the diagram.
+    const rightOverflow = await panel.locator('.seq-svg').evaluate((svg) => {
+      const right = (svg as SVGSVGElement).viewBox.baseVal.width;
+      return Math.max(...Array.from(svg.querySelectorAll<SVGGraphicsElement>('.seq-msg-lbl'))
+        .map((label) => {
+          const box = label.getBBox();
+          return box.x + box.width - right;
+        }));
+    });
+    expect(rightOverflow).toBeLessThanOrEqual(1);
+
     // No full-width toggle — the diagram sizes to its participants intrinsically.
     await expect(panel.locator('[data-widen]')).toHaveCount(0);
   });
@@ -79,6 +91,23 @@ test.describe('sequence tile', () => {
     // The hostile `note` value is shown as text, never parsed as an element.
     await expect(tip.locator('img')).toHaveCount(0);
     await expect(tip).toContainText('onerror');
+
+    // Even a pointer at the extreme lower-right corner keeps the rich card
+    // fully inside the browser viewport.
+    await panel.locator('.seq-hit').first().evaluate((hit) => {
+      hit.dispatchEvent(new MouseEvent('mouseover', {
+        bubbles: true,
+        clientX: window.innerWidth - 1,
+        clientY: window.innerHeight - 1,
+      }));
+    });
+    const bounds = await tip.boundingBox();
+    const viewport = page.viewportSize()!;
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(5);
+    expect(bounds!.y).toBeGreaterThanOrEqual(5);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width - 5);
+    expect(bounds!.y + bounds!.height).toBeLessThanOrEqual(viewport.height - 5);
   });
 
   test('the mermaid button copies a valid sequenceDiagram to the clipboard', async ({ page, context }) => {

@@ -483,7 +483,7 @@
   .wm-svg .wm-conn-labels .wm-arc-label { stroke-width: 3; }
   .wm-ascii-overlay .wm-conn-labels .wm-arc-label { stroke-width: 2; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
-  .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; max-width: 260px; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+  .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; box-sizing: border-box; max-width: min(280px, calc(100vw - 12px)); max-height: calc(100vh - 12px); overflow: hidden; overflow-wrap: anywhere; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
   .wm-tip.show { display: block; }
   /* Canvas ticks cannot use a native title attribute. Keep their timestamp
      tooltip visually consistent with the rich SVG hover card. */
@@ -4810,7 +4810,7 @@
   // mechanism; the mermaid-export button (see the click handler) regenerates
   // from the rows on demand.
   const SEQ_COL_W = 160, SEQ_MSG_H = 54, SEQ_SELF_H = 68, SEQ_HEAD_H = 64, SEQ_PAD = 26, SEQ_GPAD = 18;
-  const SEQ_LABEL_VIEWPORT_W = 760, SEQ_LABEL_VIEWPORT_RIGHT = 1040, SEQ_LABEL_LINE_H = 12;
+  const SEQ_LABEL_MAX_W = 760, SEQ_LABEL_LINE_H = 12;
   let seqMeasureCtx = null;
   const SEQ_PART_TYPES = ["actor", "database", "boundary", "participant"];
   const SEQ_MSG_TYPES = ["sync", "reply", "async", "lost"];
@@ -4947,14 +4947,15 @@
     const xOf = {};
     parts.forEach((p, i) => { xOf[p] = SEQ_PAD + i * SEQ_COL_W + SEQ_COL_W / 2; });
     const W = SEQ_PAD * 2 + parts.length * SEQ_COL_W;
-    // Ungrouped labels get the full readable viewport width, but always begin
-    // at their message line. Their text may extend into the scrollable diagram;
-    // shifting it left makes the label look attached to a different message.
-    const viewportLabelW = Math.min(SEQ_LABEL_VIEWPORT_W, SEQ_LABEL_VIEWPORT_RIGHT - SEQ_PAD - 4);
+    // Ungrouped labels always begin at their message line. Let them continue
+    // beyond the arrow, but wrap at the SVG's real right edge so later messages
+    // are not clipped. Using a fixed browser-width boundary made mid-diagram
+    // messages wrap far too early when the SVG itself was wider and scaled down.
+    const maxLabelW = SEQ_LABEL_MAX_W;
     msgs.forEach((m) => {
       const preferred = seqLabelX(m, xOf);
-      m.labelWidth = viewportLabelW;
       m.labelX = preferred;
+      m.labelWidth = Math.max(48, Math.min(maxLabelW, W - m.labelX - 16));
     });
     // A group frame is a stronger local boundary than the viewport: messages
     // inside it wrap to that frame's participant span.
@@ -4974,7 +4975,7 @@
           // Keep each label tied to its own message line, while measuring the
           // remaining group space precisely so it cannot cross the frame edge.
           msgs[k].labelX = Math.max(groupLeft + 10, seqLineLabelX(msgs[k], xOf));
-          msgs[k].labelWidth = Math.max(48, Math.min(viewportLabelW, groupRight - msgs[k].labelX - 16));
+          msgs[k].labelWidth = Math.max(48, Math.min(maxLabelW, groupRight - msgs[k].labelX - 16));
         }
       }
       i = j;
@@ -7039,12 +7040,14 @@
     let tip = null;
     const place = (x, y) => {
       if (!tip) return;
-      const w = tip.offsetWidth, h = tip.offsetHeight, pad = 14;
+      const w = tip.offsetWidth, h = tip.offsetHeight, pad = 14, edge = 6;
       let nx = x + pad, ny = y + pad;
-      if (nx + w > window.innerWidth - 6) nx = x - w - pad;
-      if (ny + h > window.innerHeight - 6) ny = y - h - pad;
-      tip.style.left = Math.max(6, nx) + "px";
-      tip.style.top = Math.max(6, ny) + "px";
+      if (nx + w > window.innerWidth - edge) nx = x - w - pad;
+      if (ny + h > window.innerHeight - edge) ny = y - h - pad;
+      nx = Math.min(Math.max(edge, nx), Math.max(edge, window.innerWidth - w - edge));
+      ny = Math.min(Math.max(edge, ny), Math.max(edge, window.innerHeight - h - edge));
+      tip.style.left = nx + "px";
+      tip.style.top = ny + "px";
     };
     const hide = () => { if (tip) tip.classList.remove("show"); };
     document.addEventListener("mouseover", (ev) => {
