@@ -6272,7 +6272,24 @@
       return value == null || value === "" || !isFinite(Number(value)) ? null : Number(value);
     };
     const anno = annoSpec(spec, timeX ? toX : null);
-    // Apply column display formats to the y-axis ticks and tooltips.
+    // Apply column display formats to the axes and tooltips. Time axes keep
+    // their calendar-aware labels; other x axes use the column format too.
+    const applyXFmt = (o) => {
+      if (!xf || timeX || !o.scales || !o.scales.x) return o;
+      o.scales.x.ticks = Object.assign({}, o.scales.x.ticks, { callback: (v, i) => {
+        // Cartesian scatter charts use a linear x scale. Other non-time charts
+        // use a category scale, whose tick value is the label index.
+        const raw = kind === "scatter" ? v : rows[i]?.[xi];
+        return raw == null ? "" : applyFmt(xf, raw);
+      } });
+      o.plugins = o.plugins || {};
+      o.plugins.tooltip = Object.assign({}, o.plugins.tooltip, { callbacks: Object.assign(
+        {}, o.plugins.tooltip && o.plugins.tooltip.callbacks, { title: (items) => {
+          const raw = rows[items[0]?.dataIndex]?.[xi];
+          return raw == null ? "" : applyFmt(xf, raw);
+        } }) });
+      return o;
+    };
     const applyYFmt = (o) => {
       const yf0 = colFmt(db, ys[0], table);
       if (yf0 && o.scales && o.scales.y) o.scales.y.ticks = Object.assign({}, o.scales.y.ticks, { callback: (v) => applyFmt(yf0, v) });
@@ -6305,7 +6322,7 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      const o = applyAxisTitles(applyYFmt(chartOpts(true, timeX, false, minUnit))); if (anno) o.plugins.muckAnno = anno;
+      const o = applyAxisTitles(applyXFmt(applyYFmt(chartOpts(true, timeX, false, minUnit)))); if (anno) o.plugins.muckAnno = anno;
       if (timeX) {
         // Scatter points have {x, y} data but no category label, so Chart.js's
         // default title is empty. Read the original x column for every hover.
@@ -6398,7 +6415,7 @@
       }
     }
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    const o = applyAxisTitles(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar"))); if (anno) o.plugins.muckAnno = anno;
+    const o = applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))); if (anno) o.plugins.muckAnno = anno;
     if (type === "bar") {
       // Event bars may be only a few pixels wide. Pick the whole time/category
       // column, instead of requiring the pointer to land on the painted bar.
