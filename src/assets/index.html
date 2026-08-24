@@ -536,8 +536,9 @@
   .tl { display: grid; grid-template-columns: var(--tl-gutter) 1fr; }
   .tl-gutter { position: relative; }
   .tl-lane-label { position: absolute; left: 0; right: 8px; display: flex; align-items: center;
-    font-size: 12px; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    border-top: 1px solid var(--line-soft); padding-right: 6px; }
+    font-size: 12px; color: var(--fg); overflow: hidden; border-top: 1px solid var(--line-soft); padding-right: 6px; }
+  .tl-lane-text { display: -webkit-box; width: 100%; overflow: hidden; line-height: 15px;
+    overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
   .tl-plot { position: relative; overflow: visible; border-left: 1px solid var(--line); }
   .tl-band { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line-soft); }
   .tl-band.alt { background: color-mix(in srgb, var(--fg) 3%, transparent); }
@@ -4147,6 +4148,7 @@
   // auto-detected. Dependency connectors, --event markers and a hover cursor
   // are drawn by hydrateTimelines() over an SVG overlay (see below).
   const TL_ROW_H = 26, TL_BAR_H = 18, TL_LANE_PAD = 6;
+  const TL_LANE_LABEL_W = 132, TL_LANE_LABEL_LINE_H = 15, TL_LANE_LABEL_MAX_LINES = 4;
   // Let short trace spans be inspected down to 1ms, regardless of how broad
   // the original timeline was. A brush can be nested repeatedly to reach that
   // precision even when one physical screen pixel covers more time initially.
@@ -4154,6 +4156,29 @@
   const TL_MIN_BRUSH_FRACTION = 0.001;
   let tlSeq = 0;
   const tlPayloads = {};   // per-render overlay payloads, consumed on hydrate
+  let tlLaneMeasureCtx = null;
+
+  function tlLaneLabelLines(label) {
+    if (!tlLaneMeasureCtx) {
+      tlLaneMeasureCtx = document.createElement("canvas").getContext("2d");
+      if (tlLaneMeasureCtx) tlLaneMeasureCtx.font = "12px system-ui, -apple-system, sans-serif";
+    }
+    const width = (text) => tlLaneMeasureCtx
+      ? tlLaneMeasureCtx.measureText(text).width : String(text).length * 6.5;
+    const words = String(label).trim().split(/\s+/).filter(Boolean);
+    if (!words.length) return 1;
+    let lines = 0, line = "";
+    for (const word of words) {
+      if (width(word) > TL_LANE_LABEL_W) {
+        if (line) { lines++; line = ""; }
+        lines += Math.ceil(width(word) / TL_LANE_LABEL_W);
+      } else if (!line) line = word;
+      else if (width(line + " " + word) <= TL_LANE_LABEL_W) line += " " + word;
+      else { lines++; line = word; }
+      if (lines >= TL_LANE_LABEL_MAX_LINES) return TL_LANE_LABEL_MAX_LINES;
+    }
+    return Math.min(TL_LANE_LABEL_MAX_LINES, lines + (line ? 1 : 0));
+  }
 
   function tlFmtDur(s) {
     s = Number(s);
@@ -4349,14 +4374,18 @@
         b.sub = sl;
       });
       const subCount = Math.max(1, subEnds.length);
-      const top = y, height = subCount * TL_ROW_H + TL_LANE_PAD * 2;
+      const labelLines = tlLaneLabelLines(lane);
+      const barsHeight = subCount * TL_ROW_H;
+      const labelHeight = labelLines * TL_LANE_LABEL_LINE_H + TL_LANE_PAD * 2;
+      const top = y, height = Math.max(barsHeight + TL_LANE_PAD * 2, labelHeight);
+      const barsTop = top + (height - barsHeight) / 2;
       list.forEach((b) => {
-        b.topPx = top + TL_LANE_PAD + b.sub * TL_ROW_H;
+        b.topPx = barsTop + b.sub * TL_ROW_H;
         b.laneTopPx = top;
         b.laneHeightPx = height;
         b.color = barColor(b, laneIndex);
       });
-      laneRows.push({ lane, top, height });
+      laneRows.push({ lane, top, height, labelLines });
       y += height;
     });
     const totalH = y;
@@ -4373,7 +4402,7 @@
     }).join("");
     const gutterHtml = laneRows.map((lr) => {
       const tip = `<b>Lane</b><br>${esc(lr.lane)}`;
-      return `<div class="tl-lane-label wm-x" data-tip="${attr(tip)}" style="top:${lr.top}px;height:${lr.height}px">${esc(lr.lane)}</div>`;
+      return `<div class="tl-lane-label wm-x" data-tip="${attr(tip)}" style="top:${lr.top}px;height:${lr.height}px"><span class="tl-lane-text">${esc(lr.lane)}</span></div>`;
     }).join("");
     const bandsHtml = laneRows.map((lr, i) =>
       `<div class="tl-band${i % 2 ? " alt" : ""}" style="top:${lr.top}px;height:${lr.height}px"></div>`).join("");

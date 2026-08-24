@@ -55,8 +55,8 @@ CREATE VIEW widget_flows AS SELECT * FROM (VALUES
 -- Timeline (Gantt) fixture: a small deploy pipeline on a relative-seconds axis
 -- with two lanes, an overlap (→ sublane), a colour category, and a dependency.
 CREATE VIEW deploy_timeline AS SELECT * FROM (VALUES
-  ('build',  'compile',   0.0,  40.0, 'ok',     's1', NULL),
-  ('build',  'lint',      5.0,  30.0, 'ok',     's2', NULL),   -- overlaps compile → sublane
+  ('build worker with an extraordinarily verbose name used for wrapping', 'compile', 0.0, 40.0, 'ok', 's1', NULL),
+  ('build worker with an extraordinarily verbose name used for wrapping', 'lint',    5.0, 30.0, 'ok', 's2', NULL), -- overlaps compile → sublane
   ('deploy', 'push',     40.0,  70.0, 'ok',     's3', 's1'),
   ('deploy', 'migrate',  70.0,  95.0, 'failed', 's4', 's1,s3') -- fan-in; s1 also fans out to push
 ) t(lane, task, t0, t1, status, sid, parent);

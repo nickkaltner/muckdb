@@ -9,7 +9,13 @@ test.describe('timeline tile', () => {
 
     // Two lanes → two lane labels in the gutter.
     await expect(panel.locator('.tl-lane-label')).toHaveCount(2);
-    await expect(panel.locator('.tl-lane-label', { hasText: 'build' })).toBeVisible();
+    const longLane = panel.locator('.tl-lane-label', { hasText: 'build' });
+    await expect(longLane).toBeVisible();
+    const wrappedLines = await longLane.locator('.tl-lane-text').evaluate((text) => {
+      const style = getComputedStyle(text);
+      return Math.round(text.getBoundingClientRect().height / parseFloat(style.lineHeight));
+    });
+    expect(wrappedLines).toBe(4);
 
     // Four bars.
     await expect(panel.locator('.tl-bar')).toHaveCount(4);
