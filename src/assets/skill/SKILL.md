@@ -140,26 +140,29 @@ muckdb session tile sales --name by_region --title "By region" \
 
 duckdb reads most formats directly — so the move for *any* incoming data is to
 load it into a table, then work from there. Save whatever you have to a file (or
-pipe it) and ingest:
+pipe it) and ingest. **When an uploaded dataset is available in the workspace,
+always use its absolute path** in DuckDB commands. The CLI and database may run
+from a different working directory, so relative paths can fail or point at the
+wrong file.
 
 ```sh
 # CSV / TSV (auto-detects types, header, delimiter)
-muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv_auto('in.csv');"
+muckdb /absolute/path/data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv_auto('/absolute/path/in.csv');"
 
 # JSON / NDJSON (records, nested objects, arrays)
-muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_json_auto('in.json');"
+muckdb /absolute/path/data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_json_auto('/absolute/path/in.json');"
 
 # Parquet
-muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_parquet('in.parquet');"
+muckdb /absolute/path/data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_parquet('/absolute/path/in.parquet');"
 
 # Excel (.xlsx) — load the extension once, then read a sheet
-muckdb data.duckdb -c "INSTALL excel; LOAD excel; CREATE OR REPLACE TABLE t AS SELECT * FROM read_xlsx('in.xlsx');"
+muckdb /absolute/path/data.duckdb -c "INSTALL excel; LOAD excel; CREATE OR REPLACE TABLE t AS SELECT * FROM read_xlsx('/absolute/path/in.xlsx');"
 
 # Remote files work too (https / s3 with the httpfs extension)
 muckdb data.duckdb -c "CREATE OR REPLACE TABLE t AS SELECT * FROM read_csv_auto('https://example.com/data.csv');"
 
 # Data from another tool's stdout, an API, or a skill: write it to a file first,
-# then ingest. e.g. some_command > /tmp/out.json && muckdb ... read_json_auto('/tmp/out.json')
+# then ingest with its absolute path. e.g. some_command > /tmp/out.json && muckdb ... read_json_auto('/tmp/out.json')
 
 # Small/structured data you already have in hand: inline it as VALUES
 muckdb data.duckdb -c "CREATE OR REPLACE TABLE t(label TEXT, n INT) AS VALUES ('a',3),('b',7);"
