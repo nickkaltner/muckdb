@@ -28,9 +28,14 @@
     --selection: rgba(255, 122, 26, 0.28);
     --mono: "JetBrains Mono", "Cascadia Code", "SF Mono", ui-monospace, Menlo, Consolas, monospace;
     --sans: ui-sans-serif, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    /* Match Chrome's 125% zoom while keeping the setting inside the console.
+       Applying it at the document root scales charts, panels, hit targets,
+       and overlays in lockstep. */
+    --ui-scale: 1.25;
     --titlebar-h: 46px; --tabs-h: 38px; --statusline-h: 30px;
   }
   * { box-sizing: border-box; }
+  html { zoom: var(--ui-scale); }
   html, body { height: 100%; }
   body { margin: 0; background: var(--glow), var(--bg); background-attachment: fixed; color: var(--fg); font-family: var(--mono); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
   /* "flat" themes: no ambient glow, and flat surfaces on the non-session pages
