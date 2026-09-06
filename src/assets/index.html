@@ -3179,9 +3179,18 @@
     const box = layer.querySelector(".pick-box");
     if (opts.anchor) {
       const r = opts.anchor.getBoundingClientRect();
-      box.style.left = Math.min(r.left, window.innerWidth - 280) + "px";
-      box.style.top = (r.bottom + 4) + "px";
-      box.style.minWidth = Math.max(r.width, 240) + "px";
+      const scale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      const vw = window.innerWidth / scale;
+      const logical = {
+        left: r.left / scale,
+        top: r.top / scale,
+        bottom: r.bottom / scale,
+        width: r.width / scale,
+      };
+      box.style.minWidth = Math.max(logical.width, 240) + "px";
+      const boxWidth = box.getBoundingClientRect().width / scale;
+      box.style.left = Math.max(8, Math.min(logical.left, vw - boxWidth - 8)) + "px";
+      box.style.top = (logical.bottom + 4) + "px";
     }
     const input = box.querySelector(".pick-input");
     const list = box.querySelector(".pick-list");

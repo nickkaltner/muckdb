@@ -1,6 +1,21 @@
 import { test, expect } from '@playwright/test';
 import { SESSION_ID } from '../constants';
 
+test('theme picker stays within the viewport', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  await page.locator('#theme-btn').click();
+
+  const picker = page.locator('.pick-pop .pick-box');
+  await expect(picker).toBeVisible();
+  const box = await picker.boundingBox();
+  expect(box).not.toBeNull();
+  const viewport = await page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight }));
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+});
+
 test('sunroom applies its light ground and vivid chart palette', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/?theme=sunroom`);
 
