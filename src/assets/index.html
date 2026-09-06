@@ -3528,6 +3528,7 @@
     animatePanels(tiles);
     state.panelSel = -1;
     const loads = tiles.map((t) => {
+      if (t.type === "markdown") return loadMarkdown(t);
       if (t.type !== "view") return null;
       if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
       return loadTileChart(t);
@@ -4044,15 +4045,76 @@
   function saveTileHeights() {
     try { localStorage.setItem("muckdb.tileh", JSON.stringify(tileHeights)); } catch (_) {}
   }
+  // Resolve scalar expressions before rendering markdown. Values are inserted
+  // after markdown parsing as escaped text, never as executable HTML/markdown.
+  async function loadMarkdown(t) {
+    const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .md`);
+    if (!slot || !(t.markdown || "").includes("{{sql:")) return;
+    const values = [];
+    const queries = new Map();
+    const template = t.markdown.replace(/```[\s\S]*?```|`[^`\n]*`|\{\{sql:([\s\S]*?)\}\}/g, (match, query) => {
+      if (query === undefined) return match;
+      const key = `\uE010${values.length}\uE011`;
+      values.push({ key, query: query.trim().replace(/;+\s*$/, "") });
+      return key;
+    });
+    if (!values.length) return;
+    slot.textContent = "Loading live values…";
+    try {
+      if (!t.db) throw new Error("Live SQL requires a database (--db).");
+      await ensureFormats(t.db);
+      // Execute each distinct query once per render, sequentially to avoid a
+      // dashboard summary spawning an unbounded number of database processes.
+      for (const { query } of values) {
+        if (queries.has(query)) continue;
+        try {
+          const sql = `SELECT * FROM (\n${query}\n) AS muckdb_scalar LIMIT 2`;
+          const d = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json();
+          if (d.error) throw new Error(d.error);
+          if (d.columns?.length !== 1 || d.rows?.length !== 1) throw new Error("Expected exactly one row and one column.");
+          const v = d.rows[0][0];
+          queries.set(query, { value: v === null ? "—" : String(fmtColNum(t.db, d.columns[0], null, v)) });
+          // Non-numeric text must remain text when no column format applies.
+          if (v !== null && !colFmt(t.db, d.columns[0], null)) queries.set(query, { value: String(v) });
+        } catch (e) { queries.set(query, { error: String(e.message || e) }); }
+      }
+      slot.innerHTML = mdRender(template);
+      const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        for (const { key, query } of values) {
+          const result = queries.get(query);
+          node.textContent = node.textContent.split(key).join(result.error ? `SQL error: ${result.error}` : result.value);
+        }
+      }
+    } catch (e) { slot.textContent = String(e.message || e); }
+  }
   async function loadTileChart(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
     if (!slot) return;
-    const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 1000`;
+    const limit = Number.isInteger(t.limit) && t.limit > 0 ? t.limit : 10000;
+    const source = t.sql ? t.sql.trim().replace(/;+\s*$/, "") : `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}"`;
+    const sql = `SELECT * FROM (\n${source}\n) AS muckdb_tile LIMIT ${limit + 1}`;
     let data;
     try { data = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json(); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; return; }
     if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
     const cols = data.columns || [], rows = data.rows || [];
+    if (!slot.isConnected) return;
+    slot.querySelectorAll("canvas").forEach((canvas) => {
+      const existing = Chart.getChart(canvas);
+      if (existing) { existing.destroy(); charts = charts.filter((c) => c !== existing); }
+    });
+    const truncated = rows.length > limit;
+    if (truncated) rows.length = limit;
+    const panel = slot.closest(".panel");
+    panel.querySelector(".tile-limit-note")?.remove();
+    if (truncated) {
+      const note = document.createElement("div");
+      note.className = "note tile-limit-note";
+      note.textContent = `Showing first ${limit.toLocaleString()} rows. This is a partial result.${t.view ? " Explore the view for all rows." : ""}`;
+      slot.before(note);
+    }
     const kind = (t.chart && t.chart.kind) || "table";
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
@@ -7448,6 +7510,7 @@
       el.dataset.tip = `<b>muckdb v__MUCKDB_VERSION__</b><br>Checking GitHub for new releases once per day.`;
     }
   }
+  let sessionDataRevision = null;
   let formatsRev = null; // last-seen fingerprint of the format registry
   let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
@@ -7457,30 +7520,59 @@
       if (bootSeen !== null && s.boot !== bootSeen) { location.reload(); return; }
       bootSeen = s.boot;
     }
+    const revision = JSON.stringify((s.history || []).filter((h) => h.exit_code !== null).map((h) => [h.id, h.exit_code]));
+    const dataChanged = sessionDataRevision !== null && sessionDataRevision !== revision;
+    sessionDataRevision = revision;
     state.history = s.history || [];
     state.sessions = s.sessions || [];
     setUpdateStatus(s.update);
     // A changed format registry invalidates every cached format map so the
     // open view (and any session tiles) re-render with the new formats.
+    let formatsChanged = false;
     if (s.formats_rev !== undefined) {
       if (formatsRev !== null && s.formats_rev !== formatsRev) {
         state.formats = {};
-        if (state.tab === "sessions" && state.selSession) loadSession(state.selSession, false);
+        formatsChanged = true;
         scheduleRefresh();
       }
       formatsRev = s.formats_rev;
     }
     renderLedger();
     renderSessionNav();
-    maybeRefreshSession();
+    maybeRefreshSession(dataChanged || formatsChanged);
     if (!suppressSync && !pendingNav) maybeAutoSession();
     refreshDbExistence(s.databases || []);
   }
-  function maybeRefreshSession() {
+  function maybeRefreshSession(dataChanged = false) {
     if (state.tab !== "sessions" || !state.selSession) return;
     const sum = state.sessions.find((s) => s.id === state.selSession);
     if (!sum) return;
     if (!state.sessionData || sum.updated !== state.sessionData.updated) loadSession(state.selSession, false);
+    else if (dataChanged) refreshSessionValues();
+  }
+  // Keep panel nodes, the reader's position, expansion state and TOC intact
+  // when only data/formatting changes. Coalesce bursts of CLI updates.
+  let sessionValuesRefreshing = false, sessionValuesPending = false;
+  async function refreshSessionValues() {
+    if (sessionValuesRefreshing) { sessionValuesPending = true; return; }
+    sessionValuesRefreshing = true;
+    try {
+      do {
+        sessionValuesPending = false;
+        if (state.tab !== "sessions" || !state.sessionData) break;
+        const tiles = state.sessionData.tiles || [];
+        await Promise.allSettled(tiles.filter((t) => !t.trashed).map(async (t) => {
+          const panel = document.querySelector(`#panels [data-tile="${cssEsc(t.name)}"]`);
+          if (!panel || t.type === "section" || (t.sql && state.tileMode[t.name] === "sql")) return;
+          // Prevent temporary loading content from collapsing the scroll range.
+          panel.style.minHeight = panel.getBoundingClientRect().height + "px";
+          try {
+            if (t.type === "markdown") await loadMarkdown(t);
+            else await loadTileChart(t);
+          } finally { panel.style.minHeight = ""; }
+        }));
+      } while (sessionValuesPending);
+    } finally { sessionValuesRefreshing = false; }
   }
   async function refreshDbExistence(fallbackPaths) {
     try {

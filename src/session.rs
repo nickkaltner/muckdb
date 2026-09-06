@@ -160,6 +160,8 @@ pub enum Tile {
         #[serde(default)]
         title: Option<String>,
         markdown: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        db: Option<String>,
         /// Hidden in the dashboard's trash (persisted with the session, so it
         /// follows the dashboard across browsers — restore from the contents).
         #[serde(default, skip_serializing_if = "is_false")]
@@ -183,6 +185,8 @@ pub enum Tile {
         view: Option<String>,
         #[serde(default)]
         sql: Option<String>,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        limit: Option<u32>,
         chart: Box<Chart>,
         #[serde(default)]
         caption: Option<String>,
@@ -1083,10 +1087,20 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     .or(p.get("markdown"))
                     .context("--md <text|-> required")?,
             )?;
+            let has_live_sql = md.split("```").step_by(2).any(|prose| {
+                prose
+                    .split('`')
+                    .step_by(2)
+                    .any(|text| text.contains("{{sql:"))
+            });
+            if has_live_sql && p.get("db").is_none() {
+                bail!("markdown SQL expressions require --db <path>");
+            }
             let tile = Tile::Markdown {
                 name: p.get("name").unwrap_or("note").to_string(),
                 title: p.get("title").map(str::to_string),
                 markdown: md,
+                db: p.get("db").map(resolve_db_path).transpose()?,
                 trashed: false,
             };
             let mut s = load_or_new(&id, None)?;
@@ -1221,6 +1235,15 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 db,
                 view,
                 sql,
+                limit: p
+                    .get("limit")
+                    .map(|v| {
+                        v.parse::<u32>()
+                            .ok()
+                            .filter(|n| *n > 0)
+                            .context("--limit must be a positive integer")
+                    })
+                    .transpose()?,
                 chart: Box::new(Chart {
                     kind: p.get("chart").unwrap_or("table").to_string(),
                     x: p.get("x").map(str::to_string),

@@ -48,7 +48,7 @@ pub struct Manifest {
 fn tile_dbs(session: &Session) -> Vec<String> {
     let mut seen: Vec<String> = Vec::new();
     for t in &session.tiles {
-        if let Tile::View { db, .. } = t
+        if let Tile::View { db, .. } | Tile::Markdown { db: Some(db), .. } = t
             && !seen.contains(db)
         {
             seen.push(db.clone());
@@ -244,7 +244,7 @@ pub fn import_archive(
 
     // Point every tile at its imported copy.
     for t in &mut session.tiles {
-        if let Tile::View { db, .. } = t
+        if let Tile::View { db, .. } | Tile::Markdown { db: Some(db), .. } = t
             && let Some(new) = path_map.get(db)
         {
             *db = new.clone();
@@ -386,6 +386,7 @@ mod tests {
                     name: "intro".into(),
                     title: None,
                     markdown: "# hi".into(),
+                    db: None,
                     trashed: false,
                 },
                 Tile::View {
@@ -394,6 +395,7 @@ mod tests {
                     db: db.display().to_string(),
                     view: Some("v_counts".into()),
                     sql: None,
+                    limit: None,
                     chart: Box::new(Chart {
                         kind: "bar".into(),
                         x: Some("k".into()),

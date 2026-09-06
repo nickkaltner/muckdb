@@ -82,6 +82,27 @@ post to from the CLI and update by name. Tiles are markdown notes or
 explorable as a faceted search. Set `MUCKDB_SESSION` and your commands are also
 grouped under that session in the ledger.
 
+Data tiles show up to **10,000 rows** by default, for both views and inline SQL.
+Pass `--limit N` to `session tile` to change a tile's positive row limit. Partial
+results show a notice; use an ordered, aggregated or deliberately sampled query
+when the full result would be too large to display.
+
+Markdown tiles can contain live scalar SQL values:
+
+```sh
+muckdb session post analysis --name totals --db /absolute/path/report.duckdb \
+  --md 'Orders: **{{sql: SELECT count(*) AS orders FROM orders}}**'
+```
+
+Expressions run read-only and must return exactly one row and one column; errors
+are shown rather than silently choosing the first result. NULL renders as `—`.
+Numeric aliases use database-wide column formats. Expressions in backticks or
+fenced code stay literal, and query results are inserted as plain text. Use them
+in prose and table cells, not link destinations. Live values and chart data
+refresh after completed muckdb SQL invocations; reload after external writes.
+Markdown tile databases travel with session exports. Static captions and
+interpretation still need updating when conclusions change.
+
 ```sh
 muckdb session create analysis --title "Pond analysis" \
   --agent-session "$CODEX_THREAD_ID"

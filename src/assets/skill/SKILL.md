@@ -19,6 +19,30 @@ UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run wit
 The first `muckdb` call starts the background server automatically. You don't
 need to manage it (`muckdb start` / `--status` / `--stop` / `--display` exist if needed).
 
+## Work efficiently toward a trustworthy answer
+
+**Reuse existing work → inspect and define the measure → compute and reconcile
+→ format and publish → verify the result and rendering → save context and hand
+over the link.**
+
+- Start with the relevant session, its context, database, and existing views.
+  Use `ls session`, `ls tables`, schema inspection, a small sample, and targeted
+  aggregates. Avoid loading entire datasets into the agent's context.
+- Establish what one row represents, inspect types and missing values, check
+  join-key uniqueness, and reconcile totals before and after joins. Define each
+  rate's denominator and reporting period. Convert timestamps to the reporting
+  timezone before daily aggregation when the business day is local.
+- Batch related SQL statements in one invocation. Keep writes to the same
+  database sequential and finish them before posting tiles. Run format commands
+  sequentially too: concurrent registry updates can overwrite each other.
+- Deliver the smallest dashboard that answers the user's question. Add detail
+  through explorable views; choose charts for the decision, not maximum density.
+- Validate computed results as well as the screenshot. Tile validation checks
+  schema and chart requirements, not analytical correctness; read any warnings.
+- Recompute static summaries and captions after changing data. Use live SQL
+  values below for numbers that should remain synchronized. Save source paths,
+  definitions, refresh instructions, assumptions, and unresolved issues in context.
+
 ## Preserve the session handoff
 
 Every existing session can carry a Markdown **agent context**: the durable
@@ -100,18 +124,13 @@ Make this your default reflex for *any* result set:
   GitHub pipe table in a markdown panel — right-align numbers, add a units/`%`
   column — instead of pasting CLI output. Use a `table` chart or a view tile when
   the human needs to sort/filter/export the full set.
-- **Pair every chart with words.** Each chart tile should sit under (or beside) a
-  markdown panel that says what it shows and why it matters — the trend, the
-  outlier, the so-what. A chart with no narrative is half a result.
+- **Explain each chart with its caption.** Add a separate markdown panel only
+  when it contributes interpretation that the caption cannot convey clearly.
 - **Keep the headline numbers in markdown.** Totals, deltas, and rates belong in
   a markdown panel (bold them, show the change) so the takeaway is unmissable;
   the chart shows the shape, the table shows the exact values.
-- **If the chart has no shape, don't chart it.** When a bar chart would show many
-  bars at (nearly) the same height — e.g. every category has the same count, or a
-  column's `avg` equals its `max` so there's no variation — the chart conveys
-  nothing. Replace that panel with a **markdown summary** that states the finding
-  in words ("all 5 event types occur ~48 times — uniform, no outliers"). A chart
-  earns its place by showing variation; a flat one just wastes the space.
+- **A flat chart can be evidence of stability or uniformity.** Keep it when
+  that answers the user's question; otherwise a short summary is sufficient.
 
 ```sh
 # Headline panel: prose + a markdown table of the exact figures.
@@ -133,8 +152,40 @@ MD
 # Evidence: the chart (and a view tile the human can drill into).
 muckdb session tile sales --name by_region --title "By region" \
   --db sales.duckdb --view revenue_by_region --chart bar --x region --y revenue \
-  --xlabel Region --ylabel Revenue
+  --xlabel Region --ylabel Revenue --caption "Revenue by region; Northland leads."
 ```
+
+## Live values in markdown
+
+Bind a markdown tile to a database with `session post --db /absolute/path/report.duckdb`.
+Embed `{{sql: SELECT ...}}` wherever a scalar value belongs, including bold text
+or a markdown table cell:
+
+```sh
+muckdb session post sales --name summary --db /absolute/path/sales.duckdb --md - <<'MD'
+# Sales
+
+Revenue **{{sql: SELECT sum(amount) AS revenue FROM orders}}** across
+**{{sql: SELECT count(*) AS orders FROM orders}}** orders.
+MD
+```
+
+Each expression must return exactly one row and one column. Queries run read-only;
+empty or multi-row/multi-column results show an explicit error, and NULL displays
+as `—`. Use an aggregate or an explicit ordered `LIMIT 1` when appropriate;
+there is no implicit "first row" that could hide a mistake. Alias numeric results
+to a database-wide formatted column name (e.g. `revenue`); table-scoped formats
+are not inferred for arbitrary SQL. Returned text is rendered as literal text.
+The delimiter `}}` ends an expression, so do not put it inside query literals.
+Expressions inside fenced code blocks or inline backticks remain literal.
+Use expressions in prose or table cells, not in link URLs or other attributes.
+
+Values resolve on opening the dashboard and after completed `muckdb` SQL
+invocations, along with its chart data. External database writes require a page
+reload. Screenshots wait for values to resolve. Repeated identical expressions
+execute once per markdown tile render. For expensive or related metrics, create
+a summary table once and select its columns instead of repeatedly scanning raw
+data. Static interpretation and captions still need review after a refresh.
 
 ## Get any data into duckdb
 
@@ -209,7 +260,8 @@ muckdb session post pond-analysis --name summary --title Summary \
   --md "# Pond analysis\n\n**5 species**, ~240 readings. pH trends **down**."
 
 muckdb session tile pond-analysis --name species --title "By species" \
-  --db ~/data/ponds.duckdb --view by_species --chart bar --x species --y n
+  --db ~/data/ponds.duckdb --view by_species --chart bar --x species --y n \
+  --xlabel Species --ylabel Readings --caption "Readings per species in the source data."
 
 # Keep the durable handoff current as the data sources or session-wide choices evolve.
 muckdb session context pond-analysis save --md "# Data sources\n\n- ~/data/ponds.duckdb: readings CSV loaded for this analysis."
@@ -223,12 +275,13 @@ muckdb session context pond-analysis save --md "# Data sources\n\n- ~/data/ponds
 ```
 muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
-muckdb session post <name> --md <text|->  [--name TILE] [--title T]
+muckdb session post <name> --md <text|->  [--name TILE] [--title T] [--db DB]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--limit N] (positive row limit, default 10000; applies to views and inline SQL)
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
@@ -271,6 +324,15 @@ muckdb session rm <name> [--tile TILE]
   `--no-validate` skips the check (e.g. posting before the view exists).
 - **Tiles are keyed by `--name`** within a session — re-posting the same name
   replaces that panel (upsert). Use stable names so updates land in place.
+  Updates replace the complete specification: read `ls session` first and
+  resend all settings to retain, including captions, markers, limits, and `--db`.
+  Keep the full posting command for repeatable refreshes.
+- **Tiles display at most 10,000 rows by default.** `--limit N` changes one
+  tile's cap for either `--view` or `--sql`. A visible notice identifies partial
+  results. Check result size before charting; aggregate, split, or deliberately
+  sample large results and disclose sampling. First-N rows are not a random
+  sample. Use deterministic ordering and keep a full-data explorer view.
+  Raising the limit increases query, transfer, and rendering costs.
 - **Lay the report out, and keep it laid out.** Tiles render in post order;
   `session move` reorders one (`--up`/`--down`, `--to N` for a 1-based position,
   or `--before`/`--after TILE`). `session section --name S --title "Heading"` adds
@@ -300,6 +362,10 @@ muckdb session rm <name> [--tile TILE]
   collision gets a numeric suffix (`name-2`) rather than overwriting. The web
   UI has the same pair: an **export** button on the session view and an
   **import** button in the top header.
+  This includes databases attached to live markdown tiles. External files and
+  remote dependencies inside SQL views are not bundled: materialize those
+  sources into durable tables first. Use a dedicated report database when
+  exporting because the entire referenced database is copied, not just tile rows.
 - A tile is a **view** (`--view`, references a named duckdb view) or **inline
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
@@ -317,8 +383,8 @@ muckdb session rm <name> [--tile TILE]
   panel heading) and `--xlabel`/`--ylabel` so the panel is self-explanatory on its
   own. If a one-liner isn't enough, add an adjacent markdown panel for the full
   description.
-- **Pick the chart that packs in the most information.** Don't default everything
-  to a single-series bar chart — choose the kind that shows the most per panel:
+- **Pick the chart that answers the question clearly.** Choose the kind that
+  makes the relevant comparison easiest to understand:
   - **`stacked` bars** when each x has a breakdown that sums to a meaningful total
     (revenue split by category, errors by type per day). One panel then shows both
     the total *and* its composition — far denser than one bar per total or a
@@ -397,9 +463,8 @@ muckdb session rm <name> [--tile TILE]
   an SLA, budget, or limit so "good vs bad" is visible at a glance. **`--event`**
   draws a vertical line at an x-position (a timestamp on a time axis, or a category
   label) and is the best way to **draw attention to an important moment** — a
-  deploy, an incident, a campaign, a config change. **Add one to essentially every
-  time series**: it turns "the line jumped" into "the line jumped *when we shipped
-  X*," which is usually the whole point of the chart. Each takes `VALUE` or
+  deploy, an incident, a campaign, a config change. **Add known, relevant events**;
+  do not invent a marker or imply causation merely from timing. Each takes `VALUE` or
   `VALUE|label`, e.g.
   `--target '20|SLA' --threshold '30|max' --event '2026-05-15T00:00|deploy'`.
   Markers are part of the tile, so **add or update them anytime** by re-posting the
@@ -618,6 +683,17 @@ muckdb session tile trace --name login --db ~/data/trace.duckdb --view login_flo
 ```
 
 ## Column display formats (units, currency, decimals) — set them, always
+
+**`--percent` appends `%`; it does not multiply by 100.** Compute percentages
+on a 0–100 scale in SQL (`100.0 * numerator / nullif(denominator, 0)`). A value
+of `12.5` displays as `12.5%`; `0.125` displays as `0.125%`. Targets and
+thresholds use the same scale.
+
+**Each format command replaces that key's complete format.** Combine units,
+decimals, timezone, and links in one command; inspect `format list` before
+updating. Adding a link in a second command without repeating currency flags
+removes the currency formatting. Use `--table` when same-named columns have
+different units or meanings.
 
 **Format every numeric column that has a unit.** A bare `4343.33` makes the human
 guess (dollars? ms? a count?); `$4,343.33 USD` answers it. This is not a nicety —
