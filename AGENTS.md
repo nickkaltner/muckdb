@@ -415,6 +415,37 @@ git config core.hooksPath .githooks
 
 ## Cutting a release (binaries + Homebrew)
 
+### Delegate release execution
+
+When the user authorizes a release, delegate its execution and pipeline
+monitoring to one lower-cost sub-agent so routine release logs stay out of the
+main conversation's context. Use `collaboration.spawn_agent` with
+`model: "gpt-5.6-luna"`, `reasoning_effort: "medium"`, and `fork_turns: "none"`.
+Do not fork the full conversation. If that model or delegation is unavailable,
+use an available lower-cost model or complete the release locally.
+
+Before handing off, finish the implementation and required checks. Give the
+release agent a short, self-contained task containing the repository path,
+the user's release authorization and scope, target branch/commit, requested
+version bump (default patch), checks already passed, and any dirty/untracked
+files to preserve. Tell it to read this `AGENTS.md` and follow the release
+procedure below. The parent must not concurrently change the release branch,
+tags, version files, or local daemon.
+
+The release agent owns the remaining authorized commits, version bump, tag and
+push, CI/E2E/release monitoring, and local daemon update. If the bundled skill
+changed, it also reinstalls it with the rebuilt binary (`muckdb skill install -f`).
+It must verify all pipelines for the published commit/tag finish successfully,
+including binary uploads and the Homebrew formula update. Preserve unrelated
+files; use an isolated checkout if they prevent a clean release. Diagnose failed
+jobs and fix release-scoped issues within the user's authorization; report any
+blocker requiring a broader change to the parent.
+
+Return only a concise handoff: commit and tag, release URL, final pipeline
+results/links, local daemon/skill status, and any unresolved blocker. Send brief
+milestone updates instead of raw logs. The parent relays progress to the user
+and reports completion only after receiving verified results.
+
 **Plain pushes to `main` do NOT build a release** — they only run CI. The release
 workflow (`.github/workflows/release.yml`: build macOS+Linux binaries → create the
 GitHub release → bump the Homebrew tap formula) fires **only on a pushed `v*`
