@@ -19,6 +19,21 @@ test('theme picker opens below the theme button', async ({ page }) => {
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
 });
 
+test('the final dashboard panel clears the fixed status bar', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  await expect(page.locator('#panels .panel').last()).toBeVisible();
+
+  const clearance = await page.evaluate(() => {
+    const scroller = document.getElementById('panels-scroll')!;
+    const last = document.querySelector('#panels .panel:last-child')!;
+    scroller.scrollTop = scroller.scrollHeight;
+    const statusTop = document.getElementById('statusline')!.getBoundingClientRect().top;
+    return statusTop - last.getBoundingClientRect().bottom;
+  });
+  // Includes the dashboard's 28px bottom padding (scaled to 35px on screen).
+  expect(clearance).toBeGreaterThanOrEqual(20);
+});
+
 test('sunroom applies its light ground and vivid chart palette', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/?theme=sunroom`);
 

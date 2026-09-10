@@ -162,7 +162,11 @@
   .tab .badge-n { color: var(--faint); margin-left: 7px; }
   .tab.active .badge-n { color: var(--primary-dim); }
 
-  main { height: calc(100vh - var(--titlebar-h) - var(--tabs-h) - var(--statusline-h)); overflow: hidden; }
+  /* CSS zoom enlarges the document without shrinking viewport units. Convert the
+     viewport to the document's unzoomed coordinate space before reserving the
+     chrome, otherwise the scroller extends below the visible viewport and its
+     final padding is unreachable. */
+  main { height: calc(100vh / var(--ui-scale) - var(--titlebar-h) - var(--tabs-h) - var(--statusline-h)); overflow: hidden; }
   .view { display: none; height: 100%; }
   .view.active { display: block; }
   .view.scroll { overflow: auto; }
@@ -3815,6 +3819,9 @@
       backgroundColor: bg,
       scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
       useCORS: true,
+      // The browser paints the SVG foreign object itself, preserving its native
+      // system font (notably SF Mono on macOS) and root CSS zoom exactly.
+      foreignObjectRendering: true,
       logging: false,
       ignoreElements: (el) => el.classList && el.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
@@ -3837,6 +3844,9 @@
       backgroundColor: bg,
       scale: 2,
       useCORS: true,
+      // See renderElementBlob: html2canvas's canvas text renderer does not
+      // faithfully reproduce macOS system fonts when the document is zoomed.
+      foreignObjectRendering: true,
       logging: false,
       ignoreElements: (e) => e.classList && e.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
