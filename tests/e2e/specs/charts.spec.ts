@@ -1,6 +1,38 @@
 import { test, expect } from '@playwright/test';
 import { SESSION_ID } from '../constants';
 
+for (const kind of ['scatter', 'pie']) {
+  test(`${kind} hover selects every point under console zoom`, async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const canvas = page.locator('.panel[data-tile="by-day"] canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    await canvas.evaluate((el, kind) => {
+      const Chart = (window as any).Chart;
+      Chart.getChart(el).destroy();
+      new Chart(el, {
+        type: kind,
+        data: { labels: ['a', 'b', 'c', 'd', 'e'], datasets: [{
+          data: kind === 'scatter' ? [1, 2, 3, 4, 5].map(x => ({ x, y: 3 })) : [1, 1, 1, 1, 1],
+          pointRadius: 8,
+        }] },
+        options: { animation: false, responsive: true, maintainAspectRatio: false,
+          scales: kind === 'scatter' ? { x: { min: 0, max: 6 }, y: { min: 0, max: 6 } } : {},
+          plugins: { legend: { display: false } } },
+      });
+    }, kind);
+    await page.waitForTimeout(500);
+    for (const index of [0, 1, 2, 3, 4, 2]) {
+      const p = await canvas.evaluate((el, index) => {
+        const c = (window as any).Chart.getChart(el);
+        const p = c.getDatasetMeta(0).data[index].getCenterPoint(true), r = el.getBoundingClientRect();
+        return { x: r.left + p.x * r.width / c.width, y: r.top + p.y * r.height / c.height };
+      }, index);
+      await page.mouse.move(p.x, p.y);
+      await expect.poll(() => canvas.evaluate(el => (window as any).Chart.getChart(el).tooltip.getActiveElements()[0]?.index)).toBe(index);
+    }
+  });
+}
+
 test('chart tiles render canvases; table tile renders a table', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
 
@@ -26,6 +58,56 @@ test('bar tooltips follow the final three hovered bars under console zoom', asyn
     }, requestedIndex);
     await hits.nth(index).dispatchEvent('pointerenter');
     await expect.poll(() => canvas.evaluate((el) => (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements()[0]?.index)).toBe(index);
+  }
+});
+
+test('line snapping follows late points under console zoom', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollBy(0, 250));
+  await page.waitForTimeout(1000);
+  const point = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    const points = chart.getDatasetMeta(0).data;
+    const index = points.length - 2;
+    const p = points[index].getCenterPoint();
+    const rect = el.getBoundingClientRect();
+    return {
+      index,
+      x: rect.left + p.x * rect.width / chart.width,
+      y: rect.top + p.y * rect.height / chart.height,
+    };
+  });
+  const picked = await canvas.evaluate((el, point) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return (window as any).Chart.Interaction.modes.muckLineSnap(
+      chart,
+      { native: { clientX: point.x, clientY: point.y }, x: 0, y: 0 },
+      { snapDistance: 14 },
+      true,
+    )[0]?.index;
+  }, point);
+  expect(picked).toBe(point.index);
+});
+
+test('multi-series line snapping follows late x positions under console zoom', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  await page.evaluate(() => window.scrollBy(0, 250));
+  await page.waitForTimeout(1000);
+  for (const index of [30, 36, 40, 45, 48, 49, 40]) {
+    const target = await canvas.evaluate((el, index) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const p = chart.getDatasetMeta(0).data[index].getCenterPoint(true);
+      const rect = el.getBoundingClientRect();
+      return { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height };
+    }, index);
+    await page.mouse.move(target.x, target.y);
+    await expect.poll(() => canvas.evaluate((el) =>
+      (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements().map((a: any) => a.index)
+    )).toEqual([index, index]);
   }
 });
 

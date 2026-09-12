@@ -6179,6 +6179,16 @@
     };
     Chart.Interaction.modes.muckLineSnap = (chart, event, opts, useFinalPosition) => {
       const limit = opts.snapDistance || 14;
+      const native = event.native || event;
+      let pointerX = event.x, pointerY = event.y;
+      if (isFinite(native.clientX) && isFinite(native.clientY)) {
+        const rect = chart.canvas.getBoundingClientRect();
+        // Chart.js's normalized event coordinates use offsetX/offsetY, which
+        // drift under the console's root CSS zoom. Rebuild the point from the
+        // browser client coordinates relative to the scaled canvas rectangle.
+        pointerX = (native.clientX - rect.left) * chart.width / rect.width;
+        pointerY = (native.clientY - rect.top) * chart.height / rect.height;
+      }
       let nearest = null;
       chart.getSortedVisibleDatasetMetas().forEach((meta) => {
         if (meta.type !== "line") return;
@@ -6189,15 +6199,42 @@
           const p = a.getCenterPoint(useFinalPosition), q = b.getCenterPoint(useFinalPosition);
           const dx = q.x - p.x, dy = q.y - p.y, len2 = dx * dx + dy * dy;
           if (!len2) continue;
-          const u = Math.max(0, Math.min(1, ((event.x - p.x) * dx + (event.y - p.y) * dy) / len2));
+          const u = Math.max(0, Math.min(1, ((pointerX - p.x) * dx + (pointerY - p.y) * dy) / len2));
           const sx = p.x + u * dx, sy = p.y + u * dy;
-          const dist = Math.hypot(event.x - sx, event.y - sy);
+          const dist = Math.hypot(pointerX - sx, pointerY - sy);
           if (dist <= limit && (!nearest || dist < nearest.dist)) {
             nearest = { dist, datasetIndex: meta.index, index: u < 0.5 ? i - 1 : i, element: u < 0.5 ? a : b };
           }
         }
       });
       return nearest ? [nearest] : [];
+    };
+    Chart.Interaction.modes.muckLineIndex = (chart, event, _opts, useFinalPosition) => {
+      const native = event.native || event;
+      let pointerX = event.x;
+      if (isFinite(native.clientX)) {
+        const rect = chart.canvas.getBoundingClientRect();
+        pointerX = (native.clientX - rect.left) * chart.width / rect.width;
+      }
+      let nearestX = null, nearestDistance = Infinity;
+      const metas = chart.getSortedVisibleDatasetMetas().filter((meta) => meta.type === "line");
+      metas.forEach((meta) => meta.data.forEach((point) => {
+        if (!point || point.skip) return;
+        const distance = Math.abs(point.getCenterPoint(useFinalPosition).x - pointerX);
+        if (distance < nearestDistance) { nearestDistance = distance; nearestX = point.x; }
+      }));
+      if (nearestX == null) return [];
+      const active = [];
+      metas.forEach((meta) => {
+        let best = null, bestDistance = Infinity;
+        meta.data.forEach((point, index) => {
+          if (!point || point.skip) return;
+          const distance = Math.abs(point.getCenterPoint(useFinalPosition).x - nearestX);
+          if (distance < bestDistance) { bestDistance = distance; best = { element: point, datasetIndex: meta.index, index }; }
+        });
+        if (best) active.push(best);
+      });
+      return active;
     };
   }
   // Legend clicks toggle a dataset between its normal rendering and a faint
@@ -6586,6 +6623,18 @@
   // subtle cursor behind the tooltip, like the timeline hover cursor.
   const muckHoverCursor = {
     id: "muckHoverCursor",
+    beforeEvent(chart, args) {
+      if (chart.config.type === "bar") return;
+      const event = args.event, native = event.native;
+      if (!native || !Number.isFinite(native.clientX) || !Number.isFinite(native.clientY)) return;
+      const rect = chart.canvas.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      // Normalize before Chart.js checks plot boundaries. Correcting only the
+      // interaction lookup leaves the last quarter outside its hit-test area.
+      event.x = (native.clientX - rect.left) * chart.width / rect.width;
+      event.y = (native.clientY - rect.top) * chart.height / rect.height;
+      args.inChartArea = chart.isPointInArea(event);
+    },
     afterDatasetsDraw(chart, _args, opts) {
       if (!opts || !opts.enabled || !chart.tooltip) return;
       const active = chart.tooltip.getActiveElements();
@@ -6840,7 +6889,7 @@
     } else if (type === "line" && !single) {
       // All series at one x-value belong together: one tooltip and one cursor
       // make comparisons much easier than selecting whichever stroke is closest.
-      o.interaction = { mode: "index", axis: "x", intersect: false };
+      o.interaction = { mode: "muckLineIndex", axis: "x", intersect: false };
       o.plugins.muckHoverCursor = { enabled: true };
     } else if (type === "line") {
       o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
