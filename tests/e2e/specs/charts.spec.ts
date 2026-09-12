@@ -24,7 +24,7 @@ test('bar tooltips follow the final three hovered bars under console zoom', asyn
       const bars = chart.getDatasetMeta(0).data;
       return requestedIndex < 0 ? bars.length + requestedIndex : requestedIndex;
     }, requestedIndex);
-    await hits.nth(index).hover();
+    await hits.nth(index).dispatchEvent('pointerenter');
     await expect.poll(() => canvas.evaluate((el) => (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements()[0]?.index)).toBe(index);
   }
 });
