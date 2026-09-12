@@ -22,6 +22,12 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
   });
   await page.waitForTimeout(1200);
   const before = await measure();
+  // The canvas backing store covers every physical pixel after both browser
+  // DPR and muckdb's own CSS interface scale; otherwise charts look enlarged
+  // and blurry even though their geometry is correct.
+  expect(before.chartDpr).toBeGreaterThanOrEqual(2);
+  expect(before.attrWidth).toBeCloseTo(before.rectWidth * before.chartDpr / 1.25, 0);
+  expect(before.attrHeight).toBeCloseTo(before.rectHeight * before.chartDpr / 1.25, 0);
   const cdp = await context.newCDPSession(page);
   await cdp.send('Emulation.setDeviceMetricsOverride', {
     width: 1024, height: 576, deviceScaleFactor: 1.25, mobile: false,
@@ -36,6 +42,8 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
   expect(restored.chartWidth).toBe(before.chartWidth);
   expect(restored.chartHeight).toBe(before.chartHeight);
   expect(restored.chartDpr).toBe(before.chartDpr);
+  expect(restored.attrWidth).toBeCloseTo(restored.rectWidth * restored.chartDpr / 1.25, 0);
+  expect(restored.attrHeight).toBeCloseTo(restored.rectHeight * restored.chartDpr / 1.25, 0);
   expect(restored.rectWidth).toBeCloseTo(before.rectWidth, 0);
   expect(restored.bitmapHash).toBe(before.bitmapHash);
   expect(restored.points).toEqual(before.points);
@@ -70,6 +78,38 @@ for (const kind of ['scatter', 'pie']) {
       await page.mouse.move(p.x, p.y);
       await expect.poll(() => canvas.evaluate(el => (window as any).Chart.getChart(el).tooltip.getActiveElements()[0]?.index)).toBe(index);
     }
+  });
+}
+
+for (const [name, type] of [['line', 'line'], ['area', 'line'], ['scatter', 'scatter'], ['bar', 'bar']]) {
+  test(`${name} data hover does not show the x-axis tooltip`, async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const canvas = page.locator('.panel[data-tile="by-day"] canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    await canvas.evaluate((el, { name, type }) => {
+      const Chart = (window as any).Chart;
+      Chart.getChart(el).destroy();
+      const scatter = type === 'scatter';
+      new Chart(el, {
+        type,
+        data: scatter
+          ? { datasets: [{ data: [1, 2, 3, 4, 5].map(x => ({ x, y: x })), pointRadius: 8 }] }
+          : { labels: ['a', 'b', 'c', 'd', 'e'], datasets: [{ data: [1, 2, 3, 4, 5], fill: name === 'area' }] },
+        options: {
+          animation: false, responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false }, muckTimeTickTooltip: { enabled: true, tz: 'utc' } },
+        },
+      });
+    }, { name, type });
+    const point = await canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el);
+      const p = chart.getDatasetMeta(0).data[2].getCenterPoint(true);
+      const rect = el.getBoundingClientRect();
+      return { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height };
+    });
+    await page.mouse.move(point.x, point.y);
+    await page.waitForTimeout(100);
+    await expect(page.locator('.chart-time-tip')).not.toBeVisible();
   });
 }
 
@@ -148,6 +188,43 @@ test('multi-series line snapping follows late x positions under console zoom', a
     await expect.poll(() => canvas.evaluate((el) =>
       (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements().map((a: any) => a.index)
     )).toEqual([index, index]);
+  }
+});
+
+test('multi-series line hover ignores a series after its final point', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  await canvas.evaluate((el) => {
+    const Chart = (window as any).Chart;
+    Chart.getChart(el as HTMLCanvasElement).destroy();
+    new Chart(el, {
+      type: 'line',
+      data: { datasets: [
+        { label: 'ends at 29', data: Array.from({ length: 50 }, (_, i) => ({ x: i + 1, y: i < 29 ? i : null })) },
+        { label: 'continues', data: Array.from({ length: 50 }, (_, i) => ({ x: i + 1, y: i })) },
+      ] },
+      options: { animation: false, responsive: true, maintainAspectRatio: false,
+        interaction: { mode: 'muckLineIndex', axis: 'x', intersect: false },
+        plugins: { muckHoverCursor: { enabled: true } },
+        scales: { x: { type: 'linear' } },
+      },
+    });
+  });
+  for (const index of [28, 29, 35, 45, 49]) {
+    const target = await canvas.evaluate((el, index) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const p = chart.getDatasetMeta(1).data[index].getCenterPoint(true);
+      const rect = el.getBoundingClientRect();
+      return { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height };
+    }, index);
+    await page.mouse.move(target.x, target.y);
+    await expect.poll(() => canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return chart.tooltip.getActiveElements().map((a: any) => ({ dataset: a.datasetIndex, index: a.index }));
+    })).toEqual(index < 29
+      ? [{ dataset: 0, index }, { dataset: 1, index }]
+      : [{ dataset: 1, index }]);
   }
 });
 

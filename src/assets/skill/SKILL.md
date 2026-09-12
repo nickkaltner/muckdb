@@ -98,9 +98,11 @@ The goal is that nothing you report is "take my word for it." Instead of
 summarising data in text, land it in duckdb and present it so the human can
 **verify it themselves**:
 
-- Every figure you cite should be backed by a **view** the human can open and a
-  **tile** they can drill into (view tiles get an **explore** button → faceted
-  table browser; inline-SQL tiles show the exact query).
+- Every data figure you cite should be backed by a **view** the human can open
+  and a **tile** they can drill into (view tiles get an **explore** button →
+  faceted table browser; inline-SQL tiles show the exact query). Authored
+  Markdown and Mermaid are documents, not data figures, and live directly in
+  the session JSON.
 - Keep the source query visible and the data live — they can re-sort, filter,
   facet, check the row count, and export CSV/JSON. The dashboard is the evidence,
   the prose is just the headline.
@@ -304,6 +306,7 @@ muckdb session context pond-analysis save --md "# Data sources\n\n- ~/data/ponds
 muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T] [--db DB]
+muckdb session mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-) [--title T] [--caption C]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
@@ -355,6 +358,15 @@ muckdb session rm <name> [--tile TILE]
   Updates replace the complete specification: read `ls session` first and
   resend all settings to retain, including captions, markers, limits, and `--db`.
   Keep the full posting command for repeatable refreshes.
+- **Use authored Mermaid for naturally structured information.** When a
+  flowchart, tree, state machine, architecture sketch, or hand-authored sequence
+  is the source itself, keep its Mermaid text in the session with `session
+  mermaid`; do not flatten it into artificial DuckDB rows. Pass a `.mmd` file to
+  `--source`, use `--source -` for stdin, or `--mmd` for short inline source.
+  The tile's **edit** button opens a validated source + live-preview workspace
+  and saves back into the session JSON. Mermaid renders locally in strict mode.
+  Keep generated/relational interactions in a DuckDB-backed `--chart sequence`
+  tile so they refresh from data and remain explorable.
 - **Tiles display at most 10,000 rows by default.** `--limit N` changes one
   tile's cap for either `--view` or `--sql`. A visible notice identifies partial
   results. Check result size before charting; aggregate, split, or deliberately

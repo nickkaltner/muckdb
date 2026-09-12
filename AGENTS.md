@@ -65,6 +65,7 @@ muckdb session tile pond-analysis --name species --title "By species" \
 muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T]
+muckdb session mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-) [--title T] [--caption C]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
@@ -373,6 +374,13 @@ breaks the tile out of the centred column so every column is visible.
   on the tile (`trashed: true` in `muckdb ls session`) and survives re-posts —
   updating a trashed tile does not resurface it. Delete for real with
   `muckdb session rm <session> --tile <name>`.
+- **Use Mermaid tiles for authored structure.** Flowcharts, trees, state
+  machines, architecture sketches, and hand-authored sequences can live in the
+  session JSON without being flattened into artificial DuckDB rows. Post a file
+  with `session mermaid ... --source diagram.mmd`, pipe stdin with `--source -`,
+  or pass short source with `--mmd`. The dashboard's edit button provides a
+  validated live preview and saves changes back to the session. Keep
+  data-generated interactions as DuckDB-backed `--chart sequence` tiles.
 - **Look at what you built.** `muckdb session screenshot <id> [--tile T]` gives
   you a PNG of the rendered dashboard — read it and check the charts say what
   you think they say before telling the human it's done.

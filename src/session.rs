@@ -1,7 +1,7 @@
 //! Sessions: named dashboards of tiles (panels) that an agent posts to from the
-//! CLI. A tile is either markdown or a data view (a duckdb view or inline SQL)
-//! rendered as a chart and explorable as a faceted search. Stored as one JSON
-//! file per session under the data dir, shared with the daemon.
+//! CLI. A tile is markdown, authored Mermaid source, or a data view (a duckdb
+//! view or inline SQL) rendered as a chart and explorable as a faceted search.
+//! Stored as one JSON file per session under the data dir, shared with the daemon.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -171,6 +171,18 @@ pub enum Tile {
         #[serde(default, skip_serializing_if = "is_false")]
         trashed: bool,
     },
+    /// An authored Mermaid document. Unlike a data-backed sequence tile, its
+    /// natural representation is structured diagram source, not relational rows.
+    Mermaid {
+        name: String,
+        #[serde(default)]
+        title: Option<String>,
+        source: String,
+        #[serde(default)]
+        caption: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        trashed: bool,
+    },
     /// A heading-only tile that groups the panels after it: renders as a section
     /// divider in the dashboard and as a section header in the contents.
     Section {
@@ -206,15 +218,17 @@ fn is_false(b: &bool) -> bool {
 impl Tile {
     pub fn name(&self) -> &str {
         match self {
-            Tile::Markdown { name, .. } | Tile::Section { name, .. } | Tile::View { name, .. } => {
-                name
-            }
+            Tile::Markdown { name, .. }
+            | Tile::Mermaid { name, .. }
+            | Tile::Section { name, .. }
+            | Tile::View { name, .. } => name,
         }
     }
 
     pub fn trashed(&self) -> bool {
         match self {
             Tile::Markdown { trashed, .. }
+            | Tile::Mermaid { trashed, .. }
             | Tile::Section { trashed, .. }
             | Tile::View { trashed, .. } => *trashed,
         }
@@ -223,6 +237,7 @@ impl Tile {
     fn set_trashed(&mut self, on: bool) {
         match self {
             Tile::Markdown { trashed, .. }
+            | Tile::Mermaid { trashed, .. }
             | Tile::Section { trashed, .. }
             | Tile::View { trashed, .. } => *trashed = on,
         }
@@ -517,6 +532,25 @@ pub fn set_tile_trashed(id: &str, tile: &str, on: bool) -> Result<bool> {
         return Ok(false);
     };
     t.set_trashed(on);
+    s.updated = store::now_millis();
+    save(&s)?;
+    Ok(true)
+}
+
+/// Replace an authored Mermaid tile's source from the web editor. The session
+/// lock keeps browser saves and simultaneous CLI writes from losing each other.
+pub fn set_mermaid_source(id: &str, tile: &str, source: String) -> Result<bool> {
+    let _lock = lock_session(id)?;
+    let Some(mut s) = load(id)? else {
+        return Ok(false);
+    };
+    let Some(Tile::Mermaid {
+        source: current, ..
+    }) = s.tiles.iter_mut().find(|t| t.name() == tile)
+    else {
+        return Ok(false);
+    };
+    *current = source;
     s.updated = store::now_millis();
     save(&s)?;
     Ok(true)
@@ -1042,6 +1076,18 @@ fn read_md(value: &str) -> Result<String> {
     }
 }
 
+fn read_mermaid_source(value: &str, inline: bool) -> Result<String> {
+    let source = if inline || value == "-" {
+        read_md(value)?
+    } else {
+        fs::read_to_string(value).with_context(|| format!("reading Mermaid source {value:?}"))?
+    };
+    if source.trim().is_empty() {
+        bail!("Mermaid source must not be empty");
+    }
+    Ok(source)
+}
+
 /// Entry point for `muckdb session <action> ...`.
 pub fn cli(args: &[String]) -> Result<i32> {
     let action = args.first().map(String::as_str).unwrap_or("");
@@ -1115,6 +1161,34 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 "posted tile '{}' to session {id}",
                 p.get("name").unwrap_or("note")
             );
+            Ok(0)
+        }
+        "mermaid" => {
+            let name = session_arg.context(
+                "usage: muckdb session mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-)",
+            )?;
+            let id = slug(&name);
+            let _lock = lock_session(&id)?;
+            let (raw, inline) = if let Some(value) = p.get("source") {
+                (value, false)
+            } else if let Some(value) = p.get("mmd") {
+                (value, true)
+            } else {
+                bail!("a Mermaid tile needs --source <file|-> or --mmd <text|->");
+            };
+            let tile_name = p.get("name").context("--name <tile> required")?.to_string();
+            let tile = Tile::Mermaid {
+                name: tile_name.clone(),
+                title: p.get("title").map(str::to_string),
+                source: read_mermaid_source(raw, inline)?,
+                caption: p.get("caption").map(str::to_string),
+                trashed: false,
+            };
+            let mut s = load_or_new(&id, None)?;
+            upsert_tile(&mut s, tile);
+            save(&s)?;
+            crate::facade::ensure_daemon()?;
+            println!("set Mermaid tile '{tile_name}' in session {id}");
             Ok(0)
         }
         "section" => {
@@ -1413,9 +1487,10 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|section|context|tile|move|screenshot|export|import|rm> ...\n\
+                "usage: muckdb session <create|list|post|mermaid|section|context|tile|move|screenshot|export|import|rm> ...\n\
                  \n  create <name> [--title T] [--agent-session UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
+                 mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-) [--title T] [--caption C]\n  \
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name|agent-session-uid> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
@@ -1471,6 +1546,32 @@ mod tests {
         assert_eq!(slug("Pond Analysis"), "pond-analysis");
         assert_eq!(slug("  Q2 / 2026 report!! "), "q2-2026-report");
         assert_eq!(slug("already-good"), "already-good");
+    }
+
+    #[test]
+    fn mermaid_tile_serde_roundtrips_authored_source() {
+        let tile = Tile::Mermaid {
+            name: "architecture".into(),
+            title: Some("Service tree".into()),
+            source: "flowchart TD\n  API --> DB".into(),
+            caption: Some("Authored rather than queried.".into()),
+            trashed: false,
+        };
+        let json = serde_json::to_string(&tile).unwrap();
+        assert!(json.contains("\"type\":\"mermaid\""));
+        let back: Tile = serde_json::from_str(&json).unwrap();
+        let Tile::Mermaid {
+            name,
+            source,
+            caption,
+            ..
+        } = back
+        else {
+            panic!("expected Mermaid tile");
+        };
+        assert_eq!(name, "architecture");
+        assert!(source.contains("API --> DB"));
+        assert_eq!(caption.as_deref(), Some("Authored rather than queried."));
     }
 
     #[test]

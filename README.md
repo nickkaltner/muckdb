@@ -77,7 +77,7 @@ can find `muckdb` via mDNS: `avahi-browse _muckdb._tcp` on Linux,
 ## Sessions (agent dashboards)
 
 A **session** is a named dashboard of **tiles** (panels) that a coding agent can
-post to from the CLI and update by name. Tiles are markdown notes or
+post to from the CLI and update by name. Tiles are authored markdown/Mermaid or
 **data views** — backed by a duckdb view or inline SQL — rendered as a chart and
 explorable as a faceted search. Set `MUCKDB_SESSION` and your commands are also
 grouped under that session in the ledger.
@@ -128,6 +128,10 @@ muckdb session context analysis save --md "# Data sources\n\n- mydb.db: local an
 muckdb session post analysis --name notes --title Notes \
   --md "# Findings\n\n- pH trends **down** over time"
 
+# authored structure stays in its natural Mermaid form (file or stdin)
+muckdb session mermaid analysis --name architecture --title Architecture \
+  --source architecture.mmd --caption "Service topology and dependencies."
+
 # a data panel from a duckdb view, charted as a bar; --trend overlays a
 # smoothed trendline (single-series bar/line/area/scatter)
 muckdb mydb.db -c "CREATE VIEW by_species AS SELECT species, count(*) n FROM readings GROUP BY 1"
@@ -159,7 +163,7 @@ muckdb session import analysis.muckdb        # imports; name collisions get -2
 `--agent-session` records the creating agent's conversation/thread UUID and
 returns it as `agent_session` from `muckdb ls session <id>`.
 
-Re-running `post`/`tile` with the same `--name` updates that tile in place; the
+Re-running `post`/`mermaid`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
 heatmap` (a heatmap takes two categorical axes — `--x` and `--y` — plus a
 `--value` column, one row per pair, and shades each cell by value —
@@ -178,6 +182,14 @@ table explorer, and every panel has a **copy-image** button that puts a PNG of
 the rendered panel on the clipboard, plus an **✕** that hides it into a *trash*
 section of the contents sidebar (click it there to restore it — a per-browser
 preference; other viewers and screenshots still see every panel).
+
+Mermaid tiles store authored diagram source directly in the session JSON. Use
+them when the information is naturally structural—flowcharts, trees, state
+machines, architecture sketches, or hand-authored sequences—rather than rows to
+query. Their **edit** button opens a source workspace with validated live preview;
+save writes the source back to the session. Rendering uses a bundled Mermaid
+runtime in strict mode and works offline. Keep relational/generated sequences as
+DuckDB-backed `--chart sequence` tiles so they remain explorable and refreshable.
 
 `session screenshot` (and the copy-image button) render through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a

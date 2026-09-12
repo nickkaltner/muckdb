@@ -108,3 +108,37 @@ test('format updates refresh values without replacing panels or moving the reade
   const after = await page.evaluate(() => document.getElementById('panels-scroll')!.scrollTop);
   expect(Math.abs(after - before)).toBeLessThan(3);
 });
+
+test('CLI session updates keep the reader on the same panel', async ({ page }) => {
+  const session = 'cli-scroll';
+  const intro = Array.from({ length: 45 }, (_, i) => `Original context ${i}.`).join('\n\n');
+  cli('session', 'post', session, '--name', 'intro', '--md', intro);
+  cli('session', 'post', session, '--name', 'detail', '--md', '# Detail\n\nThe reader stays here.');
+  // Keep enough content below the target that it can remain at the same
+  // viewport offset after the intro grows (rather than hitting scroll bottom).
+  cli('session', 'post', session, '--name', 'tail', '--md', Array.from({ length: 80 }, (_, i) => `Tail ${i}.`).join('\n\n'));
+
+  await page.goto(`/session/${session}/`);
+  const detail = page.locator('[data-tile="detail"]');
+  await detail.evaluate((el) => el.scrollIntoView({ block: 'start' }));
+  const before = await detail.evaluate((el) => {
+    const scroller = document.getElementById('panels-scroll')!;
+    return {
+      scrollTop: scroller.scrollTop,
+      offset: el.getBoundingClientRect().top - scroller.getBoundingClientRect().top,
+    };
+  });
+  expect(before.scrollTop).toBeGreaterThan(500);
+
+  // Updating the CLI session changes the session revision and makes the
+  // WebSocket client refetch/rebuild every panel. Grow content above detail to
+  // ensure preserving a raw scrollTop would not be sufficient.
+  cli('session', 'post', session, '--name', 'intro', '--md',
+    Array.from({ length: 65 }, (_, i) => `Updated context ${i}.`).join('\n\n'));
+  await expect(page.locator('[data-tile="intro"]')).toContainText('Updated context 64.');
+
+  await expect.poll(() => detail.evaluate((el) => {
+    const scroller = document.getElementById('panels-scroll')!;
+    return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
+  })).toBeLessThan(100);
+});

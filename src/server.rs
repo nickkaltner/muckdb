@@ -71,6 +71,7 @@ pub async fn run() -> Result<()> {
         .route("/api/sessions", get(api_sessions))
         .route("/api/session", get(api_session))
         .route("/api/session/export", get(api_session_export))
+        .route("/api/session/mermaid", post(api_session_mermaid))
         // Axum's default body limit is 2 MB — far too small for archives that
         // carry full database snapshots.
         .route(
@@ -84,6 +85,7 @@ pub async fn run() -> Result<()> {
         .route("/api/trash", post(api_trash))
         .route("/api/activity", post(api_activity))
         .route("/chart.js", get(chart_js))
+        .route("/mermaid.js", get(mermaid_js))
         .route("/chart-adapter.js", get(chart_adapter_js))
         .route("/html2canvas.js", get(html2canvas_js))
         .route("/timeline-route.js", get(timeline_route_js))
@@ -684,6 +686,38 @@ async fn api_session(Query(p): Query<SessionParams>) -> Response {
     }
 }
 
+#[derive(Deserialize)]
+struct SaveMermaidParams {
+    session: String,
+    tile: String,
+    source: String,
+}
+
+/// Save authored Mermaid source from the dashboard editor. Diagram parsing is
+/// performed by the same vendored Mermaid renderer in the browser before this
+/// endpoint is called; the source remains editable if a later Mermaid version
+/// reports it differently.
+async fn api_session_mermaid(
+    axum::extract::Json(p): axum::extract::Json<SaveMermaidParams>,
+) -> Response {
+    if p.source.trim().is_empty() {
+        return error_json(&anyhow::anyhow!("Mermaid source must not be empty"));
+    }
+    if p.source.len() > 1024 * 1024 {
+        return error_json(&anyhow::anyhow!("Mermaid source exceeds the 1 MiB limit"));
+    }
+    let id = session::slug(&p.session);
+    let result =
+        tokio::task::spawn_blocking(move || session::set_mermaid_source(&id, &p.tile, p.source))
+            .await;
+    match result {
+        Ok(Ok(true)) => Json(json!({ "ok": true })).into_response(),
+        Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such Mermaid tile")),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("saving Mermaid source failed: {e}")),
+    }
+}
+
 /// Bundle a session into a `.muckdb` zip download (the export button).
 async fn api_session_export(Query(p): Query<SessionParams>) -> Response {
     let id = session::slug(&p.id);
@@ -844,6 +878,16 @@ async fn chart_js() -> Response {
     (
         [(header::CONTENT_TYPE, "application/javascript")],
         include_str!("assets/chart.umd.min.js"),
+    )
+        .into_response()
+}
+
+/// Vendored Mermaid renderer: authored diagrams work offline and source never
+/// leaves the local muckdb process.
+async fn mermaid_js() -> Response {
+    (
+        [(header::CONTENT_TYPE, "application/javascript")],
+        include_str!("assets/mermaid.min.js"),
     )
         .into_response()
 }

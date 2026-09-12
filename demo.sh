@@ -386,6 +386,41 @@ MD
   --event '2026-05-01 14:18|outage declared' --event '2026-05-01 14:41|resolved' \
   --caption "The same tile on an absolute time axis, shown in your local zone (a --tz local format on the column; the db stores UTC). Each system's phases over the incident, coloured by severity, with dashed markers for when the outage was declared and resolved. Hover the plot for the time (local + UTC); hover any bar for its window, details, and a clickable ticket link." >/dev/null
 
+"$MUCKDB" session section "$SESSION" --name sec-authored --title "Authored diagrams" >/dev/null
+
+# Mermaid tiles keep authored, non-tabular structure directly in the session
+# JSON. Their edit button opens a source + live-preview workspace in the UI.
+"$MUCKDB" session mermaid "$SESSION" --name system-tree --title "System topology (authored tree)" \
+  --source - --caption "A tree-shaped architecture belongs naturally in Mermaid source rather than rows in DuckDB. Click edit to change it with a live preview." <<'MMD'
+flowchart TD
+  client[Web client] --> edge[Edge gateway]
+  edge --> api[Application API]
+  api --> auth[Auth service]
+  api --> jobs[Background workers]
+  api --> db[(DuckDB)]
+  jobs --> queue[[Job queue]]
+  jobs --> db
+MMD
+
+"$MUCKDB" session mermaid "$SESSION" --name authored-checkout --title "Checkout sketch (authored sequence)" \
+  --source - --caption "An intentionally authored sequence: stored as Mermaid text, editable in the dashboard, and independent of the relational sequence tile below." <<'MMD'
+sequenceDiagram
+  actor Customer
+  participant Web
+  participant API
+  participant Payments
+  Customer->>Web: Confirm order
+  Web->>API: POST /checkout
+  API->>Payments: Authorise card
+  alt approved
+    Payments-->>API: Payment token
+    API-->>Web: Order confirmed
+  else declined
+    Payments-->>API: Declined
+    API-->>Web: Ask for another card
+  end
+MMD
+
 "$MUCKDB" session section "$SESSION" --name sec-sequence --title "Sequences" >/dev/null
 
 "$MUCKDB" session tile "$SESSION" --name checkout --title "Checkout flow across services" \
@@ -413,13 +448,16 @@ This dashboard tours every muckdb panel type from one shell script:
 | **Customers**       | map (lat/long → world map)     | geographic points, brighter = denser      |
 | **CI pipeline**     | timeline (relative seconds)    | tasks over time, sublanes for overlap, dep arrows |
 | **Incident**        | timeline (absolute time)       | phases per system, severity colour, event markers |
+| **System topology** | authored Mermaid flowchart     | tree-shaped structure lives directly in session JSON |
+| **Checkout sketch** | authored Mermaid sequence      | editable source + live preview, no relational shim |
 | **Checkout flow**   | sequence diagram               | service comms — typed participants, arrow kinds, an alt frame |
 
-Section headers (**Sales**, **Time series**, **Distributions**, **Prioritisation**, **Geography**, **Timelines**, **Sequences**)
+Section headers (**Sales**, **Time series**, **Distributions**, **Prioritisation**, **Geography**, **Timelines**, **Authored diagrams**, **Sequences**)
 group the panels and appear in the contents.
 
-Every figure here is backed by a **view** you can open (hit **explore**),
-re-sort, filter, and export — nothing is take-my-word-for-it." >/dev/null
+Data figures are backed by **views** you can open (hit **explore**) and
+re-sort, filter, or export. Authored Mermaid diagrams keep their native
+structure in the session and open into a source editor with live preview." >/dev/null
 
 PORT="${MUCKDB_PORT:-11000}"
 echo

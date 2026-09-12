@@ -186,6 +186,9 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--db', dbPath, '--view', 'msgs_loop', '--chart', 'sequence',
     '--from', 'src', '--to', 'dst', '--label', 'msg', '--group', 'grp', '--group-branch', 'branch',
     '--caption', 'A loop frame whose group-branch changes mid-frame — must export valid mermaid (no else/and).']);
+  run(binary, env, ['session', 'mermaid', 'e2e', '--name', 'authored-tree', '--title', 'Authored service tree',
+    '--mmd', 'flowchart TD\n  app[Application] --> api[API]\n  api --> jobs[Workers]\n  api --> db[(DuckDB)]',
+    '--caption', 'Tree-shaped architecture stored directly as Mermaid source.']);
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'by-day-multi', '--title', 'Multiple daily series',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n,n',
     '--caption', 'Two line series sharing an x-axis.']);

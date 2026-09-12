@@ -119,6 +119,35 @@
   /* `display: flex` above would defeat the hidden attribute (author styles
      outrank the UA's [hidden] rule) — restate it explicitly. */
   .credits-overlay[hidden] { display: none; }
+  /* Authored Mermaid workspace: source is the instrument panel, preview is the
+     output. The split collapses vertically on narrow screens. */
+  .mermaid-editor-overlay { position: fixed; inset: 0; z-index: 180; padding: 4vh 3vw; background: rgba(0,0,0,.7); display: flex; align-items: stretch; justify-content: center; }
+  .mermaid-editor { width: min(1500px, 100%); min-height: 0; display: flex; flex-direction: column; background: var(--bg); border: 1px solid var(--line); box-shadow: 0 24px 70px rgba(0,0,0,.55), var(--hi); }
+  .mermaid-editor-bar { min-height: 48px; display: flex; align-items: center; gap: 10px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
+  .mermaid-editor-title { color: var(--fg); font-size: 13px; }
+  .mermaid-editor-kind { color: var(--faint); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+  .mermaid-editor-actions { margin-left: auto; display: flex; gap: 8px; }
+  .mermaid-save { background: var(--grad-accent); color: var(--on-accent); border-color: transparent; font-weight: 700; }
+  .mermaid-save:disabled { filter: grayscale(.7); opacity: .45; cursor: not-allowed; }
+  .mermaid-workspace { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(300px, .8fr) minmax(380px, 1.2fr); }
+  .mermaid-source-pane, .mermaid-preview-pane { min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+  .mermaid-source-pane { border-right: 1px solid var(--line); background: color-mix(in srgb, var(--bg) 92%, #000); }
+  .mermaid-pane-label { flex: none; display: flex; align-items: center; min-height: 34px; padding: 7px 12px; color: var(--faint); border-bottom: 1px solid var(--line-soft); font-size: 10px; letter-spacing: .13em; text-transform: uppercase; }
+  .mermaid-editor-status { margin-left: auto; letter-spacing: 0; text-transform: none; color: var(--muted); }
+  .mermaid-editor-status.ok { color: var(--ok); }
+  .mermaid-editor-status.err { color: var(--fail); }
+  .mermaid-source { flex: 1; min-height: 0; width: 100%; resize: none; border: 0; outline: 0; padding: 16px 18px 28px; background: transparent; color: var(--fg); caret-color: var(--primary); font: 12px/1.65 var(--mono); tab-size: 2; white-space: pre; overflow: auto; }
+  .mermaid-source::selection { background: var(--selection); }
+  .mermaid-editor-preview { flex: 1; min-height: 0; overflow: auto; padding: 20px; display: grid; place-items: center; background-image: linear-gradient(var(--line-soft) 1px, transparent 1px), linear-gradient(90deg, var(--line-soft) 1px, transparent 1px); background-size: 20px 20px; }
+  .mermaid-host { min-height: 260px; overflow: visible; padding: 12px; display: grid; place-items: center; color: var(--muted); }
+  .mermaid-host svg, .mermaid-editor-preview svg { display: block; max-width: 100%; height: auto; }
+  .mermaid-host svg { width: auto; max-height: 600px; }
+  .mermaid-render-error { align-self: center; justify-self: stretch; padding: 14px 16px; border-left: 3px solid var(--fail); background: color-mix(in srgb, var(--fail) 8%, var(--surface)); color: var(--fail); white-space: pre-wrap; font-size: 11px; line-height: 1.55; }
+  @media (max-width: 850px) {
+    .mermaid-editor-overlay { padding: 0; }
+    .mermaid-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(220px, .85fr) minmax(260px, 1.15fr); }
+    .mermaid-source-pane { border-right: 0; border-bottom: 1px solid var(--line); }
+  }
   .credits-box { position: relative; width: 340px; text-align: center; padding: 30px 26px 24px; background: var(--grad-panel), var(--surface); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 18px 60px rgba(0,0,0,0.6), var(--hi); overflow: hidden; animation: cr-pop .38s cubic-bezier(0.34, 1.56, 0.64, 1) both; }
   @keyframes cr-pop { from { transform: scale(0.55); opacity: 0; } to { transform: scale(1); opacity: 1; } }
   .credits-close { position: absolute; top: 8px; right: 8px; font: inherit; font-size: 12px; background: none; border: 0; color: var(--faint); cursor: pointer; padding: 4px 8px; }
@@ -1058,6 +1087,7 @@
   </footer>
 
 <script src="/chart.js"></script>
+<script src="/mermaid.js"></script>
 <script src="/chart-adapter.js"></script>
 <script src="/html2canvas.js"></script>
 <script src="/timeline-route.js?v=__MUCKDB_VERSION__"></script>
@@ -1518,6 +1548,16 @@
     const cs = getComputedStyle(document.documentElement);
     Chart.defaults.color = cs.getPropertyValue("--muted").trim() || "#888";
     Chart.defaults.borderColor = cs.getPropertyValue("--line").trim() || "#333";
+    Chart.defaults.devicePixelRatio = chartPixelRatio();
+  }
+  // The console deliberately applies its own CSS zoom. Browser DPR does not
+  // include that scale, so a default Chart.js canvas would be rasterised at 1x
+  // and then enlarged, making every graph soft. Include both scales and retain
+  // a modest 2x floor so thin diagonal lines stay crisp on 1x displays. Cap the
+  // ratio to avoid excessive backing stores on very high-DPI screens.
+  function chartPixelRatio() {
+    const zoom = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    return Math.min(3, Math.max(2, (window.devicePixelRatio || 1) * zoom));
   }
 
   // ---- helpers ----------------------------------------------------------
@@ -3483,20 +3523,52 @@
   document.addEventListener("fullscreenchange", () => {
     if (presentation && presentation.requestedFullscreen && !document.fullscreenElement) closePresentation({ skipFullscreen: true });
   });
+  // Session changes arrive over the WebSocket after a CLI command. Rebuilding
+  // the panel list used to briefly replace it with a short "loading" node,
+  // causing the browser to clamp the scroller to zero. Remember the panel the
+  // reader is looking at (and its position in the viewport) so a live rebuild
+  // keeps them in exactly the same place, even if content above it changed.
+  function capturePanelPosition() {
+    const scroller = $("panels-scroll");
+    if (!scroller) return null;
+    const panels = [...document.querySelectorAll("#panels > .panel")];
+    if (!panels.length) return null;
+    const scrollerTop = scroller.getBoundingClientRect().top;
+    const line = scrollerTop + 40;
+    let panel = panels[0];
+    for (const candidate of panels) {
+      if (candidate.getBoundingClientRect().top <= line) panel = candidate;
+      else break;
+    }
+    return { tile: panel.dataset.tile, offset: panel.getBoundingClientRect().top - scrollerTop, scrollTop: scroller.scrollTop };
+  }
+  function restorePanelPosition(position) {
+    if (!position) return;
+    const scroller = $("panels-scroll");
+    const panel = document.querySelector(`#panels [data-tile="${cssEsc(position.tile)}"]`);
+    if (!scroller) return;
+    if (!panel) { scroller.scrollTop = position.scrollTop; return; }
+    scroller.scrollTop += panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top - position.offset;
+  }
   async function loadSession(id, push) {
     // Switching to a different session closes a stale expand overlay (but a live
     // refresh of the same session leaves it open).
     if (state.zoomPanel && state.selSession !== id) closeZoom();
+    const keepReaderPosition = !push && state.selSession === id && state.sessionData;
+    const panelPosition = keepReaderPosition ? capturePanelPosition() : null;
     state.selSession = id;
     renderSessionNav();
-    $("panels").innerHTML = '<div class="note" style="padding:18px">loading…</div>';
+    // Keep the old panels while a CLI-triggered refresh is in flight. Besides
+    // avoiding a distracting flash, this prevents a short loading node from
+    // collapsing the scroll range and sending the reader to the top.
+    if (!keepReaderPosition) $("panels").innerHTML = '<div class="note" style="padding:18px">loading…</div>';
     try {
       const s = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json();
       // Sync the URL even on error — a silent setTab preceding this call
       // relies on loadSession pushing the final URL (dead session included).
       if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; if (SHOT) markShotReady(); syncUrl(!!push); return; }
       state.sessionData = s;
-      renderPanels(s);
+      renderPanels(s, panelPosition);
     } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }
     syncUrl(!!push);
   }
@@ -3526,7 +3598,7 @@
     }
     lastPanelsSession = state.selSession; lastTileSigs = sigs;
   }
-  function renderPanels(s) {
+  function renderPanels(s, panelPosition = null) {
     // A live session update would replace the nodes being presented. Return to
     // the dashboard cleanly instead of leaving a stale slide on screen.
     if (presentation) closePresentation();
@@ -3553,10 +3625,17 @@
     state.panelSel = -1;
     const loads = tiles.map((t) => {
       if (t.type === "markdown") return loadMarkdown(t);
+      if (t.type === "mermaid") return renderMermaidTile(t);
       if (t.type !== "view") return null;
       if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
       return loadTileChart(t);
     }).filter(Boolean);
+    // Restore once the new DOM exists, then again after async markdown/chart
+    // content has found its final height.
+    if (panelPosition && !SHOT) {
+      restorePanelPosition(panelPosition);
+      Promise.allSettled(loads).then(() => requestAnimationFrame(() => requestAnimationFrame(() => restorePanelPosition(panelPosition))));
+    }
     if (SHOT) Promise.allSettled(loads).then(markShotReady);
     // Restore scroll position from the URL hash on the first render after a load
     // (e.g. a theme reload). Consumed once so live updates don't move the reader.
@@ -3605,7 +3684,7 @@
   }
   // One TOC entry per panel, in order; clicking jumps to it. Markdown panels are
   // included (they're usually the intro/summary you most want to jump to).
-  function tocKind(t) { return t.type === "markdown" ? "md" : t.type === "section" ? "section" : ((t.chart && t.chart.kind) || "table"); }
+  function tocKind(t) { return t.type === "markdown" ? "md" : t.type === "mermaid" ? "mermaid" : t.type === "section" ? "section" : ((t.chart && t.chart.kind) || "table"); }
   function renderToc(tiles, trashed) {
     const el = $("session-toc"); if (!el) return;
     trashed = trashed || [];
@@ -3989,10 +4068,170 @@
       toast(okMessage);
     } catch (e) { toast("copy failed: " + ((e && e.message) || e), true); }
   }
+  let mermaidRenderId = 0;
+  function mermaidConfig() {
+    const cs = getComputedStyle(document.documentElement);
+    const color = (name, fallback) => cs.getPropertyValue(name).trim() || fallback;
+    return {
+      startOnLoad: false,
+      securityLevel: "strict",
+      theme: "base",
+      suppressErrorRendering: true,
+      flowchart: { htmlLabels: false, useMaxWidth: true },
+      themeVariables: {
+        background: color("--surface", "#221e18"),
+        primaryColor: color("--raised", "#2b261f"),
+        primaryTextColor: color("--fg", "#ece4d8"),
+        primaryBorderColor: color("--primary-dim", "#b85a1a"),
+        secondaryColor: color("--surface", "#221e18"),
+        secondaryTextColor: color("--fg", "#ece4d8"),
+        secondaryBorderColor: color("--line", "#3b342b"),
+        tertiaryColor: color("--bg", "#1a1712"),
+        tertiaryTextColor: color("--fg", "#ece4d8"),
+        tertiaryBorderColor: color("--line", "#3b342b"),
+        lineColor: color("--muted", "#a99b88"),
+        textColor: color("--fg", "#ece4d8"),
+        noteBkgColor: color("--surface", "#221e18"),
+        noteTextColor: color("--fg", "#ece4d8"),
+        noteBorderColor: color("--primary-dim", "#b85a1a"),
+        actorBkg: color("--raised", "#2b261f"),
+        actorBorder: color("--primary-dim", "#b85a1a"),
+        actorTextColor: color("--fg", "#ece4d8"),
+        signalColor: color("--muted", "#a99b88"),
+        signalTextColor: color("--fg", "#ece4d8"),
+        labelBoxBkgColor: color("--surface", "#221e18"),
+        labelBoxBorderColor: color("--line", "#3b342b"),
+        labelTextColor: color("--fg", "#ece4d8"),
+        loopTextColor: color("--fg", "#ece4d8"),
+        activationBkgColor: color("--primary-dim", "#b85a1a"),
+        activationBorderColor: color("--primary", "#ff7d22"),
+        fontFamily: color("--mono", "ui-monospace, monospace"),
+      },
+    };
+  }
+  function mermaidErrorText(error) {
+    const message = String((error && (error.str || error.message)) || error || "Invalid Mermaid source");
+    return message.replace(/^Error:\s*/, "").trim();
+  }
+  async function renderMermaidSource(source, host) {
+    if (!host) return false;
+    if (!window.mermaid) {
+      host.innerHTML = '<div class="mermaid-render-error">Mermaid renderer is unavailable.</div>';
+      return false;
+    }
+    const token = String(++mermaidRenderId);
+    host.dataset.mermaidRender = token;
+    try {
+      mermaid.initialize(mermaidConfig());
+      const id = `muckdb-mermaid-${mermaidRenderId}`;
+      const result = await mermaid.render(id, source);
+      if (host.dataset.mermaidRender !== token) return false;
+      host.innerHTML = result.svg;
+      const svg = host.querySelector("svg");
+      if (svg) {
+        svg.removeAttribute("height"); svg.style.maxWidth = "100%"; svg.setAttribute("role", "img");
+        if (host.classList.contains("mermaid-host") && svg.viewBox && svg.viewBox.baseVal.width && svg.viewBox.baseVal.height) {
+          const box = svg.viewBox.baseVal;
+          const scale = Math.max(0.1, Math.min((host.clientWidth - 24) / box.width, 600 / box.height));
+          const width = Math.floor(box.width * scale), height = Math.floor(box.height * scale);
+          svg.style.width = width + "px"; svg.style.height = height + "px";
+          host.style.height = (height + 24) + "px";
+        }
+      }
+      if (result.bindFunctions) result.bindFunctions(host);
+      return true;
+    } catch (error) {
+      if (host.dataset.mermaidRender !== token) return false;
+      host.innerHTML = `<div class="mermaid-render-error">${esc(mermaidErrorText(error))}</div>`;
+      return false;
+    }
+  }
+  function renderMermaidTile(t) {
+    const host = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .mermaid-host`);
+    return renderMermaidSource(t.source || "", host);
+  }
+
+  let mermaidEditor = null;
+  function closeMermaidEditor(force = false) {
+    if (!mermaidEditor) return true;
+    const changed = mermaidEditor.input.value !== mermaidEditor.original;
+    if (!force && changed && !confirm("Discard unsaved diagram changes?")) return false;
+    clearTimeout(mermaidEditor.timer);
+    mermaidEditor.layer.remove();
+    mermaidEditor = null;
+    return true;
+  }
+  async function previewMermaidEditor() {
+    if (!mermaidEditor) return;
+    const editor = mermaidEditor;
+    editor.status.className = "mermaid-editor-status";
+    editor.status.textContent = "rendering…";
+    const ok = await renderMermaidSource(editor.input.value, editor.preview);
+    if (mermaidEditor !== editor) return;
+    editor.valid = ok;
+    editor.save.disabled = !ok || editor.saving;
+    editor.status.className = `mermaid-editor-status ${ok ? "ok" : "err"}`;
+    editor.status.textContent = ok ? "valid" : "fix syntax to save";
+  }
+  async function saveMermaidEditor() {
+    if (!mermaidEditor || !mermaidEditor.valid || mermaidEditor.saving) return;
+    const editor = mermaidEditor;
+    editor.saving = true; editor.save.disabled = true;
+    editor.status.className = "mermaid-editor-status"; editor.status.textContent = "saving…";
+    try {
+      const response = await fetch("/api/session/mermaid", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ session: state.selSession, tile: editor.tile.name, source: editor.input.value }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) throw new Error(data.error || `save failed (${response.status})`);
+      editor.tile.source = editor.input.value;
+      editor.original = editor.input.value;
+      toast("diagram saved");
+      closeMermaidEditor(true);
+    } catch (error) {
+      if (mermaidEditor !== editor) return;
+      editor.saving = false; editor.save.disabled = !editor.valid;
+      editor.status.className = "mermaid-editor-status err";
+      editor.status.textContent = String(error.message || error);
+    }
+  }
+  function openMermaidEditor(name) {
+    const tile = sessionTile(name);
+    if (!tile || tile.type !== "mermaid") return;
+    closeMermaidEditor(true);
+    const layer = document.createElement("div");
+    layer.className = "mermaid-editor-overlay no-screenshot";
+    layer.setAttribute("role", "dialog"); layer.setAttribute("aria-modal", "true");
+    layer.setAttribute("aria-label", `Edit ${tile.title || tile.name}`);
+    layer.innerHTML = `<div class="mermaid-editor"><div class="mermaid-editor-bar"><span class="mermaid-editor-title">${esc(tile.title || tile.name)}</span><span class="mermaid-editor-kind">Mermaid source</span><span class="mermaid-editor-actions"><button class="panel-act mermaid-cancel">cancel</button><button class="panel-act mermaid-save" disabled>save changes</button></span></div><div class="mermaid-workspace"><label class="mermaid-source-pane"><span class="mermaid-pane-label">source <span class="mermaid-editor-status">rendering…</span></span><textarea class="mermaid-source" spellcheck="false" aria-label="Mermaid source"></textarea></label><div class="mermaid-preview-pane"><div class="mermaid-pane-label">live preview</div><div class="mermaid-editor-preview" aria-live="polite"></div></div></div></div>`;
+    document.body.appendChild(layer);
+    const input = layer.querySelector(".mermaid-source");
+    input.value = tile.source || "";
+    mermaidEditor = { layer, tile, input, preview: layer.querySelector(".mermaid-editor-preview"), status: layer.querySelector(".mermaid-editor-status"), save: layer.querySelector(".mermaid-save"), original: input.value, valid: false, saving: false, timer: null };
+    layer.querySelector(".mermaid-cancel").addEventListener("click", () => closeMermaidEditor());
+    layer.querySelector(".mermaid-save").addEventListener("click", saveMermaidEditor);
+    layer.addEventListener("mousedown", (event) => { if (event.target === layer) closeMermaidEditor(); });
+    input.addEventListener("input", () => { clearTimeout(mermaidEditor.timer); mermaidEditor.timer = setTimeout(previewMermaidEditor, 180); });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Tab") {
+        event.preventDefault();
+        const start = input.selectionStart, end = input.selectionEnd;
+        input.setRangeText("  ", start, end, "end"); input.dispatchEvent(new Event("input"));
+      } else if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "s") {
+        event.preventDefault(); saveMermaidEditor();
+      }
+    });
+    input.focus(); previewMermaidEditor();
+  }
   function copyTileContent(name) {
     const t = sessionTile(name); if (!t) return;
     if (t.type === "markdown") {
       copyText(t.markdown || "", "markdown copied");
+      return;
+    }
+    if (t.type === "mermaid") {
+      copyText(t.source || "", "Mermaid source copied");
       return;
     }
     const d = tileData[name]; if (!d) { toast("table is still loading", true); return; }
@@ -4015,6 +4254,10 @@
     if (t.type === "markdown") {
       // Markdown panels size to their prose — no resize grip (data tiles keep it).
       return `<div class="panel wide" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(t.name)}</span><span class="panel-actions no-screenshot">${copyTileBtn(t.name, "Copy markdown")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="md">${mdRender(t.markdown || "")}</div></div></div>`;
+    }
+    if (t.type === "mermaid") {
+      const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
+      return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -6232,7 +6475,10 @@
           const distance = Math.abs(point.getCenterPoint(useFinalPosition).x - nearestX);
           if (distance < bestDistance) { bestDistance = distance; best = { element: point, datasetIndex: meta.index, index }; }
         });
-        if (best) active.push(best);
+        // A shorter series must disappear from the shared tooltip once its
+        // data ends. Including its nearest historic point makes the cursor and
+        // tooltip appear stuck at that endpoint while longer series continue.
+        if (best && bestDistance < 0.5) active.push(best);
       });
       return active;
     };
@@ -6662,8 +6908,12 @@
       const hide = () => { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.classList.remove("show"); };
       if (!scale || event.type === "mouseout" || event.type === "touchstart" || event.type === "touchmove") { hide(); return; }
       const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
-      const eventX = event.x / uiScale, eventY = event.y / uiScale;
-      if (eventY < 0 || eventY > chart.height || !scale.ticks?.length) { hide(); return; }
+      // beforeEvent has already normalised these into Chart.js coordinates.
+      // Only offer the timestamp helper over the painted x-axis band; allowing
+      // it across the plot produced a second tooltip beside the data tooltip on
+      // area, scatter, line and time-bar charts.
+      const eventX = event.x, eventY = event.y;
+      if (eventY < scale.top || eventY > scale.bottom || !scale.ticks?.length) { hide(); return; }
       const pixels = scale.ticks.map((_tick, i) => scale.getPixelForTick(i));
       let nearest = 0;
       for (let i = 1; i < pixels.length; i++) if (Math.abs(eventX - pixels[i]) < Math.abs(eventX - pixels[nearest])) nearest = i;
@@ -7412,6 +7662,7 @@
     const ss = ev.target.closest("[data-stats-shot]"); if (ss) { downloadStatsImage(ss.dataset.statsShot, ss); return; }
     const ci = ev.target.closest("[data-copyimg]"); if (ci) { copyPanelImage(ci.dataset.copyimg, ci); return; }
     const ct = ev.target.closest("[data-copytile]"); if (ct) { copyTileContent(ct.dataset.copytile); return; }
+    const em = ev.target.closest("[data-edit-mermaid]"); if (em) { openMermaidEditor(em.dataset.editMermaid); return; }
     const cc = ev.target.closest("[data-copycode]");
     if (cc) {
       copyText(cc.getAttribute("data-copycode") || "", "code copied");
@@ -7623,6 +7874,10 @@
   });
 
   document.addEventListener("keydown", (ev) => {
+    if (mermaidEditor) {
+      if (ev.key === "Escape") { ev.preventDefault(); closeMermaidEditor(); }
+      return;
+    }
     if (presentation) {
       if (ev.key === "ArrowRight") { ev.preventDefault(); presentationShow(presentation.index + 1); return; }
       if (ev.key === "ArrowLeft") { ev.preventDefault(); presentationShow(presentation.index - 1); return; }
@@ -7647,7 +7902,7 @@
     // Ignore key repeat and text fields so normal typing never opens the deck.
     if (!ev.repeat && ev.key.toLowerCase() === "p" && state.tab === "sessions" && state.selSession
       && !ev.metaKey && !ev.ctrlKey && !ev.altKey && !ev.target.matches("input, textarea, [contenteditable]")
-      && !document.querySelector(".pick-pop, .pick-overlay, .zoom-overlay")) {
+      && !document.querySelector(".pick-pop, .pick-overlay, .zoom-overlay, .mermaid-editor-overlay")) {
       const now = performance.now();
       if (now - presentationLastP <= 1000) { presentationLastP = 0; ev.preventDefault(); openPresentation(); }
       else presentationLastP = now;
@@ -7804,6 +8059,7 @@
           panel.style.minHeight = panel.getBoundingClientRect().height + "px";
           try {
             if (t.type === "markdown") await loadMarkdown(t);
+            else if (t.type === "mermaid") await renderMermaidTile(t);
             else await loadTileChart(t);
           } finally { panel.style.minHeight = ""; }
         }));
@@ -7891,6 +8147,7 @@
         if (width <= 0 || height <= 0) return;
         // Passing explicit unzoomed content dimensions avoids Chart.js reading
         // getBoundingClientRect(), whose values include the console's CSS zoom.
+        chart.options.devicePixelRatio = chartPixelRatio();
         chart.resize(width, height);
         chart.update("none");
       });
