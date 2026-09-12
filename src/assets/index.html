@@ -7913,21 +7913,27 @@
     const name = grip.dataset.grip;
     const el = tileBodyEl(name);
     if (!el) return;
-    const startY = e.clientY, startH = el.getBoundingClientRect().height;
+    // The app's root UI zoom scales viewport coordinates and bounding boxes,
+    // while CSS height is unzoomed. Keep the drag arithmetic in CSS pixels so
+    // a grip remains reliable in Chromium CI and at every UI scale.
+    const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const startY = e.clientY / uiScale, startH = el.getBoundingClientRect().height / uiScale;
     grip.classList.add("dragging");
-    grip.setPointerCapture(e.pointerId);
-    const move = (ev) => setTileHeight(el, clamp(Math.round(startH + (ev.clientY - startY)), 80, 1600));
+    try { grip.setPointerCapture(e.pointerId); } catch (_) { /* document listeners cover synthetic drags */ }
+    const move = (ev) => setTileHeight(el, clamp(Math.round(startH + (ev.clientY / uiScale - startY)), 80, 1600));
     const up = () => {
       grip.classList.remove("dragging");
-      grip.removeEventListener("pointermove", move);
-      grip.removeEventListener("pointerup", up);
-      grip.removeEventListener("pointercancel", up);
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", up);
+      document.removeEventListener("pointercancel", up);
       tileHeights[tileHKey(name)] = Math.round(el.getBoundingClientRect().height);
       saveTileHeights();
     };
-    grip.addEventListener("pointermove", move);
-    grip.addEventListener("pointerup", up);
-    grip.addEventListener("pointercancel", up);
+    // Listen on the document as well as taking pointer capture: Chromium can
+    // retarget a synthetic or fast drag once it leaves the tiny grip.
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", up);
+    document.addEventListener("pointercancel", up);
   });
   document.addEventListener("dblclick", (e) => {
     const grip = e.target.closest("[data-grip]");

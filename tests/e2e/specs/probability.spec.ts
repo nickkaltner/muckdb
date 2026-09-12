@@ -24,11 +24,12 @@ test.describe('probability tile', () => {
     await grip.scrollIntoViewIfNeeded();
     const before = await plot.boundingBox();
     const beforeChartHeight = await chart.evaluate((el) => el.getBoundingClientRect().height);
-    const box = await grip.boundingBox();
-    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
-    await page.mouse.down();
-    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2 + 180);
-    await page.mouse.up();
+    await grip.evaluate((el) => {
+      const r = el.getBoundingClientRect(), y = r.top + r.height / 2, pointerId = 1;
+      el.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, pointerId, clientY: y }));
+      document.dispatchEvent(new PointerEvent('pointermove', { bubbles: true, pointerId, clientY: y + 180 }));
+      document.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId, clientY: y + 180 }));
+    });
     await expect.poll(() => chart.evaluate((el) => el.getBoundingClientRect().height)).toBeGreaterThan(beforeChartHeight + 150);
     expect((await plot.boundingBox())!.height).toBeGreaterThan(before!.height);
   });
