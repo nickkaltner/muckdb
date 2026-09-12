@@ -14,17 +14,18 @@ test('chart tiles render canvases; table tile renders a table', async ({ page })
 
 test('bar tooltips follow the final three hovered bars under console zoom', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
-  const canvas = page.locator('.panel', { hasText: 'By category' }).locator('canvas');
-  await canvas.scrollIntoViewIfNeeded();
+  const panel = page.locator('.panel', { hasText: 'By category' });
+  const canvas = panel.locator('canvas');
+  const hits = panel.locator('.muck-bar-hit');
+  await expect(hits).toHaveCount(5);
   for (const requestedIndex of [-3, -2, -1]) {
-    const point = await canvas.evaluate((el, requestedIndex) => {
+    const index = await canvas.evaluate((el, requestedIndex) => {
       const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
-      const bars = chart.getDatasetMeta(0).data, index = requestedIndex < 0 ? bars.length - 1 : requestedIndex;
-      const bar = bars[index], p = bar.getCenterPoint(), width = (el as HTMLCanvasElement).clientWidth, height = (el as HTMLCanvasElement).clientHeight;
-      return { index, x: p.x * width / chart.width, y: (bar.base + bar.y) / 2 * height / chart.height };
+      const bars = chart.getDatasetMeta(0).data;
+      return requestedIndex < 0 ? bars.length + requestedIndex : requestedIndex;
     }, requestedIndex);
-    await canvas.hover({ position: { x: point.x, y: point.y } });
-    await expect.poll(() => canvas.evaluate((el) => (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements()[0]?.index)).toBe(point.index);
+    await hits.nth(index).hover();
+    await expect.poll(() => canvas.evaluate((el) => (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements()[0]?.index)).toBe(index);
   }
 });
 
