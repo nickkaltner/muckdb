@@ -12,6 +12,28 @@ test('chart tiles render canvases; table tile renders a table', async ({ page })
   await expect(page.locator('.panel', { hasText: 'All widgets' }).locator('table')).toBeVisible();
 });
 
+test('bar tooltips track the first and last bars under the console zoom', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel', { hasText: 'By category' }).locator('canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  for (const index of [0, -1]) {
+    const point = await canvas.evaluate((el, requestedIndex) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const bars = chart.getDatasetMeta(0).data;
+      const i = requestedIndex < 0 ? bars.length - 1 : requestedIndex;
+      const p = bars[i].getCenterPoint(), rect = (el as HTMLCanvasElement).getBoundingClientRect();
+      const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      return { index: i, x: (rect.left + p.x * rect.width / chart.width) / zoom, y: (rect.top + p.y * rect.height / chart.height) / zoom };
+    }, index);
+    await page.mouse.move(point.x, point.y);
+    await expect.poll(() => canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return chart.tooltip.getActiveElements()[0]?.index;
+    })).toBe(point.index);
+  }
+});
+
 test('Cartesian charts brush-zoom their x-range and can reset', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const panel = page.locator('.panel[data-tile="by-day"]');

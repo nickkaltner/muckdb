@@ -6122,6 +6122,7 @@
     if (stacked) y.stacked = true;
     return { responsive: true, maintainAspectRatio: false,
       events: ["mousemove", "mouseout", "click", "mousedown", "mouseup", "touchstart", "touchmove", "touchend"],
+      interaction: { mode: "muckNearest" },
       scales: { x, y },
       plugins: {
         legend: {
@@ -6145,6 +6146,20 @@
   // stroke between points frustratingly thin, so line charts get a small hit
   // corridor around each visible segment. Outside it, no tooltip is shown.
   if (window.Chart && Chart.Interaction && Chart.Interaction.modes) {
+    const zoomEvent = (chart, event) => {
+      const native = event.native || event;
+      if (!isFinite(native.clientX) || !isFinite(native.clientY)) return event;
+      const rect = chart.canvas.getBoundingClientRect();
+      const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      return Object.assign({}, event, {
+        x: (native.clientX * uiScale - rect.left) * chart.width / rect.width,
+        y: (native.clientY * uiScale - rect.top) * chart.height / rect.height,
+      });
+    };
+    Chart.Interaction.modes.muckIndex = (chart, event, opts, useFinalPosition) =>
+      Chart.Interaction.modes.index(chart, zoomEvent(chart, event), opts, useFinalPosition);
+    Chart.Interaction.modes.muckNearest = (chart, event, opts, useFinalPosition) =>
+      Chart.Interaction.modes.nearest(chart, zoomEvent(chart, event), opts, useFinalPosition);
     Chart.Interaction.modes.muckLineSnap = (chart, event, opts, useFinalPosition) => {
       const limit = opts.snapDistance || 14;
       let nearest = null;
@@ -6545,8 +6560,6 @@
       const event = args.event, scale = chart.scales.x;
       const hide = () => { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.classList.remove("show"); };
       if (!scale || event.type === "mouseout" || event.type === "touchstart" || event.type === "touchmove") { hide(); return; }
-      // CSS root zoom reaches Chart.js event coordinates but not its scale
-      // geometry. Convert back to canvas pixels before comparing to ticks.
       const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
       const eventX = event.x / uiScale, eventY = event.y / uiScale;
       if (eventY < 0 || eventY > chart.height || !scale.ticks?.length) { hide(); return; }
@@ -6665,7 +6678,7 @@
       const labels = rows.map((r) => String(r[xi]));
       const pieCols = catColors(labels.length);
       const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(pieCols[(c.dataIndex || 0) % pieCols.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: pieCols[i % pieCols.length], strokeStyle: pieCols[i % pieCols.length], fontColor: fg, index: i })) } } } } };
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(pieCols[(c.dataIndex || 0) % pieCols.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "muckNearest" }, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: pieCols[i % pieCols.length], strokeStyle: pieCols[i % pieCols.length], fontColor: fg, index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
@@ -6769,12 +6782,12 @@
     if (type === "bar") {
       // Event bars may be only a few pixels wide. Pick the whole time/category
       // column, instead of requiring the pointer to land on the painted bar.
-      o.interaction = { mode: "index", axis: "x", intersect: false };
+      o.interaction = { mode: "muckIndex", axis: "x", intersect: false };
       if (!timeX) o.plugins.muckBarLabelTicks = { enabled: true };
     } else if (type === "line" && !single) {
       // All series at one x-value belong together: one tooltip and one cursor
       // make comparisons much easier than selecting whichever stroke is closest.
-      o.interaction = { mode: "index", axis: "x", intersect: false };
+      o.interaction = { mode: "muckIndex", axis: "x", intersect: false };
       o.plugins.muckHoverCursor = { enabled: true };
     } else if (type === "line") {
       o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
