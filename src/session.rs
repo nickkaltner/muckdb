@@ -1203,6 +1203,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 .context("usage: muckdb session tile <name> --name T --db D (--view V|--sql S)")?;
             let id = slug(&name);
             let _lock = lock_session(&id)?;
+            let mut s = load_or_new(&id, None)?;
             let tile_name = p.get("name").context("--name <tile> required")?.to_string();
             let db = resolve_db_path(p.get("db").context("--db <path> required")?)?;
             let view = p.get("view").map(str::to_string);
@@ -1233,8 +1234,12 @@ pub fn cli(args: &[String]) -> Result<i32> {
             } else {
                 None
             };
+            let prior_y_range = s.tiles.iter().find_map(|tile| match tile {
+                Tile::View { name, chart, .. } if name == &tile_name => chart.y_range.clone(),
+                _ => None,
+            });
             let y_range = match p.get("y-range") {
-                None => None,
+                None => prior_y_range,
                 Some("tight") => Some("tight".to_string()),
                 Some(value) => bail!("--y-range must be 'tight' (got '{value}')"),
             };
@@ -1308,7 +1313,6 @@ pub fn cli(args: &[String]) -> Result<i32> {
             {
                 validate_tile(db, view.as_deref(), sql.as_deref(), chart)?;
             }
-            let mut s = load_or_new(&id, None)?;
             upsert_tile(&mut s, tile);
             save(&s)?;
             crate::facade::ensure_daemon()?;

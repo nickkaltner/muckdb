@@ -825,6 +825,8 @@
   .panel-act.active { background: var(--primary); color: var(--on-accent); border-color: var(--primary); font-weight: 700; }
   .panel-body { padding: 12px 14px; }
   .panel-chart { position: relative; height: 300px; }
+  .muck-bar-hits { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+  .muck-bar-hit { position: absolute; pointer-events: auto; background: transparent; }
   .chart-reset { position: absolute; z-index: 2; top: 7px; right: 7px; font: inherit; font-size: 10.5px; color: var(--muted); background: var(--raised); border: 1px solid var(--line);
     border-radius: 4px; padding: 2px 6px; cursor: pointer; }
   .chart-reset:hover { color: var(--fg); border-color: var(--primary-dim); }
@@ -6122,7 +6124,6 @@
     if (stacked) y.stacked = true;
     return { responsive: true, maintainAspectRatio: false,
       events: ["mousemove", "mouseout", "click", "mousedown", "mouseup", "touchstart", "touchmove", "touchend"],
-      interaction: { mode: "muckNearest" },
       scales: { x, y },
       plugins: {
         legend: {
@@ -6146,20 +6147,36 @@
   // stroke between points frustratingly thin, so line charts get a small hit
   // corridor around each visible segment. Outside it, no tooltip is shown.
   if (window.Chart && Chart.Interaction && Chart.Interaction.modes) {
-    const zoomEvent = (chart, event) => {
+    // Browser pointer coordinates stay in the unzoomed viewport coordinate
+    // space while this console's canvas rectangle is scaled by `html { zoom }`.
+    // Rebuild the event from its native client point before category lookup.
+    Chart.Interaction.modes.muckBarNearest = (chart, event, opts, useFinalPosition) => {
       const native = event.native || event;
-      if (!isFinite(native.clientX) || !isFinite(native.clientY)) return event;
+      if (!isFinite(native.clientX) || !isFinite(native.clientY)) {
+        return Chart.Interaction.modes.nearest(chart, event, Object.assign({}, opts, { intersect: true }), useFinalPosition);
+      }
       const rect = chart.canvas.getBoundingClientRect();
       const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
-      return Object.assign({}, event, {
-        x: (native.clientX * uiScale - rect.left) * chart.width / rect.width,
-        y: (native.clientY * uiScale - rect.top) * chart.height / rect.height,
-      });
+      const pointerX = native.clientX * uiScale, pointerY = native.clientY * uiScale;
+      // Playwright and Chromium report client coordinates in the unzoomed
+      // viewport, while the canvas rectangle reflects root zoom.
+      const screen = (x, y) => ({ x: rect.left + x * rect.width / chart.width, y: rect.top + y * rect.height / chart.height });
+      for (const meta of chart.getSortedVisibleDatasetMetas()) {
+        if (meta.type !== "bar") continue;
+        for (let index = 0; index < meta.data.length; index++) {
+          const bar = meta.data[index];
+          if (!bar || bar.skip) continue;
+          const p = bar.getProps(["x", "y", "base", "width"], true);
+          const left = screen(p.x - p.width / 2, 0).x, right = screen(p.x + p.width / 2, 0).x;
+          const top = screen(0, Math.min(p.y, p.base)).y, bottom = screen(0, Math.max(p.y, p.base)).y;
+          const pad = 7;
+          if (pointerX >= left - pad && pointerX <= right + pad && pointerY >= top - pad && pointerY <= bottom + pad) {
+            return [{ element: bar, datasetIndex: meta.index, index }];
+          }
+        }
+      }
+      return [];
     };
-    Chart.Interaction.modes.muckIndex = (chart, event, opts, useFinalPosition) =>
-      Chart.Interaction.modes.index(chart, zoomEvent(chart, event), opts, useFinalPosition);
-    Chart.Interaction.modes.muckNearest = (chart, event, opts, useFinalPosition) =>
-      Chart.Interaction.modes.nearest(chart, zoomEvent(chart, event), opts, useFinalPosition);
     Chart.Interaction.modes.muckLineSnap = (chart, event, opts, useFinalPosition) => {
       const limit = opts.snapDistance || 14;
       let nearest = null;
@@ -6529,6 +6546,41 @@
       ctx.restore();
     },
   };
+  // Let the browser hit-test each visible bar directly. Canvas event offsets
+  // become ambiguous under root CSS zoom; these DOM rectangles share the same
+  // layout as the canvas, so hover always names the painted bar underneath.
+  const muckBarHits = {
+    id: "muckBarHits",
+    afterUpdate(chart, _args, opts) {
+      if (!opts || !opts.enabled) return;
+      const host = chart.canvas.parentElement;
+      if (!host) return;
+      let layer = chart.$muckBarHits;
+      if (!layer) {
+        layer = document.createElement("div"); layer.className = "muck-bar-hits";
+        host.appendChild(layer); chart.$muckBarHits = layer;
+      }
+      layer.replaceChildren();
+      chart.getSortedVisibleDatasetMetas().forEach((meta) => {
+        if (meta.type !== "bar") return;
+        meta.data.forEach((bar, index) => {
+          if (!bar || bar.skip) return;
+          const p = bar.getProps(["x", "y", "base", "width"], true);
+          const hit = document.createElement("div"); hit.className = "muck-bar-hit";
+          hit.style.left = (p.x - p.width / 2) + "px"; hit.style.width = p.width + "px";
+          hit.style.top = Math.min(p.y, p.base) + "px"; hit.style.height = Math.max(1, Math.abs(p.base - p.y)) + "px";
+          const show = (event) => {
+            const active = [{ datasetIndex: meta.index, index }];
+            chart.setActiveElements(active); chart.tooltip.setActiveElements(active, { x: p.x, y: (p.y + p.base) / 2 }); chart.update("none");
+          };
+          const hide = () => { chart.setActiveElements([]); chart.tooltip.setActiveElements([], { x: 0, y: 0 }); chart.update("none"); };
+          hit.addEventListener("pointerenter", show); hit.addEventListener("pointerleave", hide);
+          layer.appendChild(hit);
+        });
+      });
+    },
+    beforeDestroy(chart) { chart.$muckBarHits?.remove(); },
+  };
   // Multi-series line charts use a shared x-position, rather than making the
   // user hunt for one of several thin strokes. Draw that shared position as a
   // subtle cursor behind the tooltip, like the timeline hover cursor.
@@ -6678,7 +6730,7 @@
       const labels = rows.map((r) => String(r[xi]));
       const pieCols = catColors(labels.length);
       const fg = getComputedStyle(document.documentElement).getPropertyValue("--fg").trim() || "#e8eaec";
-      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(pieCols[(c.dataIndex || 0) % pieCols.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, interaction: { mode: "muckNearest" }, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: pieCols[i % pieCols.length], strokeStyle: pieCols[i % pieCols.length], fontColor: fg, index: i })) } } } } };
+      return { type: "pie", data: { labels, datasets: [{ data: rows.map((r) => +r[yi]), backgroundColor: (c) => radialSeg(pieCols[(c.dataIndex || 0) % pieCols.length])(c), borderWidth: 0, hoverOffset: 8 }] }, options: { responsive: true, maintainAspectRatio: false, layout: { padding: 12 }, plugins: { legend: { position: "right", labels: { color: fg, generateLabels: (ch) => ch.data.labels.map((l, i) => ({ text: l, fillStyle: pieCols[i % pieCols.length], strokeStyle: pieCols[i % pieCols.length], fontColor: fg, index: i })) } } } } };
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
@@ -6780,14 +6832,15 @@
     const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
     if (timeX) o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
     if (type === "bar") {
-      // Event bars may be only a few pixels wide. Pick the whole time/category
-      // column, instead of requiring the pointer to land on the painted bar.
-      o.interaction = { mode: "muckIndex", axis: "x", intersect: false };
+      // A bar's entire painted rectangle is its hover target. This avoids a
+      // misleading category-wide corridor and keeps tooltips from sticking.
+      o.interaction = { mode: "muckBarNearest", intersect: true };
+      o.plugins.muckBarHits = { enabled: true };
       if (!timeX) o.plugins.muckBarLabelTicks = { enabled: true };
     } else if (type === "line" && !single) {
       // All series at one x-value belong together: one tooltip and one cursor
       // make comparisons much easier than selecting whichever stroke is closest.
-      o.interaction = { mode: "muckIndex", axis: "x", intersect: false };
+      o.interaction = { mode: "index", axis: "x", intersect: false };
       o.plugins.muckHoverCursor = { enabled: true };
     } else if (type === "line") {
       o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
@@ -7785,6 +7838,9 @@
 
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
+    // Tooltip interpolation is distracting under load: selection should feel
+    // attached to the pointer, while chart entrance animations remain intact.
+    try { Chart.defaults.plugins.tooltip.animation = false; } catch (_) {}
     // Draw target/threshold (horizontal) and event (vertical) reference lines.
     try { Chart.register(muckAnnoPlugin); } catch (_) {}
     try { Chart.register(muckBrushZoom); } catch (_) {}
@@ -7793,6 +7849,7 @@
     try { Chart.register(muckHoverCursor); } catch (_) {}
     try { Chart.register(muckTimeTickTooltip); } catch (_) {}
     try { Chart.register(muckBarLabelTicks); } catch (_) {}
+    try { Chart.register(muckBarHits); } catch (_) {}
     try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }
