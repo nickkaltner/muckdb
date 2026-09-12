@@ -112,6 +112,7 @@
      area scroll if the content is taller than the viewport rather than chopping. */
   .zoom-box.mapzoom { max-width: 98vw; height: auto; max-height: 94vh; }
   .zoom-box.mapzoom .zoom-chart { flex: none; overflow: auto; }
+  .zoom-overlay.mapzoom { padding-left: 1vw; padding-right: 1vw; }
 
   /* credits — a little video-game thank-you card behind the ? button */
   .credits-overlay { position: fixed; inset: 0; z-index: 90; background: rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
@@ -547,7 +548,7 @@
   .tl-lane-label { position: absolute; left: 0; right: 8px; display: flex; align-items: center;
     font-size: 12px; color: var(--fg); overflow: hidden; border-top: 1px solid var(--line-soft); padding-right: 6px; }
   .tl-lane-text { display: -webkit-box; width: 100%; overflow: hidden; line-height: 15px;
-    overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
+    max-height: 60px; overflow-wrap: anywhere; -webkit-box-orient: vertical; -webkit-line-clamp: 4; line-clamp: 4; }
   .tl-plot { position: relative; overflow: visible; border-left: 1px solid var(--line); }
   .tl-band { position: absolute; left: 0; right: 0; border-top: 1px solid var(--line-soft); }
   .tl-band.alt { background: color-mix(in srgb, var(--fg) 3%, transparent); }
@@ -861,7 +862,9 @@
   /* A map has an intrinsic, width-driven height. Do not stretch its chart slot
      like a canvas chart: that put a large, empty gulf before the caption. */
   .presentation-stage.presentation-map .panel-body, .presentation-stage.presentation-map .panel-chart { flex: none; }
-  .presentation-stage.presentation-map .panel-caption { margin-top: 4px; }
+  .presentation-stage.presentation-map .panel-body { padding-bottom: 16px; }
+  .presentation-stage.presentation-map .panel-caption { margin-top: 0; }
+  .presentation-stage.presentation-map .wm-legend { margin-top: 4px; }
   /* Mark in-tile controls and truncation hints that are useful for analysis
      but distracting to an audience. The class is intentionally generic so
      any future tile can opt out without presentation-specific JS. */
@@ -3334,6 +3337,7 @@
       if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
+        layer.classList.add("mapzoom");
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", mapModeToggle());
       }
       if (kind === "table" || !rows.length) { slot.innerHTML = miniTable(cols, rows, t.db, t.view || null, false, 100); return; }
@@ -6512,19 +6516,23 @@
       const event = args.event, scale = chart.scales.x;
       const hide = () => { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.classList.remove("show"); };
       if (!scale || event.type === "mouseout" || event.type === "touchstart" || event.type === "touchmove") { hide(); return; }
-      if (event.y < scale.top || event.y > scale.bottom || !scale.ticks?.length) { hide(); return; }
+      // CSS root zoom reaches Chart.js event coordinates but not its scale
+      // geometry. Convert back to canvas pixels before comparing to ticks.
+      const uiScale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      const eventX = event.x / uiScale, eventY = event.y / uiScale;
+      if (eventY < 0 || eventY > chart.height || !scale.ticks?.length) { hide(); return; }
       const pixels = scale.ticks.map((_tick, i) => scale.getPixelForTick(i));
       let nearest = 0;
-      for (let i = 1; i < pixels.length; i++) if (Math.abs(event.x - pixels[i]) < Math.abs(event.x - pixels[nearest])) nearest = i;
+      for (let i = 1; i < pixels.length; i++) if (Math.abs(eventX - pixels[i]) < Math.abs(eventX - pixels[nearest])) nearest = i;
       const left = nearest > 0 ? pixels[nearest] - pixels[nearest - 1] : Infinity;
       const right = nearest + 1 < pixels.length ? pixels[nearest + 1] - pixels[nearest] : Infinity;
-      if (Math.abs(event.x - pixels[nearest]) > Math.max(14, Math.min(left, right) * 0.42)) { hide(); return; }
+      if (Math.abs(eventX - pixels[nearest]) > Math.max(14, Math.min(left, right) * 0.42)) { hide(); return; }
       // Chart.js can omit the original browser event for replayed/normalised
       // events. Convert its canvas coordinates instead, so tick hovering works
       // in both ordinary pointer movement and the screenshot/test harness.
       const rect = chart.canvas.getBoundingClientRect();
-      const clientX = rect.left + event.x * rect.width / chart.width;
-      const clientY = rect.top + event.y * rect.height / chart.height;
+      const clientX = rect.left + eventX * rect.width / chart.width;
+      const clientY = rect.top + eventY * rect.height / chart.height;
       let tip = chart.$muckTimeTickTip;
       if (!tip) {
         tip = document.createElement("div"); tip.className = "chart-time-tip";
@@ -6533,9 +6541,11 @@
       tip.textContent = chartTickTimeTitle(scale.ticks[nearest].value, opts.tz || "utc");
       tip.classList.add("show");
       const pad = 14, w = tip.offsetWidth, h = tip.offsetHeight;
-      let x = clientX + pad, y = clientY + pad;
-      if (x + w > window.innerWidth - 6) x = clientX - w - pad;
-      if (y + h > window.innerHeight - 6) y = clientY - h - pad;
+      const viewportW = window.innerWidth / uiScale, viewportH = window.innerHeight / uiScale;
+      const pointerX = clientX / uiScale, pointerY = clientY / uiScale;
+      let x = pointerX + pad, y = pointerY + pad;
+      if (x + w > viewportW - 6) x = pointerX - w - pad;
+      if (y + h > viewportH - 6) y = pointerY - h - pad;
       tip.style.left = Math.max(6, x) + "px"; tip.style.top = Math.max(6, y) + "px";
     },
     beforeDestroy(chart) { if (chart.$muckTimeTickTip) chart.$muckTimeTickTip.remove(); },
@@ -7193,11 +7203,14 @@
     const place = (x, y) => {
       if (!tip) return;
       const w = tip.offsetWidth, h = tip.offsetHeight, pad = 14, edge = 6;
-      let nx = x + pad, ny = y + pad;
-      if (nx + w > window.innerWidth - edge) nx = x - w - pad;
-      if (ny + h > window.innerHeight - edge) ny = y - h - pad;
-      nx = Math.min(Math.max(edge, nx), Math.max(edge, window.innerWidth - w - edge));
-      ny = Math.min(Math.max(edge, ny), Math.max(edge, window.innerHeight - h - edge));
+      const scale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      const viewportW = window.innerWidth / scale, viewportH = window.innerHeight / scale;
+      const pointerX = x / scale, pointerY = y / scale;
+      let nx = pointerX + pad, ny = pointerY + pad;
+      if (nx + w > viewportW - edge) nx = pointerX - w - pad;
+      if (ny + h > viewportH - edge) ny = pointerY - h - pad;
+      nx = Math.min(Math.max(edge, nx), Math.max(edge, viewportW - w - edge));
+      ny = Math.min(Math.max(edge, ny), Math.max(edge, viewportH - h - edge));
       tip.style.left = nx + "px";
       tip.style.top = ny + "px";
     };

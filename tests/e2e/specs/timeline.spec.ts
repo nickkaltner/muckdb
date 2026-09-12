@@ -13,7 +13,8 @@ test.describe('timeline tile', () => {
     await expect(longLane).toBeVisible();
     const wrappedLines = await longLane.locator('.tl-lane-text').evaluate((text) => {
       const style = getComputedStyle(text);
-      return Math.round(text.getBoundingClientRect().height / parseFloat(style.lineHeight));
+      const zoom = parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+      return Math.round(text.getBoundingClientRect().height / (parseFloat(style.lineHeight) * zoom));
     });
     expect(wrappedLines).toBe(4);
 
