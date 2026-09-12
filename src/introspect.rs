@@ -6,6 +6,7 @@ use std::process::Command;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -652,6 +653,147 @@ pub struct QueryResult {
     pub columns: Vec<String>,
     pub rows: Vec<Vec<Value>>,
     pub row_count: usize,
+}
+
+/// The safe sources a Markdown image query may resolve to. URLs are redirected
+/// by the daemon so the browser can fetch them; database bytes are served
+/// directly after their image type has been identified.
+#[derive(Debug)]
+pub enum ImageSource {
+    Url(String),
+    Bytes { mime: &'static str, data: Vec<u8> },
+}
+
+fn image_mime(data: &[u8]) -> Option<&'static str> {
+    if data.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("image/png")
+    } else if data.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("image/jpeg")
+    } else if data.starts_with(b"GIF87a") || data.starts_with(b"GIF89a") {
+        Some("image/gif")
+    } else if data.len() >= 12 && data.starts_with(b"RIFF") && &data[8..12] == b"WEBP" {
+        Some("image/webp")
+    } else if data.starts_with(b"BM") {
+        Some("image/bmp")
+    } else if data.len() >= 12 && &data[4..8] == b"ftyp" && &data[8..12] == b"avif" {
+        Some("image/avif")
+    } else {
+        let text = String::from_utf8_lossy(data);
+        let trimmed = text.trim_start();
+        if trimmed.starts_with("<svg") || (trimmed.starts_with("<?xml") && trimmed.contains("<svg"))
+        {
+            Some("image/svg+xml")
+        } else {
+            None
+        }
+    }
+}
+
+fn data_image_source(src: &str) -> Result<ImageSource> {
+    let rest = src
+        .strip_prefix("data:")
+        .context("data image must start with data:")?;
+    let (meta, payload) = rest
+        .split_once(',')
+        .context("data image is missing its payload")?;
+    let mime = meta.split(';').next().unwrap_or_default();
+    if !mime.starts_with("image/") {
+        bail!("image data must use an image/* MIME type");
+    }
+    if !meta
+        .split(';')
+        .any(|part| part.eq_ignore_ascii_case("base64"))
+    {
+        bail!("data images must use base64 encoding");
+    }
+    let data = STANDARD
+        .decode(payload)
+        .context("invalid base64 image data")?;
+    let mime = match image_mime(&data) {
+        Some(detected) => detected,
+        None => match mime {
+            "image/png" => "image/png",
+            "image/jpeg" => "image/jpeg",
+            "image/gif" => "image/gif",
+            "image/webp" => "image/webp",
+            "image/bmp" => "image/bmp",
+            "image/avif" => "image/avif",
+            "image/svg+xml" => "image/svg+xml",
+            _ => bail!("unsupported image MIME type: {mime}"),
+        },
+    };
+    Ok(ImageSource::Bytes { mime, data })
+}
+
+/// Resolve a single-value, read-only SQL expression for a Markdown image.
+///
+/// Text values must be HTTPS/HTTP URLs or base64 data images. BLOB values are
+/// converted through DuckDB's base64 function so the CLI JSON transport does
+/// not corrupt arbitrary bytes, then served with an inferred image MIME type.
+pub fn query_image(db: &str, sql: &str) -> Result<ImageSource> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    let trimmed = sql.trim().trim_end_matches(';').trim();
+    if trimmed.is_empty() {
+        bail!("image query is empty");
+    }
+    let desc = query_json(db, &format!("DESCRIBE {trimmed}"))?;
+    let columns: Vec<(String, String)> = desc
+        .iter()
+        .filter_map(|row| {
+            Some((
+                row.get("column_name")?.as_str()?.to_string(),
+                row.get("column_type")?.as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    if columns.len() != 1 {
+        bail!(
+            "image query must return exactly one column (got {})",
+            columns.len()
+        );
+    }
+    let source = format!("SELECT * FROM ({trimmed}) AS muckdb_image LIMIT 2");
+    let rows = query_json(db, &source)?;
+    if rows.len() != 1 {
+        bail!(
+            "image query must return exactly one row (got {})",
+            rows.len()
+        );
+    }
+    let (column, column_type) = &columns[0];
+    if column_type.to_ascii_uppercase().contains("BLOB") {
+        let qcol = quote_ident(column);
+        let encoded_sql = format!(
+            "SELECT to_base64({qcol}) AS image_data FROM ({trimmed}) AS muckdb_image LIMIT 2"
+        );
+        let encoded_rows = query_json(db, &encoded_sql)?;
+        let encoded = encoded_rows
+            .first()
+            .and_then(|row| row.get("image_data"))
+            .and_then(Value::as_str)
+            .context("image query returned NULL or an empty BLOB")?;
+        let data = STANDARD
+            .decode(encoded)
+            .context("invalid base64 returned for image BLOB")?;
+        let mime = image_mime(&data).ok_or_else(|| {
+            anyhow::anyhow!("image BLOB is not a supported PNG, JPEG, GIF, WebP, BMP, AVIF or SVG")
+        })?;
+        return Ok(ImageSource::Bytes { mime, data });
+    }
+    let src = rows[0]
+        .get(column)
+        .and_then(Value::as_str)
+        .context("image query returned NULL or a non-text value")?
+        .trim();
+    if src.starts_with("http://") || src.starts_with("https://") {
+        Ok(ImageSource::Url(src.to_string()))
+    } else if src.starts_with("data:") {
+        data_image_source(src)
+    } else {
+        bail!("image value must be an http(s) URL, data:image URI, or image BLOB")
+    }
 }
 
 /// Run an arbitrary read-only SQL statement and return its rows.
@@ -2262,6 +2404,48 @@ mod tests {
         assert_eq!(s.row_count, 6, "row count reflects the filter");
         assert_eq!(col(&s, "grp").distinct, 1, "filtered grp has one value");
         assert_eq!(col(&s, "amt").max, Some(185.0), "numeric range is filtered");
+        std::fs::remove_file(&db).ok();
+    }
+
+    #[test]
+    fn query_image_resolves_blob_data_and_urls() {
+        if !duckdb_ok() {
+            eprintln!("skipping query_image_resolves_blob_data_and_urls: no duckdb");
+            return;
+        }
+        let db = temp_db("image_query");
+        let svg = r#"<svg xmlns="http://www.w3.org/2000/svg" width="2" height="2"><rect width="2" height="2" fill="red"/></svg>"#;
+        let encoded = STANDARD.encode(svg.as_bytes());
+        let sql = format!(
+            "CREATE TABLE images AS SELECT CAST('{0}' AS BLOB) AS blob_value, \
+             'data:image/svg+xml;base64,{1}' AS data_value, \
+             'https://example.test/image.png' AS url_value",
+            svg.replace('\'', "''"),
+            encoded
+        );
+        run_sql(&db, &sql);
+
+        match query_image(&db, "SELECT blob_value FROM images").expect("blob image should resolve")
+        {
+            ImageSource::Bytes { mime, data } => {
+                assert_eq!(mime, "image/svg+xml");
+                assert_eq!(data, svg.as_bytes());
+            }
+            other => panic!("expected image bytes, got {other:?}"),
+        }
+        match query_image(&db, "SELECT data_value FROM images")
+            .expect("data URI image should resolve")
+        {
+            ImageSource::Bytes { mime, data } => {
+                assert_eq!(mime, "image/svg+xml");
+                assert_eq!(data, svg.as_bytes());
+            }
+            other => panic!("expected image bytes, got {other:?}"),
+        }
+        match query_image(&db, "SELECT url_value FROM images").expect("URL image should resolve") {
+            ImageSource::Url(url) => assert_eq!(url, "https://example.test/image.png"),
+            other => panic!("expected image URL, got {other:?}"),
+        }
         std::fs::remove_file(&db).ok();
     }
 }

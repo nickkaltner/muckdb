@@ -187,6 +187,34 @@ execute once per markdown tile render. For expensive or related metrics, create
 a summary table once and select its columns instead of repeatedly scanning raw
 data. Static interpretation and captions still need review after a refresh.
 
+## Images from DuckDB in Markdown
+
+Render an image from a database-bound Markdown tile with a standard Markdown
+image label and a live image query:
+
+```sh
+muckdb session post report --name preview --db /absolute/path/report.duckdb --md - <<'MD'
+![Latest widget preview]({{image: SELECT image_blob FROM widget_images ORDER BY captured_at DESC LIMIT 1}})
+MD
+```
+
+The image query must return exactly one row and one column. It can return:
+
+- an image `BLOB` (PNG, JPEG, GIF, WebP, BMP, AVIF, or SVG);
+- an `http://` or `https://` image URL; or
+- a base64 `data:image/...` URI.
+
+For URL-valued columns:
+
+```markdown
+![Company logo]({{image: SELECT logo_url FROM companies WHERE id = 1}})
+```
+
+Image queries are read-only. Images are resolved through the daemon's image
+endpoint and rendered as safe `<img>` elements; SQL results are never inserted
+as raw Markdown or HTML. Keep the query to one image, and use separate image
+expressions when a narrative needs several images.
+
 ## Get any data into duckdb
 
 duckdb reads most formats directly — so the move for *any* incoming data is to

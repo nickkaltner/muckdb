@@ -1087,14 +1087,14 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     .or(p.get("markdown"))
                     .context("--md <text|-> required")?,
             )?;
-            let has_live_sql = md.split("```").step_by(2).any(|prose| {
+            let has_live_dynamic = md.split("```").step_by(2).any(|prose| {
                 prose
                     .split('`')
                     .step_by(2)
-                    .any(|text| text.contains("{{sql:"))
+                    .any(|text| text.contains("{{sql:") || text.contains("{{image:"))
             });
-            if has_live_sql && p.get("db").is_none() {
-                bail!("markdown SQL expressions require --db <path>");
+            if has_live_dynamic && p.get("db").is_none() {
+                bail!("markdown SQL/image expressions require --db <path>");
             }
             let tile = Tile::Markdown {
                 name: p.get("name").unwrap_or("note").to_string(),

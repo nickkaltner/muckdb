@@ -103,6 +103,19 @@ refresh after completed muckdb SQL invocations; reload after external writes.
 Markdown tile databases travel with session exports. Static captions and
 interpretation still need updating when conclusions change.
 
+Markdown tiles can also render one image per read-only SQL result:
+
+```sh
+muckdb session post analysis --name preview --db /absolute/path/report.duckdb --md - <<'MD'
+![Latest widget preview]({{image: SELECT image_blob FROM widget_images ORDER BY captured_at DESC LIMIT 1}})
+MD
+```
+
+The image query must return exactly one row and one column. It may return an
+image `BLOB` (PNG, JPEG, GIF, WebP, BMP, AVIF, or SVG), an `http(s)` image URL,
+or a base64 `data:image/...` URI. Image queries are read-only and are kept out
+of raw HTML, so database content cannot inject markup into the dashboard.
+
 ```sh
 muckdb session create analysis --title "Pond analysis" \
   --agent-session "$CODEX_THREAD_ID"

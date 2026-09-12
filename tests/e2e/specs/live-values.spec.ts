@@ -41,6 +41,22 @@ test('live markdown formats scalars, escapes text, reports errors and refreshes 
   await expect(md.locator('strong').first()).toHaveText('Revenue $25.00 USD');
 });
 
+test('live markdown renders DuckDB BLOBs and data-image values', async ({ page }) => {
+  const db = join(readState().tmpDir, 'markdown-images.duckdb');
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="8" height="8"><rect width="8" height="8" fill="red"/></svg>';
+  const dataUri = `data:image/svg+xml;base64,${Buffer.from(svg).toString('base64')}`;
+  cli(db, '-c', `CREATE TABLE images AS SELECT CAST('${svg}' AS BLOB) AS blob_value, '${dataUri}' AS data_value`);
+  cli('session', 'post', 'image-live', '--name', 'images', '--db', db, '--md',
+    '![Blob image]({{image: SELECT blob_value FROM images}})\n\n' +
+    '![Data image]({{image: SELECT data_value FROM images}})');
+
+  await page.goto('/session/image-live/');
+  const md = page.locator('[data-tile="images"] .md');
+  await expect(md.locator('img.md-db-image')).toHaveCount(2);
+  await expect(md.locator('img[alt="Blob image"]')).toHaveJSProperty('naturalWidth', 8);
+  await expect(md.locator('img[alt="Data image"]')).toHaveJSProperty('naturalWidth', 8);
+});
+
 test('view and SQL tiles honor default and explicit limits and identify truncation', async ({ page }) => {
   const db = join(readState().tmpDir, 'limits.duckdb');
   cli(db, '-c', 'CREATE VIEW many AS SELECT range AS n FROM range(10002) ORDER BY n');

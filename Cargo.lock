@@ -565,6 +565,7 @@ version = "0.4.39"
 dependencies = [
  "anyhow",
  "axum",
+ "base64",
  "daemonize",
  "directories",
  "libc",

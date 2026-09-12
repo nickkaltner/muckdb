@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 use axum::Json;
 use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
 use axum::extract::{Query, State};
-use axum::response::{Html, IntoResponse, Response};
+use axum::response::{Html, IntoResponse, Redirect, Response};
 use axum::routing::{get, post};
 use axum::{Router, http::StatusCode, http::header};
 use notify::event::ModifyKind;
@@ -65,6 +65,7 @@ pub async fn run() -> Result<()> {
         .route("/api/formats", get(api_formats))
         .route("/api/editor-schema", get(api_editor_schema))
         .route("/api/query", get(api_query))
+        .route("/api/image", get(api_image))
         .route("/api/query/export", get(api_query_export))
         .route("/api/view", post(api_save_view))
         .route("/api/sessions", get(api_sessions))
@@ -582,6 +583,25 @@ async fn api_query(Query(p): Query<QueryParams>) -> Response {
     match introspect::query(&p.db, &p.sql) {
         Ok(result) => Json(result).into_response(),
         Err(e) => error_json(&e),
+    }
+}
+
+/// Resolve one database-backed Markdown image. URL-valued images redirect so
+/// the browser fetches them directly; BLOB/data images are served as bytes.
+async fn api_image(Query(p): Query<QueryParams>) -> Response {
+    let result = tokio::task::spawn_blocking(move || introspect::query_image(&p.db, &p.sql)).await;
+    match result {
+        Ok(Ok(introspect::ImageSource::Url(url))) => Redirect::temporary(&url).into_response(),
+        Ok(Ok(introspect::ImageSource::Bytes { mime, data })) => (
+            [
+                (header::CONTENT_TYPE, mime),
+                (header::CACHE_CONTROL, "no-store"),
+            ],
+            data,
+        )
+            .into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("image query task failed: {e}")),
     }
 }
 

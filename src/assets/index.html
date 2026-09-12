@@ -920,6 +920,8 @@
   .md code { font-family: var(--mono); background: var(--raised); color: var(--primary); padding: 1px 5px; border-radius: 3px; font-size: 12px; white-space: nowrap; }
   .md pre { background: var(--bg); border: 1px solid var(--line); border-radius: 5px; padding: 10px 12px; overflow: auto; }
   .md pre code { background: none; color: var(--fg); padding: 0; white-space: pre; }
+  .md-db-image { display: block; max-width: 100%; max-height: 560px; width: auto; height: auto; margin: 8px 0 14px; border: 1px solid var(--line); border-radius: 6px; background: var(--bg); object-fit: contain; }
+  .md-image-error { display: inline-block; color: var(--muted); background: var(--raised); border: 1px dashed var(--line); border-radius: 5px; padding: 8px 10px; margin: 4px 0 12px; }
   .md-code, .md-table { position: relative; }
   .md-table { display: inline-block; max-width: 100%; vertical-align: top; }
   .md-code .md-copy, .md-table .md-copy { position: absolute; right: 6px; top: 6px; z-index: 1; }
@@ -4067,23 +4069,29 @@
   function saveTileHeights() {
     try { localStorage.setItem("muckdb.tileh", JSON.stringify(tileHeights)); } catch (_) {}
   }
-  // Resolve scalar expressions before rendering markdown. Values are inserted
-  // after markdown parsing as escaped text, never as executable HTML/markdown.
+  // Resolve live scalar expressions and image references before rendering
+  // markdown. Values are inserted after markdown parsing as escaped text, and
+  // images are emitted only through the dedicated safe image element.
   async function loadMarkdown(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .md`);
-    if (!slot || !(t.markdown || "").includes("{{sql:")) return;
+    const source = t.markdown || "";
+    if (!slot || (!source.includes("{{sql:") && !source.includes("{{image:"))) return;
     const values = [];
+    const images = [];
     const queries = new Map();
-    const template = t.markdown.replace(/```[\s\S]*?```|`[^`\n]*`|\{\{sql:([\s\S]*?)\}\}/g, (match, query) => {
-      if (query === undefined) return match;
-      const key = `\uE010${values.length}\uE011`;
-      values.push({ key, query: query.trim().replace(/;+\s*$/, "") });
+    let tokenId = 0;
+    const template = source.replace(/```[\s\S]*?```|`[^`\n]*`|\{\{(sql|image):([\s\S]*?)\}\}/g, (match, kind, query) => {
+      if (kind === undefined) return match;
+      const key = `\uE010${kind}${tokenId++}\uE011`;
+      const item = { key, query: query.trim().replace(/;+\s*$/, "") };
+      if (kind === "image") images.push(item);
+      else values.push(item);
       return key;
     });
-    if (!values.length) return;
-    slot.textContent = "Loading live values…";
+    if (!values.length && !images.length) return;
+    slot.textContent = "Loading live content…";
     try {
-      if (!t.db) throw new Error("Live SQL requires a database (--db).");
+      if (!t.db) throw new Error("Live SQL/images require a database (--db).");
       await ensureFormats(t.db);
       // Execute each distinct query once per render, sequentially to avoid a
       // dashboard summary spawning an unbounded number of database processes.
@@ -4100,7 +4108,13 @@
           if (v !== null && !colFmt(t.db, d.columns[0], null)) queries.set(query, { value: String(v) });
         } catch (e) { queries.set(query, { error: String(e.message || e) }); }
       }
-      slot.innerHTML = mdRender(template);
+      const imageRefs = {};
+      for (const { key, query } of images) {
+        imageRefs[key] ||= {
+          src: "/api/image?" + new URLSearchParams({ db: t.db, sql: query }).toString(),
+        };
+      }
+      slot.innerHTML = mdRender(template, imageRefs);
       const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -4109,6 +4123,23 @@
           node.textContent = node.textContent.split(key).join(result.error ? `SQL error: ${result.error}` : result.value);
         }
       }
+      const imageLoads = [...slot.querySelectorAll("img[data-db-image]")].map((img) => new Promise((resolve) => {
+        let settled = false;
+        const done = () => { if (!settled) { settled = true; resolve(); } };
+        const failed = () => {
+          if (settled) return;
+          settled = true;
+          const note = document.createElement("span");
+          note.className = "md-image-error";
+          note.textContent = `Unable to load ${img.alt || "database image"}.`;
+          img.replaceWith(note);
+          resolve();
+        };
+        img.addEventListener("load", done, { once: true });
+        img.addEventListener("error", failed, { once: true });
+        if (img.complete) (img.naturalWidth > 0 ? done : failed)();
+      }));
+      await Promise.all(imageLoads);
     } catch (e) { slot.textContent = String(e.message || e); }
   }
   async function loadTileChart(t) {
@@ -6892,8 +6923,14 @@
   }
 
   // Minimal, safe-ish markdown renderer for session notes.
-  function mdRender(src) {
+  function mdRender(src, imageRefs = {}) {
     const e = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    const ea = (s) => e(s).replace(/"/g, "&quot;");
+    const dbImage = (token, alt) => {
+      const ref = imageRefs[token];
+      if (!ref) return `<span class="md-image-error">Database image is loading…</span>`;
+      return `<img class="md-db-image" data-db-image="1" src="${ea(ref.src)}" alt="${ea(alt || "Database image")}">`;
+    };
     const blocks = [];
     src = String(src).replace(/```([\s\S]*?)```/g, (_, c) => {
       const code = c.replace(/^\n/, "");
@@ -6904,6 +6941,8 @@
       .replace(/`([^`]+)`/g, (_, c) => `<code>${c}</code>`)
       .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
       .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+      .replace(/!\[([^\]]*)\]\((\uE010image\d+\uE011)\)/g, (_, alt, token) => dbImage(token, alt))
+      .replace(/(\uE010image\d+\uE011)/g, (token) => dbImage(token, "Database image"))
       .replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (_, t, u) => `<a href="${e(u)}" target="_blank" rel="noopener">${t}</a>`);
     const lines = src.split(/\r?\n/);
     let html = "", i = 0;
