@@ -415,6 +415,7 @@ mod tests {
                         xlabel: None,
                         ylabel: None,
                         bars: None,
+                        y_range: None,
                         targets: vec![],
                         thresholds: vec![],
                         events: vec![],

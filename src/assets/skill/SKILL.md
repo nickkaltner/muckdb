@@ -328,7 +328,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--group COL]  (sequence: 'kind:label' — loop|opt|alt|par; contiguous equal values = one frame)
         [--group-branch COL]  (sequence: else/and compartment label within a frame)
         [--autonumber]  (sequence: number the messages)
-        [--xlabel L] [--ylabel L] [--bars gradient|solid]
+        [--xlabel L] [--ylabel L] [--bars gradient|solid] [--y-range tight]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
@@ -498,6 +498,11 @@ muckdb session rm <name> [--tile TILE]
   Markers are part of the tile, so **add or update them anytime** by re-posting the
   tile with the same `--name` (and the new `--event`/`--target` flags) — it
   replaces the panel in place and the dashboard updates live.
+- **Y-axis range — preserve zero by default; use `--y-range tight` selectively.**
+  It fits a padded, rounded range around the plotted values plus `--target` and
+  `--threshold` lines, making small differences in accuracy, latency, or rates
+  legible. Use it only when the caption makes the truncated baseline clear; do
+  not use it when absolute magnitude is the point of comparison.
 - **Trendline — `--trend`.** Overlays a smoothed trendline (locally-weighted
   regression, so it tracks the series' actual level — edges included) on a
   single-series `bar`/`line`/`area`/`scatter` tile. The quickest way to make a

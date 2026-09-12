@@ -6114,7 +6114,9 @@
           offset: !!offset, grid: { color: gridCol, offset: !!offset },
           ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, major: { enabled: true },
             font: (ctx) => (ctx.tick && ctx.tick.major ? { weight: "bold" } : {}) } }
-      : { type: scatter ? "linear" : "category", grid: { color: gridMinor } };
+      : { type: scatter ? "linear" : "category", grid: scatter ? { color: gridMinor } : {
+          color: gridMinor, drawOnChartArea: false, drawTicks: false,
+        } };
     if (stacked) x.stacked = true;
     const y = { grid: { color: gridMinor } };
     if (stacked) y.stacked = true;
@@ -6485,6 +6487,33 @@
       ctx.restore();
     },
   };
+  // Category-scale grid ticks land on category boundaries for bar charts. Draw
+  // a short, quiet connector from each rendered bar group's actual centre so
+  // angled labels have an unambiguous visual anchor.
+  const muckBarLabelTicks = {
+    id: "muckBarLabelTicks",
+    afterDatasetsDraw(chart, _args, opts) {
+      if (!opts || !opts.enabled || !chart.chartArea || !chart.scales.x) return;
+      const centers = new Map();
+      chart.getSortedVisibleDatasetMetas().forEach((meta) => {
+        if (meta.type !== "bar" || meta.dataset?._muckBand) return;
+        (meta.data || []).forEach((bar, i) => {
+          if (!bar || bar.skip) return;
+          const p = bar.getCenterPoint();
+          const entry = centers.get(i) || { sum: 0, n: 0 };
+          entry.sum += p.x; entry.n += 1; centers.set(i, entry);
+        });
+      });
+      if (!centers.size) return;
+      const ctx = chart.ctx, a = chart.chartArea;
+      ctx.save(); ctx.strokeStyle = mixColors("var(--fg)", 15, "var(--surface)"); ctx.lineWidth = 1;
+      centers.forEach(({ sum, n }) => {
+        const x = sum / n;
+        ctx.beginPath(); ctx.moveTo(x, a.bottom); ctx.lineTo(x, a.bottom + 9); ctx.stroke();
+      });
+      ctx.restore();
+    },
+  };
   // Multi-series line charts use a shared x-position, rather than making the
   // user hunt for one of several thin strokes. Draw that shared position as a
   // subtle cursor behind the tooltip, like the timeline hover cursor.
@@ -6574,6 +6603,22 @@
       return value == null || value === "" || !isFinite(Number(value)) ? null : Number(value);
     };
     const anno = annoSpec(spec, timeX ? toX : null);
+    const applyYRange = (o, values) => {
+      if (spec.y_range !== "tight" || !o.scales?.y) return o;
+      const finite = [...values, ...(anno?.hlines || []).map((h) => h.value)].filter((v) => isFinite(v));
+      if (!finite.length) return o;
+      const lo = Math.min(...finite), hi = Math.max(...finite);
+      const span = Math.max(hi - lo, Math.max(Math.abs(lo), Math.abs(hi), 1) * 0.04);
+      const rough = span / 5, exponent = Math.pow(10, Math.floor(Math.log10(rough)));
+      const step = ([1, 2, 2.5, 5, 10].find((n) => rough <= n * exponent) || 10) * exponent;
+      o.scales.y.min = Math.floor((lo - span * 0.08) / step) * step;
+      o.scales.y.max = Math.ceil((hi + span * 0.08) / step) * step;
+      return o;
+    };
+    const reserveAnnotationHeadroom = (o) => {
+      if (anno?.hlines?.some((h) => h.label)) o.layout = { padding: { top: 20 } };
+      return o;
+    };
     // Apply column display formats to the axes and tooltips. Time axes keep
     // their calendar-aware labels; other x axes use the column format too.
     const applyXFmt = (o) => {
@@ -6624,7 +6669,8 @@
     }
     if (kind === "scatter") {
       const yi = cols.indexOf(ys[0]);
-      const o = applyAxisTitles(applyXFmt(applyYFmt(chartOpts(true, timeX, false, minUnit)))); if (anno) o.plugins.muckAnno = anno;
+      const pts = rows.map((r) => ({ x: xv(r), y: yv(r, yi) }));
+      const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(true, timeX, false, minUnit)))), pts.map((p) => p.y))); if (anno) o.plugins.muckAnno = anno;
       if (timeX) {
         // Scatter points have {x, y} data but no category label, so Chart.js's
         // default title is empty. Read the original x column for every hover.
@@ -6632,7 +6678,6 @@
         o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
       }
       o.plugins.legend.display = false; // one series — the title already names it
-      const pts = rows.map((r) => ({ x: xv(r), y: yv(r, yi) }));
       const sets = [{ label: ys[0], data: pts, backgroundColor: hexA(PAL[0], 0.7), borderWidth: 0, pointRadius: 2.5, pointHoverRadius: 4 }];
       if (spec.trend) { const t = trendDataset(pts, true); if (t) sets.push(t); }
       return { type: "scatter", data: { datasets: sets }, options: o };
@@ -6718,12 +6763,14 @@
       }
     }
     const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
-    const o = applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))); if (anno) o.plugins.muckAnno = anno;
+    const allYValues = datasets.flatMap((set) => set.data.map((v) => v && typeof v === "object" ? v.y : v));
+    const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
     if (timeX) o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
     if (type === "bar") {
       // Event bars may be only a few pixels wide. Pick the whole time/category
       // column, instead of requiring the pointer to land on the painted bar.
       o.interaction = { mode: "index", axis: "x", intersect: false };
+      if (!timeX) o.plugins.muckBarLabelTicks = { enabled: true };
     } else if (type === "line" && !single) {
       // All series at one x-value belong together: one tooltip and one cursor
       // make comparisons much easier than selecting whichever stroke is closest.
@@ -7732,6 +7779,7 @@
     try { Chart.register(muckConfidenceBand); } catch (_) {}
     try { Chart.register(muckHoverCursor); } catch (_) {}
     try { Chart.register(muckTimeTickTooltip); } catch (_) {}
+    try { Chart.register(muckBarLabelTicks); } catch (_) {}
     try { Chart.register(trendReveal); } catch (_) {}
     // Screenshot mode captures right after render — draw everything at once.
     if (SHOT) { try { Chart.defaults.animation = false; } catch (_) {} }

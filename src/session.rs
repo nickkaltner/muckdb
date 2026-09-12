@@ -84,6 +84,10 @@ pub struct Chart {
     /// for categorical data). Unset → gradient for a single series.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bars: Option<String>,
+    /// Y-axis range: "tight" fits a padded, rounded range around the data and
+    /// horizontal reference lines instead of forcing a zero baseline.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub y_range: Option<String>,
     /// Horizontal reference lines at a y-value (drawn in the accent colour).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub targets: Vec<Marker>,
@@ -1229,6 +1233,11 @@ pub fn cli(args: &[String]) -> Result<i32> {
             } else {
                 None
             };
+            let y_range = match p.get("y-range") {
+                None => None,
+                Some("tight") => Some("tight".to_string()),
+                Some(value) => bail!("--y-range must be 'tight' (got '{value}')"),
+            };
             let tile = Tile::View {
                 name: tile_name.clone(),
                 title: p.get("title").map(str::to_string),
@@ -1262,6 +1271,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     xlabel: p.get("xlabel").map(str::to_string),
                     ylabel: p.get("ylabel").map(str::to_string),
                     bars: p.get("bars").map(str::to_string),
+                    y_range,
                     y,
                     targets: parse_markers(&p.get_all("target")),
                     thresholds: parse_markers(&p.get_all("threshold")),
@@ -1480,6 +1490,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
@@ -1508,6 +1519,9 @@ mod tests {
         // Older sessions without the field still load.
         let old: Chart = serde_json::from_str("{\"kind\":\"bar\",\"y\":[]}").unwrap();
         assert!(old.value.is_none());
+        let tight: Chart =
+            serde_json::from_str("{\"kind\":\"bar\",\"y\":[],\"y_range\":\"tight\"}").unwrap();
+        assert_eq!(tight.y_range.as_deref(), Some("tight"));
     }
 
     #[test]
@@ -1531,6 +1545,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
@@ -1588,6 +1603,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
@@ -1653,6 +1669,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
@@ -1923,6 +1940,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
@@ -2005,6 +2023,7 @@ mod tests {
             xlabel: None,
             ylabel: None,
             bars: None,
+            y_range: None,
             targets: vec![],
             thresholds: vec![],
             events: vec![],
