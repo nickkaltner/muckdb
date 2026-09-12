@@ -7875,8 +7875,30 @@
   // Default page size follows the window height; recompute on resize in auto mode.
   state.pageSize = autoPageSize();
   let resizeTimer = null;
+  let chartResizeTimer = null;
+  function recoverChartsAfterResize() {
+    clearTimeout(chartResizeTimer);
+    chartResizeTimer = setTimeout(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+      if (!window.Chart) return;
+      document.querySelectorAll("canvas").forEach((canvas) => {
+        const chart = Chart.getChart(canvas);
+        if (!chart) return;
+        const host = canvas.parentElement;
+        if (!host) return;
+        const style = getComputedStyle(host);
+        const width = host.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0);
+        const height = host.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0);
+        if (width <= 0 || height <= 0) return;
+        // Passing explicit unzoomed content dimensions avoids Chart.js reading
+        // getBoundingClientRect(), whose values include the console's CSS zoom.
+        chart.resize(width, height);
+        chart.update("none");
+      });
+    })), 140);
+  }
   window.addEventListener("resize", () => {
     fitResultsHead();
+    recoverChartsAfterResize();
     if (state.pageMode !== "auto") return;
     clearTimeout(resizeTimer);
     resizeTimer = setTimeout(() => {
@@ -7884,6 +7906,7 @@
       if (state.tab === "databases" && state.mode === "table" && state.subview === "rows" && state.selTable) loadRows();
     }, 200);
   });
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", recoverChartsAfterResize);
 
   if (window.Chart) {
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}

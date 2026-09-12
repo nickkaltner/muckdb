@@ -1,6 +1,46 @@
 import { test, expect } from '@playwright/test';
 import { SESSION_ID } from '../constants';
 
+test('chart canvases recover after browser zoom changes', async ({ page, context }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  const measure = () => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el), rect = el.getBoundingClientRect();
+    const parent = el.parentElement!.getBoundingClientRect();
+    const pixels = chart.ctx.getImageData(0, 0, el.width, el.height).data;
+    let bitmapHash = 2166136261;
+    for (let i = 0; i < pixels.length; i += 17) bitmapHash = Math.imul(bitmapHash ^ pixels[i], 16777619);
+    return { innerWidth, dpr: devicePixelRatio, attrWidth: el.width, attrHeight: el.height,
+      clientWidth: el.clientWidth, clientHeight: el.clientHeight, rectWidth: rect.width,
+      rectHeight: rect.height, parentWidth: parent.width, chartWidth: chart.width,
+      chartHeight: chart.height, styleWidth: el.style.width, styleHeight: el.style.height,
+      bitmapHash, chartDpr: chart.currentDevicePixelRatio,
+      points: chart.getDatasetMeta(0).data.map((p: any) => [p.x, p.y]),
+    };
+  });
+  await page.waitForTimeout(1200);
+  const before = await measure();
+  const cdp = await context.newCDPSession(page);
+  await cdp.send('Emulation.setDeviceMetricsOverride', {
+    width: 1024, height: 576, deviceScaleFactor: 1.25, mobile: false,
+    screenWidth: 1280, screenHeight: 720,
+  });
+  await page.waitForTimeout(20);
+  const zoomed = await measure();
+  await cdp.send('Emulation.clearDeviceMetricsOverride');
+  await page.waitForTimeout(500);
+  const restored = await measure();
+  expect(zoomed.dpr).toBe(1.25);
+  expect(restored.chartWidth).toBe(before.chartWidth);
+  expect(restored.chartHeight).toBe(before.chartHeight);
+  expect(restored.chartDpr).toBe(before.chartDpr);
+  expect(restored.rectWidth).toBeCloseTo(before.rectWidth, 0);
+  expect(restored.bitmapHash).toBe(before.bitmapHash);
+  expect(restored.points).toEqual(before.points);
+});
+
 for (const kind of ['scatter', 'pie']) {
   test(`${kind} hover selects every point under console zoom`, async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
