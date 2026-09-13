@@ -28,3 +28,10 @@ test('page loads with tabs and no console errors', async ({ page }) => {
   await page.waitForTimeout(300);
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
 });
+
+test('daemon exposes the running build version', async ({ request }) => {
+  const response = await request.get('/api/version');
+  expect(response.ok()).toBeTruthy();
+  const body = await response.json();
+  expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
+});

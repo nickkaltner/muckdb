@@ -51,6 +51,7 @@ pub async fn run() -> Result<()> {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/api/version", get(api_version))
         .route("/api/state", get(api_state))
         .route("/api/databases", get(api_databases))
         .route("/api/tables", get(api_tables))
@@ -292,6 +293,10 @@ async fn index() -> Response {
         Html(PAGE.as_str()),
     )
         .into_response()
+}
+
+async fn api_version() -> Json<serde_json::Value> {
+    Json(json!({ "version": env!("CARGO_PKG_VERSION") }))
 }
 
 /// Serialize the current derived state, or an error response.

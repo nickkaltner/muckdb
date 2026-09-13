@@ -4,6 +4,7 @@
 //! shared store, then transparently runs the real `duckdb` binary so muckdb is
 //! a drop-in replacement for the duckdb CLI.
 
+use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -80,11 +81,56 @@ fn daemon_listening() -> bool {
     TcpStream::connect_timeout(&addr, Duration::from_millis(200)).is_ok()
 }
 
+fn http_get(path: &str) -> Option<String> {
+    let port = resolved_port();
+    let addr = SocketAddr::from(([127, 0, 0, 1], port));
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(200)).ok()?;
+    stream
+        .set_read_timeout(Some(Duration::from_millis(500)))
+        .ok()?;
+    write!(stream, "GET {path} HTTP/1.0\r\nHost: localhost\r\n\r\n").ok()?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response).ok()?;
+    response
+        .split_once("\r\n\r\n")
+        .map(|(_, body)| body.to_string())
+}
+
+fn version_in_page(page: &str) -> Option<String> {
+    page.split(|c: char| !(c.is_ascii_digit() || c == '.' || c == 'v'))
+        .find_map(|word| {
+            let version = word.strip_prefix('v')?;
+            (version.split('.').count() == 3
+                && version.chars().all(|c| c.is_ascii_digit() || c == '.'))
+            .then(|| version.to_string())
+        })
+}
+
+/// Ask the listener which muckdb build it is. The HTML fallback recognises
+/// daemons released before `/api/version` existed.
+pub(crate) fn daemon_version() -> Option<String> {
+    http_get("/api/version")
+        .and_then(|body| serde_json::from_str::<serde_json::Value>(&body).ok())
+        .and_then(|value| value.get("version")?.as_str().map(str::to_string))
+        .or_else(|| http_get("/").and_then(|page| version_in_page(&page)))
+}
+
 /// Start the daemon if it isn't already running, returning once it accepts
 /// connections (or the timeout elapses).
 pub fn ensure_daemon() -> Result<()> {
     if daemon_listening() {
-        return Ok(());
+        return match daemon_version() {
+            Some(version) if version == env!("CARGO_PKG_VERSION") => Ok(()),
+            Some(version) => anyhow::bail!(
+                "port {} is serving muckdb v{version}, but this CLI is v{}; stop the old daemon before starting this version",
+                resolved_port(),
+                env!("CARGO_PKG_VERSION")
+            ),
+            None => anyhow::bail!(
+                "port {} is already occupied by an unknown service",
+                resolved_port()
+            ),
+        };
     }
 
     let exe = std::env::current_exe().context("locating muckdb executable")?;
@@ -106,6 +152,13 @@ pub fn ensure_daemon() -> Result<()> {
         std::thread::sleep(Duration::from_millis(50));
     }
     let _ = child.wait();
+    if !daemon_listening() {
+        anyhow::bail!(
+            "muckdb daemon did not start on port {}; see {}",
+            resolved_port(),
+            crate::paths::daemon_log(resolved_port())?.display()
+        );
+    }
     // Surface a non-loopback bind on the starting terminal too — the daemon's
     // own warning only reaches its detached log.
     if let Some(w) = crate::server::public_bind_warning() {
@@ -168,6 +221,15 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn extracts_version_from_legacy_daemon_html() {
+        assert_eq!(
+            version_in_page("<span>v0.4.45</span>"),
+            Some("0.4.45".to_string())
+        );
+        assert_eq!(version_in_page("<html>no version</html>"), None);
+    }
 
     fn detect(args: &[&str]) -> Option<String> {
         let owned: Vec<String> = args.iter().map(|s| s.to_string()).collect();

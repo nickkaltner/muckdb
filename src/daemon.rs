@@ -63,7 +63,13 @@ pub fn status() -> Result<i32> {
             Ok(0)
         }
         (true, None) => {
-            println!("muckdb daemon running at http://localhost:{port} (no pidfile)");
+            if let Some(version) = facade::daemon_version() {
+                println!(
+                    "muckdb daemon v{version} running at http://localhost:{port} (no pidfile)"
+                );
+            } else {
+                println!("unknown service running at http://localhost:{port} (no pidfile)");
+            }
             Ok(0)
         }
         (false, Some(pid)) if pid_alive(pid) => {
