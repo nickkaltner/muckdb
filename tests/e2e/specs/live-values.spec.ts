@@ -142,3 +142,16 @@ test('CLI session updates keep the reader on the same panel', async ({ page }) =
     return el.getBoundingClientRect().top - scroller.getBoundingClientRect().top;
   })).toBeLessThan(100);
 });
+
+test('an update to another session does not refresh the open session', async ({ page }) => {
+  await page.goto('/session/e2e/#t=todos');
+  const list = page.locator('[data-tile="todos"] .todo-list');
+  await expect(list).toBeVisible();
+  await list.evaluate((element: any) => { element.identityMarker = true; });
+  const countBefore = Number((await page.locator('#session-combo .cv-sub').textContent())?.match(/\d+/)?.[0]);
+
+  cli('session', 'post', 'unrelated-live-update', '--name', 'note', '--md', 'Changed elsewhere.');
+  await expect(page.locator('#session-combo .cv-sub')).toContainText(`${countBefore + 1} sessions`);
+
+  expect(await list.evaluate((element: any) => element.identityMarker)).toBe(true);
+});

@@ -8068,9 +8068,15 @@
     }
   }
   let sessionDataRevision = null;
+  let sessionRevisions = new Map();
   let formatsRev = null; // last-seen fingerprint of the format registry
   let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
+    if (s.tile_refresh) {
+      const change = s.tile_refresh;
+      if (state.tab === "sessions" && state.selSession === change.session) refreshSessionTile(change.tile);
+      return;
+    }
     // A different boot stamp means the daemon restarted (usually an upgrade) —
     // this page's JS may be stale against the new server, so reload it.
     if (s.boot !== undefined) {
@@ -8081,7 +8087,15 @@
     const dataChanged = sessionDataRevision !== null && sessionDataRevision !== revision;
     sessionDataRevision = revision;
     state.history = s.history || [];
-    state.sessions = s.sessions || [];
+    const nextSessions = s.sessions || [];
+    const nextRevisions = new Map(nextSessions.map((session) => [session.id, session.updated]));
+    const changedSessions = new Set();
+    if (sessionRevisions.size) {
+      for (const [id, updated] of nextRevisions) if (sessionRevisions.get(id) !== updated) changedSessions.add(id);
+      for (const id of sessionRevisions.keys()) if (!nextRevisions.has(id)) changedSessions.add(id);
+    }
+    sessionRevisions = nextRevisions;
+    state.sessions = nextSessions;
     setUpdateStatus(s.update);
     // A changed format registry invalidates every cached format map so the
     // open view (and any session tiles) re-render with the new formats.
@@ -8096,16 +8110,25 @@
     }
     renderLedger();
     renderSessionNav();
-    maybeRefreshSession(dataChanged || formatsChanged);
+    maybeRefreshSession(dataChanged, formatsChanged, changedSessions);
     if (!suppressSync && !pendingNav) maybeAutoSession();
     refreshDbExistence(s.databases || []);
   }
-  function maybeRefreshSession(dataChanged = false) {
+  function maybeRefreshSession(dataChanged = false, formatsChanged = false, changedSessions = new Set()) {
     if (state.tab !== "sessions" || !state.selSession) return;
     const sum = state.sessions.find((s) => s.id === state.selSession);
     if (!sum) return;
     if (!state.sessionData || sum.updated !== state.sessionData.updated) loadSession(state.selSession, false);
-    else if (dataChanged) refreshSessionValues();
+    else if (formatsChanged || (dataChanged && changedSessions.size === 0)) refreshSessionValues();
+  }
+  async function refreshSessionTile(name) {
+    if (!state.sessionData) return;
+    const tile = (state.sessionData.tiles || []).find((candidate) => candidate.name === name);
+    const panel = document.querySelector(`#panels [data-tile="${cssEsc(name)}"]`);
+    if (!tile || !panel || tile.trashed || tile.type !== "view") return;
+    panel.style.minHeight = panel.getBoundingClientRect().height + "px";
+    try { await loadTileChart(tile); }
+    finally { panel.style.minHeight = ""; }
   }
   // Keep panel nodes, the reader's position, expansion state and TOC intact
   // when only data/formatting changes. Coalesce bursts of CLI updates.

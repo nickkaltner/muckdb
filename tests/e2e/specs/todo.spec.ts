@@ -7,11 +7,13 @@ test('todo tile renders states, updates DuckDB, and can leave presentation mode'
   await expect(panel.locator('.todo-item')).toHaveCount(4);
   await expect(panel.locator('.todo-item[data-status="success"] .todo-text')).toHaveCSS('text-decoration-line', 'line-through');
   await expect(panel).not.toContainText('Success means every chart');
+  await page.locator('.panel[data-tile="all"]').evaluate((element: any) => { element.identityMarker = true; });
 
   const pending = panel.locator('.todo-item', { hasText: 'Review the dashboard' });
   await pending.hover();
   await pending.locator('[data-todo-status="success"]').click();
   await expect(pending).toHaveAttribute('data-status', 'success');
+  expect(await page.locator('.panel[data-tile="all"]').evaluate((element: any) => element.identityMarker)).toBe(true);
 
   const session = await (await page.request.get(`/api/session?id=${SESSION_ID}`)).json();
   const db = session.tiles.find((tile: { name: string; db?: string }) => tile.name === 'todos').db;

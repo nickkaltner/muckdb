@@ -582,14 +582,14 @@ fn sql_literal(value: &str) -> String {
     format!("'{}'", value.replace('\'', "''"))
 }
 
-/// Change one collaborative todo row and wake every open dashboard by saving
-/// the session after DuckDB commits the update.
+/// Change one collaborative todo row. The HTTP endpoint broadcasts a targeted
+/// tile refresh after DuckDB commits the update; the session file is unchanged.
 pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result<bool> {
     if !matches!(status, "pending" | "skipped" | "success" | "failure") {
         bail!("invalid todo status '{status}'");
     }
     let _lock = lock_session(id)?;
-    let Some(mut s) = load(id)? else {
+    let Some(s) = load(id)? else {
         return Ok(false);
     };
     let Some(Tile::View {
@@ -628,8 +628,6 @@ pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result
             String::from_utf8_lossy(&output.stderr).trim()
         );
     }
-    s.updated = store::now_millis();
-    save(&s)?;
     Ok(true)
 }
 

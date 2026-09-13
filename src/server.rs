@@ -734,15 +734,23 @@ struct TodoStatusParams {
 }
 
 async fn api_session_todo(
+    State(state): State<AppState>,
     axum::extract::Json(p): axum::extract::Json<TodoStatusParams>,
 ) -> Response {
     let id = session::slug(&p.session);
+    let event_id = id.clone();
+    let event_tile = p.tile.clone();
     let result = tokio::task::spawn_blocking(move || {
         session::set_todo_status(&id, &p.tile, &p.item, &p.status)
     })
     .await;
     match result {
-        Ok(Ok(true)) => Json(json!({ "ok": true })).into_response(),
+        Ok(Ok(true)) => {
+            let _ = state.tx.send(
+                json!({ "tile_refresh": { "session": event_id, "tile": event_tile } }).to_string(),
+            );
+            Json(json!({ "ok": true })).into_response()
+        }
         Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such updateable todo tile")),
         Ok(Err(e)) => error_json(&e),
         Err(e) => error_json(&anyhow::anyhow!("todo update task failed: {e}")),
