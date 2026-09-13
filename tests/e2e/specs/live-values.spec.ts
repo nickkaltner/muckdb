@@ -109,6 +109,34 @@ test('format updates refresh values without replacing panels or moving the reade
   expect(Math.abs(after - before)).toBeLessThan(3);
 });
 
+test('live chart refreshes retain faded legend series', async ({ page }) => {
+  const db = join(readState().tmpDir, 'legend-refresh.duckdb');
+  cli(db, '-c', 'CREATE TABLE readings AS SELECT 1 AS epoch, 0.7 AS alpha, 0.6 AS beta UNION ALL SELECT 2, 0.8, 0.7');
+  cli('session', 'tile', 'legend-refresh', '--name', 'comparison', '--db', db, '--view', 'readings',
+    '--chart', 'line', '--x', 'epoch', '--y', 'alpha,beta', '--caption', 'Two series updated live.');
+
+  await page.goto('/session/legend-refresh/');
+  const canvas = page.locator('[data-tile="comparison"] canvas');
+  await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    const hit = chart.legend.legendHitBoxes[0], r = el.getBoundingClientRect();
+    const x = r.left + (hit.left + hit.width / 2) * r.width / chart.width;
+    const y = r.top + (hit.top + hit.height / 2) * r.height / chart.height;
+    el.dispatchEvent(new MouseEvent('click', { bubbles: true, button: 0, clientX: x, clientY: y }));
+  });
+  await expect.poll(() => canvas.evaluate((el) =>
+    !!(window as any).Chart.getChart(el as HTMLCanvasElement).$muckFadedDatasets[0])).toBe(true);
+
+  await canvas.evaluate((el: any) => { el.identityMarker = true; });
+  // A session edit reloads the dashboard's panels, creating a new Chart.js
+  // instance. The reader's legend choice must survive that replacement.
+  cli('session', 'post', 'legend-refresh', '--name', 'refresh-note', '--md', 'The comparison was refreshed.');
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return !!chart && !!chart.$muckFadedDatasets[0] && !(el as any).identityMarker;
+  })).toBe(true);
+});
+
 test('CLI session updates keep the reader on the same panel', async ({ page }) => {
   const session = 'cli-scroll';
   const intro = Array.from({ length: 45 }, (_, i) => `Original context ${i}.`).join('\n\n');

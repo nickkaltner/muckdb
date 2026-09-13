@@ -75,3 +75,14 @@ test('time-axis labels leave breathing room and reveal their full timestamp on h
   await expect(tip).toContainText('2026-');
   await expect(tip).toContainText('UTC');
 });
+
+test('screenshot capture height includes the scaled chart x-axis', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/?shot=1&tile=by-day`);
+  await expect(page.locator('.panel-chart canvas')).toBeVisible();
+  await expect.poll(() => page.locator('html').getAttribute('data-shot-ready')).toBe('1');
+  const dimensions = await page.evaluate(() => ({
+    stamped: Number(document.documentElement.dataset.shotH),
+    rendered: Math.ceil(document.body.getBoundingClientRect().height),
+  }));
+  expect(dimensions.stamped).toBeGreaterThanOrEqual(dimensions.rendered);
+});

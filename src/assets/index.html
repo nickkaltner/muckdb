@@ -1218,6 +1218,10 @@
   }
 
   let charts = [];
+  // Legend choices belong to the dashboard reader, rather than to a short-lived
+  // Chart.js instance. Session updates replace panel DOM, so retain the faded
+  // series by session/tile and restore them on the replacement chart.
+  const fadedSeriesByTile = new Map();
   let tocSpyCleanup = null;
   // A TOC click pins its entry active through the smooth scroll so the spy can't
   // briefly flip to the panel above as the scroll settles.
@@ -3758,7 +3762,14 @@
   // stamp the rendered content height on <html> for the capture pass to read.
   function markShotReady() {
     setTimeout(() => {
-      document.documentElement.setAttribute("data-shot-h", String(Math.ceil(document.body.scrollHeight)));
+      // `scrollHeight` is measured before the console's CSS zoom, whereas the
+      // headless screenshot surface is in post-zoom pixels. Using it directly
+      // cuts the lower part of a panel off at interface scales above 100% —
+      // precisely where Chart.js draws its x-axis ticks and legend. The body's
+      // bounding rect is in the capture surface's pixels, so it includes the
+      // scaled chart and its full bottom margin.
+      const bodyHeight = document.body.getBoundingClientRect().height;
+      document.documentElement.setAttribute("data-shot-h", String(Math.ceil(Math.max(document.body.scrollHeight, bodyHeight))));
       document.documentElement.setAttribute("data-shot-ready", "1");
     }, 60);
   }
@@ -4506,6 +4517,7 @@
   async function loadTileChart(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
     if (!slot) return;
+    const fadedSeriesKey = `${state.selSession || ""}/${t.name}`;
     const limit = Number.isInteger(t.limit) && t.limit > 0 ? t.limit : 10000;
     const source = t.sql ? t.sql.trim().replace(/;+\s*$/, "") : `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}"`;
     const sql = `SELECT * FROM (\n${source}\n) AS muckdb_tile LIMIT ${limit + 1}`;
@@ -4515,9 +4527,20 @@
     if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
     const cols = data.columns || [], rows = data.rows || [];
     if (!slot.isConnected) return;
+    // A live value refresh recreates the Chart.js instance. Retain legend
+    // choices by series label so a selected contextual (faded) trace stays
+    // selected even as its points update. Labels, unlike dataset indexes, are
+    // stable when a view gains, loses, or reorders columns.
+    const fadedSeries = new Set(fadedSeriesByTile.get(fadedSeriesKey) || []);
     slot.querySelectorAll("canvas").forEach((canvas) => {
       const existing = Chart.getChart(canvas);
-      if (existing) { existing.destroy(); charts = charts.filter((c) => c !== existing); }
+      if (existing) {
+        Object.keys(existing.$muckFadedDatasets || {}).forEach((index) => {
+          const label = existing.data.datasets[Number(index)]?.label;
+          if (label != null) fadedSeries.add(String(label));
+        });
+        existing.destroy(); charts = charts.filter((c) => c !== existing);
+      }
     });
     const truncated = rows.length > limit;
     if (truncated) rows.length = limit;
@@ -4549,7 +4572,18 @@
     slot.innerHTML = pieBg + "<canvas></canvas>";
     applyTileHeight(t.name);
     try {
-      charts.push(new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null)));
+      const chart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
+      chart.$muckFadedSeriesKey = fadedSeriesKey;
+      chart.data.datasets.forEach((dataset, index) => {
+        if (fadedSeries.has(String(dataset.label))) {
+          (chart.$muckFadedDatasets || (chart.$muckFadedDatasets = {}))[index] = true;
+        }
+      });
+      if (chart.$muckFadedDatasets) {
+        fadedSeriesByTile.set(fadedSeriesKey, [...fadedSeries]);
+        chart.update("none");
+      }
+      charts.push(chart);
       // A deck slide can become active before its async query returns. Replay
       // now as well as on slide entry so late-loading charts get the same
       // presentation animation instead of arriving fully drawn.
@@ -6618,6 +6652,11 @@
         event.stopPropagation();
         const faded = chart.$muckFadedDatasets || (chart.$muckFadedDatasets = {});
         if (faded[index]) delete faded[index]; else faded[index] = true;
+        if (chart.$muckFadedSeriesKey) {
+          const selected = Object.keys(faded).map((datasetIndex) => chart.data.datasets[Number(datasetIndex)]?.label)
+            .filter((label) => label != null).map(String);
+          fadedSeriesByTile.set(chart.$muckFadedSeriesKey, selected);
+        }
         chart.update();
       };
       slot.addEventListener("click", onClick, true);
