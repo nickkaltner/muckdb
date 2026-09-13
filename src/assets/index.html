@@ -3633,8 +3633,10 @@
       // Sync the URL even on error — a silent setTab preceding this call
       // relies on loadSession pushing the final URL (dead session included).
       if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; if (SHOT) markShotReady(); syncUrl(!!push); return; }
+      const previous = state.sessionData;
       state.sessionData = s;
-      renderPanels(s, panelPosition);
+      if (keepReaderPosition && previous) reconcilePanels(previous, s, panelPosition);
+      else renderPanels(s, panelPosition);
     } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }
     syncUrl(!!push);
   }
@@ -3664,6 +3666,25 @@
     }
     lastPanelsSession = state.selSession; lastTileSigs = sigs;
   }
+  function visibleSessionTiles(s) {
+    let tiles = s.tiles || [];
+    if (SHOT && SHOT.tile) tiles = tiles.filter((t) => t.name === SHOT.tile);
+    const trashed = SHOT && SHOT.tile ? [] : tiles.filter((t) => t.trashed);
+    return { tiles: tiles.filter((t) => !trashed.includes(t)), trashed };
+  }
+  function loadPanelTile(t) {
+    if (t.type === "markdown") return loadMarkdown(t);
+    if (t.type === "mermaid") return renderMermaidTile(t);
+    if (t.type !== "view") return null;
+    if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
+    return loadTileChart(t);
+  }
+  function destroyPanelCharts(panel) {
+    panel.querySelectorAll("canvas").forEach((canvas) => {
+      const chart = Chart.getChart(canvas);
+      if (chart) { try { chart.destroy(); } catch (_) {} charts = charts.filter((candidate) => candidate !== chart); }
+    });
+  }
   function renderPanels(s, panelPosition = null) {
     // A live session update would replace the nodes being presented. Return to
     // the dashboard cleanly instead of leaving a stale slide on screen.
@@ -3675,27 +3696,18 @@
       viewPostedFor = state.selSession;
       postActivity(null, "view");
     }
-    let tiles = s.tiles || [];
-    if (SHOT && SHOT.tile) tiles = tiles.filter((t) => t.name === SHOT.tile);
     // Trashed panels are hidden here and listed in the TOC's trash section
     // instead. The flag lives on the tile in the session JSON, so trash follows
     // the dashboard (every browser, and whole-dashboard screenshots) — only an
     // explicit single-tile screenshot renders a trashed panel.
-    const trashed = SHOT && SHOT.tile ? [] : tiles.filter((t) => t.trashed);
-    tiles = tiles.filter((t) => !trashed.includes(t));
+    const { tiles, trashed } = visibleSessionTiles(s);
     $("panels").innerHTML = tiles.length ? tiles.map(panelHtml).join("")
       : trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
       : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
     renderToc(tiles, trashed);
     animatePanels(tiles);
     state.panelSel = -1;
-    const loads = tiles.map((t) => {
-      if (t.type === "markdown") return loadMarkdown(t);
-      if (t.type === "mermaid") return renderMermaidTile(t);
-      if (t.type !== "view") return null;
-      if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
-      return loadTileChart(t);
-    }).filter(Boolean);
+    const loads = tiles.map(loadPanelTile).filter(Boolean);
     // Restore once the new DOM exists, then again after async markdown/chart
     // content has found its final height.
     if (panelPosition && !SHOT) {
@@ -3716,6 +3728,52 @@
       restore();
       Promise.allSettled(loads).then(() => requestAnimationFrame(restore));
     }
+  }
+  // A session edit used to call renderPanels(), destroying every canvas even
+  // when one markdown tile had changed. Reconcile by stable tile name instead:
+  // unchanged nodes (and their Chart.js state) stay mounted; replacement and
+  // data loading are limited to tiles whose serialized definition changed.
+  function reconcilePanels(previous, next, panelPosition = null) {
+    if (presentation) closePresentation();
+    renderSessionHead(next);
+    const { tiles, trashed } = visibleSessionTiles(next);
+    const box = $("panels");
+    const oldByName = new Map((previous.tiles || []).map((tile) => [tile.name, JSON.stringify(tile)]));
+    const existing = new Map([...box.querySelectorAll(":scope > .panel")].map((panel) => [panel.dataset.tile, panel]));
+    const loads = [];
+    if (!tiles.length) {
+      existing.forEach(destroyPanelCharts);
+      box.innerHTML = trashed.length ? '<div class="note" style="padding:18px">All panels are in the trash — restore them from contents.</div>'
+        : '<div class="note" style="padding:18px">This session has no panels yet.</div>';
+    } else {
+      // Replace the empty/trash note before the first real panel is appended.
+      if (!existing.size) box.replaceChildren();
+      tiles.forEach((tile) => {
+        let panel = existing.get(tile.name);
+        const changed = oldByName.get(tile.name) !== JSON.stringify(tile);
+        if (!panel || changed) {
+          if (panel) destroyPanelCharts(panel);
+          const holder = document.createElement("div");
+          holder.innerHTML = panelHtml(tile);
+          const replacement = holder.firstElementChild;
+          if (panel) panel.replaceWith(replacement); else box.appendChild(replacement);
+          panel = replacement;
+          loads.push(loadPanelTile(tile));
+        }
+        // Appending an existing node moves it without replacing it, retaining
+        // its canvas, Chart.js object, hover state, and current data pixels.
+        box.appendChild(panel);
+        existing.delete(tile.name);
+      });
+      existing.forEach((panel) => { destroyPanelCharts(panel); panel.remove(); });
+    }
+    renderToc(tiles, trashed);
+    animatePanels(tiles);
+    if (panelPosition && !SHOT) {
+      restorePanelPosition(panelPosition);
+      Promise.allSettled(loads.filter(Boolean)).then(() => requestAnimationFrame(() => requestAnimationFrame(() => restorePanelPosition(panelPosition))));
+    }
+    if (SHOT) Promise.allSettled(loads.filter(Boolean)).then(markShotReady);
   }
   // ---- panel trash (persisted on the tile in the session JSON) ----------
   // Optimistic: flip the flag locally and re-render at once, then tell the
@@ -4532,16 +4590,16 @@
     // selected even as its points update. Labels, unlike dataset indexes, are
     // stable when a view gains, loses, or reorders columns.
     const fadedSeries = new Set(fadedSeriesByTile.get(fadedSeriesKey) || []);
-    slot.querySelectorAll("canvas").forEach((canvas) => {
-      const existing = Chart.getChart(canvas);
-      if (existing) {
-        Object.keys(existing.$muckFadedDatasets || {}).forEach((index) => {
-          const label = existing.data.datasets[Number(index)]?.label;
-          if (label != null) fadedSeries.add(String(label));
-        });
-        existing.destroy(); charts = charts.filter((c) => c !== existing);
-      }
+    const existingChart = [...slot.querySelectorAll("canvas")].map((canvas) => Chart.getChart(canvas)).find(Boolean);
+    if (existingChart) Object.keys(existingChart.$muckFadedDatasets || {}).forEach((index) => {
+      const label = existingChart.data.datasets[Number(index)]?.label;
+      if (label != null) fadedSeries.add(String(label));
     });
+    const discardExistingChart = () => {
+      if (!existingChart) return;
+      try { existingChart.destroy(); } catch (_) {}
+      charts = charts.filter((chart) => chart !== existingChart);
+    };
     const truncated = rows.length > limit;
     if (truncated) rows.length = limit;
     const panel = slot.closest(".panel");
@@ -4554,25 +4612,47 @@
     }
     const kind = (t.chart && t.chart.kind) || "table";
     await ensureFormats(t.db);
-    if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
-    if (kind === "todo") { slot.style.height = "auto"; slot.innerHTML = todoHtml(cols, rows, t); return; }
-    if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
-    if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "probability") { slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
-    if (kind === "quadrant") { slot.style.height = "auto"; slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "map") { slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
-    if (kind === "timeline") { slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
-    if (kind === "incident") { slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "sequence") { slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (!rows.length) { discardExistingChart(); slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
+    if (kind === "todo") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = todoHtml(cols, rows, t); return; }
+    if (kind === "table") { discardExistingChart(); tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
+    if (kind === "heatmap") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "box") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "probability") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
+    if (kind === "quadrant") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "map") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
+    if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
+    if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
     // the space around (and, for a doughnut, inside) the circle.
     const pieBg = kind === "pie" ? '<video class="pie-vid" src="/sea-static.mp4" autoplay loop muted playsinline></video>' : "";
+    const config = chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null);
+    const sameShape = existingChart && existingChart.config.type === config.type
+      && existingChart.scales?.x?.type === config.options.scales?.x?.type
+      && existingChart.scales?.y?.type === (config.options.scales?.y?.type || "linear");
+    if (sameShape) {
+      const signature = JSON.stringify({ labels: config.data.labels || null,
+        datasets: config.data.datasets.map((dataset) => ({ label: dataset.label, data: dataset.data })) });
+      const changed = existingChart.$muckDataSignature !== signature;
+      existingChart.data = config.data;
+      existingChart.options = config.options;
+      existingChart.$muckFadedSeriesKey = fadedSeriesKey;
+      existingChart.$muckFadedDatasets = {};
+      existingChart.data.datasets.forEach((dataset, index) => {
+        if (fadedSeries.has(String(dataset.label))) existingChart.$muckFadedDatasets[index] = true;
+      });
+      if (fadedSeries.size) fadedSeriesByTile.set(fadedSeriesKey, [...fadedSeries]);
+      existingChart.$muckDataSignature = signature;
+      applyTileHeight(t.name);
+      existingChart.update(changed ? undefined : "none");
+      return;
+    }
+    discardExistingChart();
     slot.innerHTML = pieBg + "<canvas></canvas>";
     applyTileHeight(t.name);
     try {
-      const chart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
+      const chart = new Chart(slot.querySelector("canvas"), config);
       chart.$muckFadedSeriesKey = fadedSeriesKey;
       chart.data.datasets.forEach((dataset, index) => {
         if (fadedSeries.has(String(dataset.label))) {
@@ -4583,6 +4663,8 @@
         fadedSeriesByTile.set(fadedSeriesKey, [...fadedSeries]);
         chart.update("none");
       }
+      chart.$muckDataSignature = JSON.stringify({ labels: config.data.labels || null,
+        datasets: config.data.datasets.map((dataset) => ({ label: dataset.label, data: dataset.data })) });
       charts.push(chart);
       // A deck slide can become active before its async query returns. Replay
       // now as well as on slide entry so late-loading charts get the same

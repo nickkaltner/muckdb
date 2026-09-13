@@ -137,13 +137,26 @@ test('live chart refreshes retain faded legend series', async ({ page }) => {
     !!(window as any).Chart.getChart(el as HTMLCanvasElement).$muckFadedDatasets[0])).toBe(true);
 
   await canvas.evaluate((el: any) => { el.identityMarker = true; });
-  // A session edit reloads the dashboard's panels, creating a new Chart.js
-  // instance. The reader's legend choice must survive that replacement.
+  // A session edit that does not change this tile must leave its Chart.js
+  // instance mounted, retaining both data pixels and the legend choice.
   cli('session', 'post', 'legend-refresh', '--name', 'refresh-note', '--md', 'The comparison was refreshed.');
   await expect.poll(() => canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
-    return !!chart && !!chart.$muckFadedDatasets[0] && !(el as any).identityMarker;
+    return !!chart && !!chart.$muckFadedDatasets[0] && !!(el as any).identityMarker;
   })).toBe(true);
+
+  // A data write refreshes the chart in place. Its canvas survives and Chart.js
+  // receives the new series data through update(), rather than a replacement.
+  await page.waitForTimeout(300);
+  cli(db, '-c', 'UPDATE readings SET alpha = 0.9 WHERE epoch = 2');
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return {
+      retained: !!(el as any).identityMarker,
+      faded: !!chart?.$muckFadedDatasets[0],
+      latest: chart?.data.datasets[0].data[1],
+    };
+  })).toEqual({ retained: true, faded: true, latest: 0.9 });
 });
 
 test('CLI session updates keep the reader on the same panel', async ({ page }) => {
