@@ -278,6 +278,7 @@ pub struct Session {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub thread_provider: Option<String>,
     pub created: u64,
+    /// Last content or metadata update (milliseconds since the Unix epoch).
     pub updated: u64,
     #[serde(default)]
     pub tiles: Vec<Tile>,
@@ -555,8 +556,9 @@ pub fn remove(id: &str) -> Result<bool> {
 /// Load a session or create a fresh one with this id.
 fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
     if let Some(mut s) = load(id)? {
-        if title.is_some() {
+        if title.is_some() && s.title != title {
             s.title = title;
+            s.updated = store::now_millis();
         }
         return Ok(s);
     }
@@ -692,6 +694,17 @@ pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result
         );
     }
     Ok(true)
+}
+
+/// Mark a session updated even when the changed content lives outside its JSON
+/// file (currently collaborative todo rows in DuckDB).
+pub fn touch(id: &str) -> Result<u64> {
+    let _lock = lock_session(id)?;
+    let mut s = load(id)?.with_context(|| format!("no such session '{id}'"))?;
+    s.updated = store::now_millis();
+    let updated = s.updated;
+    save(&s)?;
+    Ok(updated)
 }
 
 /// Where to move a tile within its session's ordering.

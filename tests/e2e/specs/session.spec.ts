@@ -40,7 +40,9 @@ test('session routing help overlays content without changing toolbar overflow', 
   await button.hover();
   const popover = page.locator('#session-info-pop');
   await expect(popover).toBeVisible();
-  await expect(popover).toContainText('Event routing');
+  await expect(popover).toContainText('Session details');
+  await expect(popover).toContainText('Last updated');
+  await expect(popover.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/);
   const [popoverBox, bodyBox] = await Promise.all([
     popover.boundingBox(),
     page.locator('#session-body').boundingBox(),

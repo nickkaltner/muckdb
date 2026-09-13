@@ -3466,7 +3466,12 @@
     const origin = cs
       ? `<p><strong>Creating agent session</strong><br><code>${esc(cs)}</code> is provenance: it identifies the conversation that originally created this dashboard.</p>`
       : `<p><strong>Creating agent session</strong><br>No origin session was supplied. Use <code>--agent-session ID</code> on create when you want to retain that provenance.</p>`;
-    info.innerHTML = `<strong>Event routing</strong>${route}${origin}<p><strong>Keeping it current</strong><br>Set <code>MUCKDB_SESSION=${esc(s.id)}</code> while working. Every muckdb command refreshes <code>thread_id</code> and <code>thread_provider</code>.</p><p><strong>Agent contract</strong><br>Codex uses <code>CODEX_THREAD_ID</code> → <code>codex</code>; Claude Code uses <code>CLAUDE_CODE_SESSION_ID</code> → <code>claude_code</code>. Other agents set <code>MUCKDB_THREAD_ID</code> and <code>MUCKDB_THREAD_PROVIDER</code>.</p>`;
+    const updated = Number(s.updated);
+    const updatedDate = Number.isFinite(updated) ? new Date(updated) : null;
+    const updatedText = updatedDate && !Number.isNaN(updatedDate.getTime())
+      ? `<time datetime="${attr(updatedDate.toISOString())}" title="${attr(updatedDate.toISOString())}">${esc(updatedDate.toLocaleString())}</time>`
+      : "Not recorded";
+    info.innerHTML = `<strong>Session details</strong><p><strong>Last updated</strong><br>${updatedText}</p>${route}${origin}<p><strong>Keeping it current</strong><br>Set <code>MUCKDB_SESSION=${esc(s.id)}</code> while working. Every muckdb command refreshes <code>thread_id</code> and <code>thread_provider</code>.</p><p><strong>Agent contract</strong><br>Codex uses <code>CODEX_THREAD_ID</code> → <code>codex</code>; Claude Code uses <code>CLAUDE_CODE_SESSION_ID</code> → <code>claude_code</code>. Other agents set <code>MUCKDB_THREAD_ID</code> and <code>MUCKDB_THREAD_PROVIDER</code>.</p>`;
   }
   function showSessionInfo() {
     const btn = $("session-info-btn"), pop = $("session-info-pop");
@@ -3728,6 +3733,10 @@
       const response = await fetch("/api/session/todo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: state.selSession, tile, item, status }) });
       const result = await response.json();
       if (!response.ok || result.error) throw new Error(result.error || "todo update failed");
+      if (state.sessionData && Number.isFinite(Number(result.updated))) {
+        state.sessionData.updated = Number(result.updated);
+        renderSessionHead(state.sessionData);
+      }
       const t = sessionTile(tile);
       if (t) await loadTileChart(t);
     } catch (e) { toast(String(e.message || e), true); }
@@ -8129,12 +8138,16 @@
   }
   let sessionDataRevision = null;
   let sessionRevisions = new Map();
+  const targetedSessionRefreshes = new Set();
   let formatsRev = null; // last-seen fingerprint of the format registry
   let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
     if (s.tile_refresh) {
       const change = s.tile_refresh;
-      if (state.tab === "sessions" && state.selSession === change.session) refreshSessionTile(change.tile);
+      if (state.tab === "sessions" && state.selSession === change.session) {
+        targetedSessionRefreshes.add(change.session);
+        refreshSessionTile(change.tile);
+      }
       return;
     }
     // A different boot stamp means the daemon restarted (usually an upgrade) —
@@ -8178,7 +8191,12 @@
     if (state.tab !== "sessions" || !state.selSession) return;
     const sum = state.sessions.find((s) => s.id === state.selSession);
     if (!sum) return;
-    if (!state.sessionData || sum.updated !== state.sessionData.updated) loadSession(state.selSession, false);
+    if (!state.sessionData) loadSession(state.selSession, false);
+    else if (sum.updated !== state.sessionData.updated && targetedSessionRefreshes.delete(state.selSession)) {
+      state.sessionData.updated = sum.updated;
+      renderSessionHead(state.sessionData);
+    }
+    else if (sum.updated !== state.sessionData.updated) loadSession(state.selSession, false);
     else if (formatsChanged || (dataChanged && changedSessions.size === 0)) refreshSessionValues();
   }
   async function refreshSessionTile(name) {

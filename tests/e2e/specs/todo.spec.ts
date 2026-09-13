@@ -8,6 +8,7 @@ test('todo tile renders states, updates DuckDB, and can leave presentation mode'
   await expect(panel.locator('.todo-item[data-status="success"] .todo-text')).toHaveCSS('text-decoration-line', 'line-through');
   await expect(panel).not.toContainText('Success means every chart');
   await page.locator('.panel[data-tile="all"]').evaluate((element: any) => { element.identityMarker = true; });
+  const beforeUpdate = (await (await page.request.get(`/api/session?id=${SESSION_ID}`)).json()).updated;
 
   const pending = panel.locator('.todo-item', { hasText: 'Review the dashboard' });
   await pending.hover();
@@ -22,6 +23,8 @@ test('todo tile renders states, updates DuckDB, and can leave presentation mode'
     sql: "SELECT status, completed_at IS NOT NULL AS done FROM collaborative_todos WHERE item_description = 'Review the dashboard'",
   }));
   expect(await row.json()).toMatchObject({ rows: [['success', true]] });
+  await expect.poll(async () => (await (await page.request.get(`/api/session?id=${SESSION_ID}`)).json()).updated)
+    .toBeGreaterThan(beforeUpdate);
 
   const toggle = panel.locator('[data-presentation="todos"]');
   await toggle.click();

@@ -766,6 +766,7 @@ async fn api_session_todo(
 ) -> Response {
     let id = session::slug(&p.session);
     let event_id = id.clone();
+    let touch_id = id.clone();
     let event_tile = p.tile.clone();
     let result = tokio::task::spawn_blocking(move || {
         session::set_todo_status(&id, &p.tile, &p.item, &p.status)
@@ -773,10 +774,17 @@ async fn api_session_todo(
     .await;
     match result {
         Ok(Ok(true)) => {
+            // Tell open dashboards to refresh the one tile before touching the
+            // session JSON. The subsequent watcher snapshot then only updates
+            // its revision instead of replacing every panel node.
             let _ = state.tx.send(
                 json!({ "tile_refresh": { "session": event_id, "tile": event_tile } }).to_string(),
             );
-            Json(json!({ "ok": true })).into_response()
+            match tokio::task::spawn_blocking(move || session::touch(&touch_id)).await {
+                Ok(Ok(updated)) => Json(json!({ "ok": true, "updated": updated })).into_response(),
+                Ok(Err(e)) => error_json(&e),
+                Err(e) => error_json(&anyhow::anyhow!("touching todo session failed: {e}")),
+            }
         }
         Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such updateable todo tile")),
         Ok(Err(e)) => error_json(&e),
