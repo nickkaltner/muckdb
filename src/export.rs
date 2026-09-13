@@ -438,6 +438,7 @@ mod tests {
                         autonumber: false,
                     }),
                     caption: Some("c".into()),
+                    skip_presentation: false,
                     trashed: false,
                 },
             ],

@@ -70,7 +70,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
@@ -88,6 +88,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--group COL]  (sequence: 'kind:label' — loop|opt|alt|par; contiguous equal values = one frame)
         [--group-branch COL]  (sequence: else/and compartment label within a frame)
         [--autonumber]  (sequence: number the messages)
+        [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
@@ -121,7 +122,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence | todo`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -374,6 +375,16 @@ breaks the tile out of the centred column so every column is visible.
   on the tile (`trashed: true` in `muckdb ls session`) and survives re-posts —
   updating a trashed tile does not resurface it. Delete for real with
   `muckdb session rm <session> --tile <name>`.
+- **Todos are collaborative with the human.** A `--chart todo` tile must use an
+  updateable `--view` table with `item_description VARCHAR PRIMARY KEY`, nullable
+  `full_description VARCHAR`, `status VARCHAR`, and nullable
+  `completed_at TIMESTAMP`. Status is `pending`, `skipped`, `success`, or
+  `failure`. Check the list regularly—before work, after user interaction, and
+  before reporting completion. `full_description` is an optional agent-only
+  acceptance instruction (not rendered in the UI); only mark success when it is
+  satisfied. Hovering an item exposes all four status controls and records or
+  clears its completion time. Its top-right toggle omits the todo tile from
+  presentation mode while keeping it on the working dashboard.
 - **Use Mermaid tiles for authored structure.** Flowcharts, trees, state
   machines, architecture sketches, and hand-authored sequences can live in the
   session JSON without being flattened into artificial DuckDB rows. Post a file

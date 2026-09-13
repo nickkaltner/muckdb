@@ -73,6 +73,8 @@ pub async fn run() -> Result<()> {
         .route("/api/session", get(api_session))
         .route("/api/session/export", get(api_session_export))
         .route("/api/session/mermaid", post(api_session_mermaid))
+        .route("/api/session/todo", post(api_session_todo))
+        .route("/api/session/presentation", post(api_session_presentation))
         // Axum's default body limit is 2 MB — far too small for archives that
         // carry full database snapshots.
         .route(
@@ -720,6 +722,53 @@ async fn api_session_mermaid(
         Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such Mermaid tile")),
         Ok(Err(e)) => error_json(&e),
         Err(e) => error_json(&anyhow::anyhow!("saving Mermaid source failed: {e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct TodoStatusParams {
+    session: String,
+    tile: String,
+    item: String,
+    status: String,
+}
+
+async fn api_session_todo(
+    axum::extract::Json(p): axum::extract::Json<TodoStatusParams>,
+) -> Response {
+    let id = session::slug(&p.session);
+    let result = tokio::task::spawn_blocking(move || {
+        session::set_todo_status(&id, &p.tile, &p.item, &p.status)
+    })
+    .await;
+    match result {
+        Ok(Ok(true)) => Json(json!({ "ok": true })).into_response(),
+        Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such updateable todo tile")),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("todo update task failed: {e}")),
+    }
+}
+
+#[derive(Deserialize)]
+struct PresentationParams {
+    session: String,
+    tile: String,
+    skip: bool,
+}
+
+async fn api_session_presentation(
+    axum::extract::Json(p): axum::extract::Json<PresentationParams>,
+) -> Response {
+    let id = session::slug(&p.session);
+    let result = tokio::task::spawn_blocking(move || {
+        session::set_tile_skip_presentation(&id, &p.tile, p.skip)
+    })
+    .await;
+    match result {
+        Ok(Ok(true)) => Json(json!({ "ok": true })).into_response(),
+        Ok(Ok(false)) => error_json(&anyhow::anyhow!("no such data tile")),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("presentation toggle failed: {e}")),
     }
 }
 

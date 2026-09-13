@@ -24,6 +24,12 @@ SELECT i AS id,
        round(([151.21, -0.13, -74.01])[(i % 3) + 1] + ((i % 5) - 2) * 0.4, 4)  AS longitude
 FROM range(200) t(i);
 CREATE VIEW widgets_all AS SELECT * FROM widgets;
+CREATE TABLE collaborative_todos(item_description VARCHAR PRIMARY KEY, full_description VARCHAR, status VARCHAR, completed_at TIMESTAMP);
+INSERT INTO collaborative_todos VALUES
+  ('Review the dashboard', 'Success means every chart has a useful title and caption.', 'pending', NULL),
+  ('Confirm source data', 'Success means source paths and assumptions are recorded.', 'success', TIMESTAMP '2026-01-02 03:04:05'),
+  ('Retire obsolete panel', NULL, 'skipped', TIMESTAMP '2026-01-03 04:05:06'),
+  ('Resolve broken export', 'Success means an exported archive imports cleanly.', 'failure', TIMESTAMP '2026-01-04 05:06:07');
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
 CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GROUP BY 1 ORDER BY 1;
 CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
@@ -167,6 +173,9 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);
+  run(binary, env, ['session', 'tile', 'e2e', '--name', 'todos', '--title', 'Collaborative checklist',
+    '--db', dbPath, '--view', 'collaborative_todos', '--chart', 'todo',
+    '--caption', 'A shared checklist whose state can be changed by the user or agent.']);
 
   // A --link format on the sequence fixture's `trace` column, scoped to `messages`
   // — tooltip-link coverage. `note` (seeded above with a hostile value) has no

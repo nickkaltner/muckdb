@@ -206,6 +206,10 @@ pub enum Tile {
         chart: Box<Chart>,
         #[serde(default)]
         caption: Option<String>,
+        /// Omit this tile when stepping through presentation mode. The normal
+        /// dashboard remains unchanged.
+        #[serde(default, skip_serializing_if = "is_false")]
+        skip_presentation: bool,
         #[serde(default, skip_serializing_if = "is_false")]
         trashed: bool,
     },
@@ -556,6 +560,79 @@ pub fn set_mermaid_source(id: &str, tile: &str, source: String) -> Result<bool> 
     Ok(true)
 }
 
+/// Toggle whether a data tile appears in presentation mode.
+pub fn set_tile_skip_presentation(id: &str, tile: &str, on: bool) -> Result<bool> {
+    let _lock = lock_session(id)?;
+    let Some(mut s) = load(id)? else {
+        return Ok(false);
+    };
+    let Some(Tile::View {
+        skip_presentation, ..
+    }) = s.tiles.iter_mut().find(|t| t.name() == tile)
+    else {
+        return Ok(false);
+    };
+    *skip_presentation = on;
+    s.updated = store::now_millis();
+    save(&s)?;
+    Ok(true)
+}
+
+fn sql_literal(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "''"))
+}
+
+/// Change one collaborative todo row and wake every open dashboard by saving
+/// the session after DuckDB commits the update.
+pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result<bool> {
+    if !matches!(status, "pending" | "skipped" | "success" | "failure") {
+        bail!("invalid todo status '{status}'");
+    }
+    let _lock = lock_session(id)?;
+    let Some(mut s) = load(id)? else {
+        return Ok(false);
+    };
+    let Some(Tile::View {
+        db,
+        view: Some(table),
+        sql: None,
+        chart,
+        ..
+    }) = s.tiles.iter().find(|t| t.name() == tile)
+    else {
+        return Ok(false);
+    };
+    if chart.kind != "todo" {
+        return Ok(false);
+    }
+    let completed = if status == "pending" {
+        "NULL"
+    } else {
+        "CURRENT_TIMESTAMP"
+    };
+    let sql = format!(
+        "UPDATE \"{}\" SET status = {}, completed_at = {completed} WHERE item_description = {}",
+        table.replace('"', "\"\""),
+        sql_literal(status),
+        sql_literal(item)
+    );
+    let output = std::process::Command::new("duckdb")
+        .arg(db)
+        .arg("-c")
+        .arg(sql)
+        .output()
+        .context("running DuckDB todo update")?;
+    if !output.status.success() {
+        bail!(
+            "updating todo: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    s.updated = store::now_millis();
+    save(&s)?;
+    Ok(true)
+}
+
 /// Where to move a tile within its session's ordering.
 pub enum Move<'a> {
     Up,
@@ -607,7 +684,16 @@ struct Args {
 }
 
 /// Flags that take no value — the parser must not eat the next argument.
-const BOOL_FLAGS: &[&str] = &["no-validate", "up", "down", "trend", "autonumber"];
+const BOOL_FLAGS: &[&str] = &[
+    "no-validate",
+    "no-values",
+    "up",
+    "down",
+    "trend",
+    "autonumber",
+    "skip-presentation",
+    "include-presentation",
+];
 
 impl Args {
     fn parse(args: &[String]) -> Self {
@@ -827,6 +913,19 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     ] {
         if let Some(c) = col {
             check(flag, c)?;
+        }
+    }
+    if chart.kind == "todo" {
+        if view.is_none() || sql.is_some() {
+            bail!("todo tiles require an updateable --view table (inline --sql is read-only)");
+        }
+        for required in [
+            "item_description",
+            "full_description",
+            "status",
+            "completed_at",
+        ] {
+            check("todo column", required)?;
         }
     }
     if let Some([lower, upper]) = &chart.band {
@@ -1312,6 +1411,18 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 Tile::View { name, chart, .. } if name == &tile_name => chart.y_range.clone(),
                 _ => None,
             });
+            let prior_skip_presentation = s
+                .tiles
+                .iter()
+                .find_map(|tile| match tile {
+                    Tile::View {
+                        name,
+                        skip_presentation,
+                        ..
+                    } if name == &tile_name => Some(*skip_presentation),
+                    _ => None,
+                })
+                .unwrap_or(false);
             let y_range = match p.get("y-range") {
                 None => prior_y_range,
                 Some("tight") => Some("tight".to_string()),
@@ -1374,6 +1485,13 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     autonumber: p.get("autonumber").is_some(),
                 }),
                 caption: p.get("caption").map(str::to_string),
+                skip_presentation: if p.get("include-presentation").is_some() {
+                    false
+                } else if p.get("skip-presentation").is_some() {
+                    true
+                } else {
+                    prior_skip_presentation
+                },
                 trashed: false,
             };
             if p.get("no-validate").is_none()
@@ -1494,7 +1612,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name|agent-session-uid> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip; connections: --from-lat/--from-lon/--to-lat/--to-lon per arc, --from-label/--to-label name each endpoint marker\n                       \
@@ -1504,6 +1622,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
                  --chart incident: --start COL --label COL; optional --desc COL for narrative and --color CAT for severity/category\n                       \
                  --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
+                 --chart todo: updateable --view table with item_description, full_description, status, completed_at; hover an item to change pending|skipped|success|failure\n                       \
+                 [--skip-presentation | --include-presentation]  (todo: omit/include the tile in presentation mode; omitted preserves its setting)\n                       \
                  [--desc COL]  (box: a per-box note; probability: a per-distribution note; incident: event narrative)\n                       \
                  [--xlabel L] [--ylabel L]  (axis titles)\n                       \
                  [--bars gradient|solid]  (bar fill: solid = per-bar palette colours for categorical data)\n                       \
@@ -1890,9 +2010,15 @@ mod tests {
 
     #[test]
     fn bool_flags_do_not_eat_the_next_argument() {
-        let raw = [s("--no-validate"), s("--db"), s("x.duckdb")];
+        let raw = [
+            s("--no-validate"),
+            s("--skip-presentation"),
+            s("--db"),
+            s("x.duckdb"),
+        ];
         let a = Args::parse(&raw);
         assert_eq!(a.get("no-validate"), Some(""));
+        assert_eq!(a.get("skip-presentation"), Some(""));
         assert_eq!(a.get("db"), Some("x.duckdb"));
     }
 

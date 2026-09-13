@@ -100,6 +100,20 @@ CREATE OR REPLACE TABLE priorities AS SELECT * FROM (VALUES
   ('Mobile checkout',   0.18,  0.54, 'Growth',   'Lift mobile conversion',       'Validate demand with a prototype first')
 ) t(initiative, effort, impact, owner, outcome, detail);
 
+-- A shared human/agent checklist. full_description carries agent-facing
+-- acceptance criteria and is deliberately not rendered by the todo tile.
+CREATE OR REPLACE TABLE collaborative_todos(
+  item_description VARCHAR PRIMARY KEY,
+  full_description VARCHAR,
+  status VARCHAR,
+  completed_at TIMESTAMP
+);
+INSERT INTO collaborative_todos VALUES
+  ('Review the dashboard', 'Confirm every demo section renders and the browser console is clean.', 'pending', NULL),
+  ('Validate the source data', 'Open at least one chart through explore and check its aggregate against the underlying rows.', 'success', TIMESTAMP '2026-05-30 09:15:00'),
+  ('Share the exported session', NULL, 'skipped', TIMESTAMP '2026-05-30 09:20:00'),
+  ('Investigate the failed deploy', 'Identify the failing pipeline step and record the cause before success.', 'failure', TIMESTAMP '2026-05-30 09:25:00');
+
 -- Views: what the dashboard charts and what the human can 'explore'.
 CREATE OR REPLACE VIEW sales_by_region   AS SELECT region, round(sum(amount),2) AS revenue FROM sales GROUP BY 1 ORDER BY revenue DESC;
 CREATE OR REPLACE VIEW sales_by_category AS SELECT category, count(*) AS orders FROM sales GROUP BY 1 ORDER BY orders DESC;
@@ -264,6 +278,7 @@ A quick tour of what muckdb can do, all driven from the command line.
 | sensors   |   720 | 🌡️ 30 days of hourly temp + humidity     |
 | events    |  ~1.4k | ⚡ irregular event stream over 30 days   |
 | priorities |     5 | 🎯 initiatives scored by effort / impact |
+| collaborative_todos | 4 | ✅ shared human/agent checklist          |
 
 Click **explore** on any data panel to open it in the faceted table browser
 (search, facets, range/date sliders, sorting, stats, CSV/JSON export)." >/dev/null
@@ -286,6 +301,12 @@ Re-run with the same `--name` to update a panel in place.
 the [docs](https://github.com/nickkaltner/muckdb#readme), or a deep link straight
 to this [session dashboard](http://localhost:11000/session/demo/).
 MD
+
+"$MUCKDB" session section "$SESSION" --name sec-collaboration --title "Collaboration" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name todos --title "Shared todo list" \
+  --db "$DB" --view collaborative_todos --chart todo \
+  --caption "A collaborative checklist backed by DuckDB: hover any item to change its status. The top-right toggle keeps working notes out of presentation mode." >/dev/null
 
 # Section headings (a tile type of their own) group the dashboard and show up as
 # headers in the contents.
@@ -451,8 +472,9 @@ This dashboard tours every muckdb panel type from one shell script:
 | **System topology** | authored Mermaid flowchart     | tree-shaped structure lives directly in session JSON |
 | **Checkout sketch** | authored Mermaid sequence      | editable source + live preview, no relational shim |
 | **Checkout flow**   | sequence diagram               | service comms — typed participants, arrow kinds, an alt frame |
+| **Shared work**     | collaborative todo              | human and agent update one DuckDB-backed checklist |
 
-Section headers (**Sales**, **Time series**, **Distributions**, **Prioritisation**, **Geography**, **Timelines**, **Authored diagrams**, **Sequences**)
+Section headers (**Collaboration**, **Sales**, **Time series**, **Distributions**, **Prioritisation**, **Geography**, **Timelines**, **Authored diagrams**, **Sequences**)
 group the panels and appear in the contents.
 
 Data figures are backed by **views** you can open (hit **explore**) and

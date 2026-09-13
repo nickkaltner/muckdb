@@ -148,6 +148,11 @@ muckdb session tile analysis --name forecast --db mydb.db --view forecast_series
 muckdb session tile analysis --name temp --db mydb.db \
   --sql "SELECT temp_c, ph FROM readings" --chart scatter --x temp_c --y ph
 
+# a collaborative todo list uses an updateable table with the fixed columns
+# item_description, full_description, status, and completed_at
+muckdb session tile analysis --name todos --db mydb.db \
+  --view collaborative_todos --chart todo --title "Todo"
+
 muckdb session list
 muckdb session rm analysis --tile temp     # or: rm analysis (whole session)
 
@@ -165,7 +170,8 @@ returns it as `agent_session` from `muckdb ls session <id>`.
 
 Re-running `post`/`mermaid`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
-heatmap` (a heatmap takes two categorical axes — `--x` and `--y` — plus a
+heatmap | todo` (a todo is a collaborative checklist backed by an updateable
+table; hover an item to set pending, skipped, success, or failure). A heatmap takes two categorical axes — `--x` and `--y` — plus a
 `--value` column, one row per pair, and shades each cell by value —
 `--no-values` colours cells without printing the figures). `box` draws one
 box-and-whisker per row on a shared scale: `--x` labels each box, `--y` takes

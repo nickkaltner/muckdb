@@ -847,6 +847,18 @@
   .tile-filter:focus { border-color: var(--primary-dim); outline: none; }
   .tile-filter::placeholder { color: var(--faint); }
   .panel-actions { margin-left: auto; display: flex; gap: 8px; }
+  .todo-list { display: grid; gap: 6px; padding: 2px 0; }
+  .todo-item { position: relative; display: grid; grid-template-columns: 24px minmax(0,1fr) auto; align-items: center; gap: 9px; min-height: 34px; padding: 5px 8px; border: 1px solid transparent; border-radius: 5px; transition: border-color .12s, background .12s; }
+  .todo-item:hover, .todo-item:focus-within { border-color: var(--line); background: color-mix(in srgb, var(--surface) 70%, var(--primary) 4%); }
+  .todo-mark { width: 20px; height: 20px; display: grid; place-items: center; border: 1px solid var(--line); border-radius: 50%; color: var(--faint); font: 700 13px var(--mono); }
+  .todo-item[data-status="success"] .todo-mark { color: var(--ok); border-color: var(--ok); }
+  .todo-item[data-status="failure"] .todo-mark { color: var(--fail); border-color: var(--fail); }
+  .todo-item[data-status="skipped"] .todo-mark { color: var(--muted); border-color: var(--muted); }
+  .todo-item:not([data-status="pending"]) .todo-text { text-decoration: line-through; color: var(--muted); }
+  .todo-picker { display: flex; gap: 3px; opacity: 0; transform: translateX(4px); pointer-events: none; transition: opacity .1s, transform .1s; }
+  .todo-item:hover .todo-picker, .todo-item:focus-within .todo-picker { opacity: 1; transform: none; pointer-events: auto; }
+  .todo-choice { width: 25px; height: 25px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; font: 700 12px var(--mono); }
+  .todo-choice:hover, .todo-choice.active { border-color: var(--primary); color: var(--primary); }
   .panel-act { font: inherit; font-size: 11px; background: var(--surface); color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 3px 9px; cursor: pointer; }
   .panel-act:hover { border-color: var(--primary-dim); color: var(--primary); }
   .panel-act.icon { display: inline-flex; align-items: center; padding: 4px 7px; }
@@ -3492,7 +3504,10 @@
   }
   function openPresentation() {
     if (presentation || state.tab !== "sessions" || !state.selSession) return;
-    const panels = [...document.querySelectorAll("#panels > .panel")];
+    const panels = [...document.querySelectorAll("#panels > .panel")].filter((panel) => {
+      const tile = (state.sessionData?.tiles || []).find((t) => t.name === panel.dataset.tile);
+      return !tile?.skip_presentation;
+    });
     const overlay = document.createElement("div");
     overlay.className = "presentation-overlay";
     overlay.setAttribute("role", "dialog");
@@ -3664,6 +3679,30 @@
   }
   function trashTile(name) { setTileTrash(name, true); }
   function restoreTile(name) { setTileTrash(name, false); }
+  async function setTodoStatus(tile, item, status, button) {
+    if (!state.selSession || button?.classList.contains("busy")) return;
+    button?.classList.add("busy");
+    try {
+      const response = await fetch("/api/session/todo", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: state.selSession, tile, item, status }) });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || "todo update failed");
+      const t = sessionTile(tile);
+      if (t) await loadTileChart(t);
+    } catch (e) { toast(String(e.message || e), true); }
+    finally { button?.classList.remove("busy"); }
+  }
+  async function toggleTilePresentation(name, button) {
+    const tile = sessionTile(name); if (!tile || !state.selSession) return;
+    const skip = !tile.skip_presentation;
+    tile.skip_presentation = skip;
+    button.classList.toggle("active", skip);
+    button.title = skip ? "Include in presentation" : "Skip in presentation";
+    try {
+      const response = await fetch("/api/session/presentation", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ session: state.selSession, tile: name, skip }) });
+      const result = await response.json();
+      if (!response.ok || result.error) throw new Error(result.error || "toggle failed");
+    } catch (e) { tile.skip_presentation = !skip; button.classList.toggle("active", !skip); toast(String(e.message || e), true); }
+  }
   // Screenshot mode: once every tile has loaded (and a layout pass has run),
   // stamp the rendered content height on <html> for the capture pass to read.
   function markShotReady() {
@@ -4241,6 +4280,7 @@
   }
   // Hide a panel into the TOC's trash section (restored by clicking it there).
   const SVG_TRASH_X = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M4 4l8 8M12 4l-8 8"/></svg>';
+  const SVG_PRESENT = '<svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="8" rx="1"/><path d="M6 14h4M8 11v3"/></svg>';
   function trashBtn(name) {
     return `<button class="panel-act icon" data-trash="${attr(name)}" title="Hide panel (restore from the trash in contents)" aria-label="Hide panel">${SVG_TRASH_X}</button>`;
   }
@@ -4280,15 +4320,16 @@
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
     const mermaidBtn = kind === "sequence" || kind === "quadrant" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
+    const presentBtn = kind === "todo" ? `<button class="panel-act icon${t.skip_presentation ? " active" : ""}" data-presentation="${attr(t.name)}" title="${t.skip_presentation ? "Include in presentation" : "Skip in presentation"}" aria-label="Toggle presentation inclusion">${SVG_PRESENT}</button>` : "";
     const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
     // Heatmap and box tiles size to their grid/rows — a height grip makes no
     // sense on them (markdown panels already skip it too). Probability tiles
     // intentionally keep the standard grip: a taller panel gives their curves
     // more breathing room, like a bar or line chart.
-    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "todo" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${presentBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
@@ -4391,6 +4432,26 @@
       await Promise.all(imageLoads);
     } catch (e) { slot.textContent = String(e.message || e); }
   }
+  function todoHtml(cols, rows, tile) {
+    const index = (name) => cols.indexOf(name);
+    const ii = index("item_description"), si = index("status"), ci = index("completed_at");
+    if (ii < 0 || si < 0 || index("full_description") < 0 || ci < 0) {
+      return '<div class="note err">todo needs item_description, full_description, status, and completed_at columns.</div>';
+    }
+    const icons = { pending: "○", skipped: "–", success: "✓", failure: "×" };
+    const labels = { pending: "Pending", skipped: "Skipped", success: "Succeeded", failure: "Failed" };
+    const choices = ["pending", "skipped", "success", "failure"];
+    return `<div class="todo-list">${rows.map((row) => {
+      const item = String(row[ii] ?? ""), raw = String(row[si] ?? "pending").toLowerCase();
+      const status = choices.includes(raw) ? raw : "pending";
+      const completed = row[ci] == null ? "" : String(row[ci]);
+      return `<div class="todo-item" data-status="${status}" data-todo-item="${attr(item)}" tabindex="0">
+        <span class="todo-mark" title="${labels[status]}">${icons[status]}</span>
+        <span class="todo-text"${completed ? ` title="Completed ${attr(completed)}"` : ""}>${esc(item)}</span>
+        <span class="todo-picker no-screenshot" aria-label="Set status">${choices.map((choice) => `<button class="todo-choice${choice === status ? " active" : ""}" data-todo-status="${choice}" data-todo-tile="${attr(tile.name)}" data-todo-item="${attr(item)}" title="${labels[choice]}" aria-label="${labels[choice]}">${icons[choice]}</button>`).join("")}</span>
+      </div>`;
+    }).join("")}</div>`;
+  }
   async function loadTileChart(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
     if (!slot) return;
@@ -4420,6 +4481,7 @@
     const kind = (t.chart && t.chart.kind) || "table";
     await ensureFormats(t.db);
     if (!rows.length) { slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
+    if (kind === "todo") { slot.style.height = "auto"; slot.innerHTML = todoHtml(cols, rows, t); return; }
     if (kind === "table") { tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
     if (kind === "heatmap") { slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -7696,6 +7758,10 @@
         .catch((e) => toast(String(e), true));
       return;
     }
+    const todo = ev.target.closest("[data-todo-status]");
+    if (todo) { setTodoStatus(todo.dataset.todoTile, todo.dataset.todoItem, todo.dataset.todoStatus, todo); return; }
+    const present = ev.target.closest("[data-presentation]");
+    if (present) { toggleTilePresentation(present.dataset.presentation, present); return; }
     const tr = ev.target.closest("[data-trash]"); if (tr) { trashTile(tr.dataset.trash); return; }
     const rs = ev.target.closest("[data-restore]"); if (rs) { restoreTile(rs.dataset.restore); return; }
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }

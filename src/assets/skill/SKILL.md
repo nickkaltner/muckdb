@@ -311,7 +311,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--limit N] (positive row limit, default 10000; applies to views and inline SQL)
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
@@ -325,6 +325,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--id COL] [--depends-on COL]  (timeline: unique bar id + comma-separated parent id(s) → dependency connectors)
         [--chart sequence]  (sequence diagram — service comms; one row per message)
         [--chart quadrant]  (prioritisation matrix — --x effort, --y impact, --label item; values are -1..1)
+        [--chart todo]  (collaborative checklist backed by an updateable table; fixed columns documented below)
         [--from COL] [--to COL]  (sequence: source/destination participant; --from == --to is a self-message; message text = --label)
         [--message-type COL]  (sequence: sync (default) | reply | async | lost)
         [--from-type COL] [--to-type COL]  (sequence: participant (default) | actor | database | boundary)
@@ -332,6 +333,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--group-branch COL]  (sequence: else/and compartment label within a frame)
         [--autonumber]  (sequence: number the messages)
         [--xlabel L] [--ylabel L] [--bars gradient|solid] [--y-range tight]
+        [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
@@ -367,6 +369,24 @@ muckdb session rm <name> [--tile TILE]
   and saves back into the session JSON. Mermaid renders locally in strict mode.
   Keep generated/relational interactions in a DuckDB-backed `--chart sequence`
   tile so they refresh from data and remain explorable.
+- **Todos are a shared checklist with the human.** Check todo tiles regularly:
+  read them before starting work, after the human may have changed a status,
+  and before reporting completion. The human and agent can both update the same
+  list. Store todos in a durable, updateable DuckDB table (not inline SQL) with
+  exactly these columns: `item_description VARCHAR PRIMARY KEY`,
+  `full_description VARCHAR`, `status VARCHAR`, and `completed_at TIMESTAMP`.
+  `status` is one of `pending`, `skipped`, `success`, or `failure`.
+  `full_description` is optional and is not shown in the UI: use it as an
+  instruction to the agent describing the acceptance conditions for marking
+  that item `success`. Do not mark success until those conditions hold. The UI
+  records `completed_at` whenever a human chooses a non-pending status and
+  clears it when returned to pending. Create the tile with:
+  `muckdb session tile SESSION --name todos --title "Todo" --db work.duckdb
+  --view collaborative_todos --chart todo`. Hovering an item reveals all four
+  status choices. The top-right presentation toggle omits the checklist from
+  presentation mode without removing it from the working dashboard; CLI
+  reposts preserve that toggle unless `--skip-presentation` or
+  `--include-presentation` is explicitly passed.
 - **Tiles display at most 10,000 rows by default.** `--limit N` changes one
   tile's cap for either `--view` or `--sql`. A visible notice identifies partial
   results. Check result size before charting; aggregate, split, or deliberately
