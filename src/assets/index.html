@@ -4344,8 +4344,6 @@
       });
       const data = await response.json();
       if (!response.ok || data.error) throw new Error(data.error || `save failed (${response.status})`);
-      editor.tile.source = editor.input.value;
-      editor.original = editor.input.value;
       toast("diagram saved");
       closeMermaidEditor(true);
     } catch (error) {
