@@ -4,7 +4,7 @@
 //! appends. Appends use `O_APPEND` so concurrent writers never corrupt each
 //! other, and the daemon watches the file for changes to push live updates.
 
-use std::fs::OpenOptions;
+use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -14,6 +14,33 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::paths;
+
+/// Ledger retention: records older than seven days are removed by the daemon.
+pub const HISTORY_RETENTION_MS: u64 = 7 * 24 * 60 * 60 * 1000;
+
+/// Cross-process lock shared by appends and retention rewrites. The lock uses a
+/// stable sibling file because the history file itself is atomically replaced.
+struct HistoryLock {
+    _file: fs::File,
+}
+
+fn lock_history() -> Result<HistoryLock> {
+    let path = paths::history_file()?.with_extension("jsonl.lock");
+    let file = OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&path)
+        .with_context(|| format!("opening history lock {path:?}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::io::AsRawFd;
+        if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_EX) } != 0 {
+            anyhow::bail!("locking {path:?}: {}", std::io::Error::last_os_error());
+        }
+    }
+    Ok(HistoryLock { _file: file })
+}
 
 /// Whether a record marks the beginning or completion of an invocation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -120,6 +147,7 @@ pub fn write_atomic(path: &Path, data: &[u8]) -> Result<()> {
 
 /// Append one record to the store as a single JSON line.
 pub fn append(record: &Record) -> Result<()> {
+    let _lock = lock_history()?;
     let path = paths::history_file()?;
     let mut file = OpenOptions::new()
         .create(true)
@@ -136,7 +164,11 @@ pub fn append(record: &Record) -> Result<()> {
 /// Read every record from the store, skipping malformed lines.
 pub fn read_all() -> Result<Vec<Record>> {
     let path = paths::history_file()?;
-    let file = match OpenOptions::new().read(true).open(&path) {
+    read_all_from(&path)
+}
+
+fn read_all_from(path: &Path) -> Result<Vec<Record>> {
+    let file = match OpenOptions::new().read(true).open(path) {
         Ok(f) => f,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
         Err(e) => return Err(e).with_context(|| format!("reading history store {path:?}")),
@@ -152,6 +184,34 @@ pub fn read_all() -> Result<Vec<Record>> {
         }
     }
     Ok(records)
+}
+
+/// Remove ledger records older than the retention window. Rewrites are atomic
+/// and share the append lock, so a concurrent CLI process cannot lose a record.
+/// Returns the number of removed JSONL records.
+pub fn trim_history(now_ms: u64) -> Result<usize> {
+    let _lock = lock_history()?;
+    let path = paths::history_file()?;
+    let mut records = read_all_from(&path)?;
+    let removed = retain_recent(&mut records, now_ms);
+    if removed == 0 {
+        return Ok(0);
+    }
+
+    let mut jsonl = String::new();
+    for record in records {
+        jsonl.push_str(&serde_json::to_string(&record)?);
+        jsonl.push('\n');
+    }
+    write_atomic(&path, jsonl.as_bytes())?;
+    Ok(removed)
+}
+
+fn retain_recent(records: &mut Vec<Record>, now_ms: u64) -> usize {
+    let before = records.len();
+    let cutoff = now_ms.saturating_sub(HISTORY_RETENTION_MS);
+    records.retain(|record| record.ts >= cutoff);
+    before - records.len()
 }
 
 /// Fold raw records into the served `State`.
@@ -316,5 +376,20 @@ mod tests {
             state.databases,
             vec!["/a.db".to_string(), "/b.db".to_string()]
         );
+    }
+
+    #[test]
+    fn retention_keeps_the_cutoff_and_newer() {
+        let now = HISTORY_RETENTION_MS + 100;
+        let cutoff = now - HISTORY_RETENTION_MS;
+        let mut records = vec![
+            rec(cutoff - 1, Phase::Start, None, None),
+            rec(cutoff, Phase::Start, None, None),
+            rec(now, Phase::End, None, Some(0)),
+        ];
+        assert_eq!(retain_recent(&mut records, now), 1);
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].ts, cutoff);
+        assert_eq!(records[1].ts, now);
     }
 }

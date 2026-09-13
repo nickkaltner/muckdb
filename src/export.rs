@@ -379,6 +379,8 @@ mod tests {
             title: Some("Export test".into()),
             agent_context: Some("# Sources\n\n- test fixture".into()),
             agent_session: None,
+            thread_id: None,
+            thread_provider: None,
             created: 1,
             updated: 2,
             tiles: vec![

@@ -9,7 +9,7 @@ description: Use whenever you work with data in any way — data analysis, chart
 UI (default <http://localhost:11000>). Anything you'd run with `duckdb`, run with
 `muckdb` instead — same arguments, same stdout/exit codes — and it additionally:
 
-- records every invocation in a live **ledger**,
+- records every invocation in a live **ledger** (retained for seven days),
 - lets you browse any database it has touched (rows, search, facets, sorting,
   stats with histograms — plus correlation, time-series and junk-data tabs,
   schema, a SQL query editor, CSV/JSON export), and
@@ -267,11 +267,17 @@ session tile` warns when a `--db` lives in a temp dir.
 # 1. Tag your work so commands are grouped under a session in the ledger.
 export MUCKDB_SESSION=pond-analysis
 
-# 2. Create the session, linked to THIS agent conversation via its UUID so the
-#    dashboard is tied to the conversation that built it. Codex exposes
-#    $CODEX_THREAD_ID; other agents may expose their own session identifier.
-muckdb session create pond-analysis --title "Pond analysis" \
-  --agent-session "$CODEX_THREAD_ID"
+# Keep the dashboard's `thread_id` and `thread_provider` current. Codex and
+# Claude Code provide the following variables automatically; other agents must
+# export both MUCKDB_THREAD_ID and MUCKDB_THREAD_PROVIDER before running muckdb.
+#   Codex:       CODEX_THREAD_ID
+#   Claude Code: CLAUDE_CODE_SESSION_ID
+
+# 2. Create the session. `thread_id` is updated automatically on every later
+#    muckdb command while MUCKDB_SESSION is set. Optionally pass
+#    --agent-session "$MUCKDB_THREAD_ID" to retain the creating conversation as
+#    provenance too.
+muckdb session create pond-analysis --title "Pond analysis"
 
 # 2a. Before changing an existing dashboard, read its agent handoff. Update it
 # whenever you add/replace a datasource or change an assumption used by tiles.
@@ -341,10 +347,15 @@ muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
 ```
 
-- **Link the session to your conversation.** Pass `--agent-session "$CODEX_THREAD_ID"`
-  on `create` to record the agent conversation/thread UUID on the dashboard. It's
-  shown at the top of the session view and returned by `muckdb ls session <id>`
-  (`agent_session`), so a human can tell which conversation produced a dashboard.
+- **Keep the current thread attached.** Export `MUCKDB_SESSION=<dashboard>` before
+  every muckdb command in a dashboard workflow. muckdb records the active agent
+  thread in `thread_id` and its adapter in `thread_provider` on each such command,
+  so an external UI/event bridge can route an event without guessing an ID format.
+  It discovers `MUCKDB_THREAD_ID` + `MUCKDB_THREAD_PROVIDER` first, then Codex's
+  `CODEX_THREAD_ID` (`codex`) and Claude Code's `CLAUDE_CODE_SESSION_ID`
+  (`claude_code`); other agents must set both neutral variables themselves.
+  `--agent-session` is optional provenance for the conversation that created the
+  dashboard; it does not replace `thread_id` / `thread_provider`.
 - **Read and maintain the agent context.** On an existing session, start with
   `muckdb session context <name|agent-session-uid> read`. Save a Markdown update with `context
   <name|agent-session-uid> save --md -` whenever a contributing datasource, its provenance, or a

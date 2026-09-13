@@ -66,6 +66,15 @@ fn extract_port_flag(args: &mut Vec<String>) -> Option<u16> {
 }
 
 fn run(args: &[String]) -> anyhow::Result<i32> {
+    // A dashboard may outlive its creating conversation. When an agent tags a
+    // command with MUCKDB_SESSION, keep the dashboard pointed at the thread
+    // currently doing the work (if that agent exposes one).
+    if let Some(session) = std::env::var("MUCKDB_SESSION")
+        .ok()
+        .filter(|session| !session.is_empty())
+    {
+        session::sync_current_thread(&session)?;
+    }
     match args.first().map(String::as_str) {
         // Hidden flag used by ensure_daemon to launch the detached server.
         Some("--__serve") => {

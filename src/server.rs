@@ -25,6 +25,7 @@ use crate::facade;
 use crate::{introspect, paths, session, store, update};
 
 const PREVIEW_LIMIT: u32 = 25;
+const HISTORY_TRIM_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
 
 #[derive(Clone)]
 struct AppState {
@@ -34,6 +35,13 @@ struct AppState {
 
 /// Entry point for the daemon: start mDNS, the file watcher, and the server.
 pub async fn run() -> Result<()> {
+    // Bound the ledger before the first browser snapshot, then repeat daily in
+    // the background for daemons that stay up continuously.
+    let expired = store::trim_history(store::now_millis()).context("trimming ledger history")?;
+    if expired > 0 {
+        eprintln!("muckdb: trimmed {expired} expired ledger records on startup");
+    }
+
     let (tx, _rx) = broadcast::channel::<String>(64);
     let update = Arc::new(RwLock::new(update::cached_status()?));
 
@@ -48,6 +56,7 @@ pub async fn run() -> Result<()> {
     let state = AppState { tx, update };
     spawn_watcher(state.clone())?;
     spawn_update_checker(state.clone());
+    spawn_history_trimmer();
 
     let app = Router::new()
         .route("/", get(index))
@@ -266,6 +275,24 @@ fn spawn_update_checker(state: AppState) {
             // Waking hourly gives a long-running daemon a timely daily refresh,
             // while the persistent last_checked_at value still enforces the cap.
             thread::sleep(Duration::from_secs(60 * 60));
+        }
+    });
+}
+
+/// Retain one week of ledger records for the lifetime of a running daemon.
+/// Startup already performed the first trim, so the worker waits one full day
+/// before its first pass rather than immediately rewriting twice.
+fn spawn_history_trimmer() {
+    thread::spawn(move || {
+        loop {
+            thread::sleep(HISTORY_TRIM_INTERVAL);
+            match store::trim_history(store::now_millis()) {
+                Ok(removed) if removed > 0 => {
+                    eprintln!("muckdb: trimmed {removed} expired ledger records")
+                }
+                Ok(_) => {}
+                Err(e) => eprintln!("muckdb: could not trim ledger history: {e:#}"),
+            }
         }
     });
 }

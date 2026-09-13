@@ -9,7 +9,7 @@ straight through — and muckdb quietly does two extra things:
    on **port 11000**. It binds **127.0.0.1** by default (the console exposes every
    database muckdb has touched); set `MUCKDB_BIND=0.0.0.0` on the daemon to open
    it to your LAN, where it's advertised over **mDNS** for discovery.
-2. **Keeps a live ledger.** Every invocation is recorded, and whenever a command
+2. **Keeps a live ledger.** Every invocation is recorded for seven days, and whenever a command
    touches a database, the web view presents that database's tables — rows
    (with search, facets, sorting, pagination; nested LIST/STRUCT/MAP values
    render as compact chips that expand on click), a tabbed **stats** workbench
@@ -166,7 +166,12 @@ muckdb session import analysis.muckdb        # imports; name collisions get -2
 ```
 
 `--agent-session` records the creating agent's conversation/thread UUID and
-returns it as `agent_session` from `muckdb ls session <id>`.
+returns it as `agent_session` from `muckdb ls session <id>`. Set
+`MUCKDB_SESSION=analysis` while working: muckdb updates the session's neutral
+`thread_id` and its `thread_provider` from `MUCKDB_THREAD_ID` +
+`MUCKDB_THREAD_PROVIDER`, Codex's `CODEX_THREAD_ID`, or Claude Code's
+`CLAUDE_CODE_SESSION_ID` on every command, so integrations can address the
+conversation currently working on the dashboard without guessing an ID format.
 
 Re-running `post`/`mermaid`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
@@ -254,7 +259,8 @@ column's formatted value, so `--currency USD --link …` renders a clickable
 - **Shared store**: an append-only JSONL file under your data directory
   (`~/.local/share/muckdb/history.jsonl` on Linux,
   `~/Library/Application Support/muckdb/` on macOS). The CLI and daemon are
-  decoupled — the CLI never talks to the daemon directly.
+  decoupled — the CLI never talks to the daemon directly. The daemon trims
+  records older than seven days on startup and once per day while running.
 - **Database views**: the daemon reads databases by shelling out to
   `duckdb -readonly -json`, so reads go through the same CLI you'd use by hand.
 

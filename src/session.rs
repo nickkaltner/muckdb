@@ -268,6 +268,15 @@ pub struct Session {
         alias = "claude_session"
     )]
     pub agent_session: Option<String>,
+    /// The agent thread that most recently ran a muckdb command for this
+    /// dashboard. Unlike `agent_session`, this follows a dashboard when work
+    /// moves between conversations and is deliberately agent-neutral.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_id: Option<String>,
+    /// Adapter that owns `thread_id` (for example `codex` or `claude_code`).
+    /// An event bridge uses this rather than inferring a provider from an ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub thread_provider: Option<String>,
     pub created: u64,
     pub updated: u64,
     #[serde(default)]
@@ -422,6 +431,57 @@ pub fn save(session: &Session) -> Result<()> {
     store::write_atomic(&path, json.as_bytes())
 }
 
+/// A provider-owned agent thread that can receive UI events.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CurrentThread {
+    pub id: String,
+    pub provider: String,
+}
+
+/// Find the current agent thread from a neutral explicit pair first, then from
+/// session variables exposed by supported coding agents.
+pub fn current_thread() -> Option<CurrentThread> {
+    let env = |name| std::env::var(name).ok().filter(|value| !value.is_empty());
+    if let Some(id) = env("MUCKDB_THREAD_ID") {
+        return Some(CurrentThread {
+            id,
+            provider: env("MUCKDB_THREAD_PROVIDER").unwrap_or_else(|| "custom".into()),
+        });
+    }
+    if let Some(id) = env("CODEX_THREAD_ID") {
+        return Some(CurrentThread {
+            id,
+            provider: "codex".into(),
+        });
+    }
+    env("CLAUDE_CODE_SESSION_ID").map(|id| CurrentThread {
+        id,
+        provider: "claude_code".into(),
+    })
+}
+
+/// Record the current agent thread against an existing dashboard. Commands
+/// without a session or an agent-provided thread identifier leave it untouched.
+pub fn sync_current_thread(id: &str) -> Result<()> {
+    let Some(thread) = current_thread() else {
+        return Ok(());
+    };
+    let id = slug(id);
+    let _lock = lock_session(&id)?;
+    let Some(mut session) = load(&id)? else {
+        return Ok(());
+    };
+    if session.thread_id.as_deref() != Some(thread.id.as_str())
+        || session.thread_provider.as_deref() != Some(thread.provider.as_str())
+    {
+        session.thread_id = Some(thread.id);
+        session.thread_provider = Some(thread.provider);
+        session.updated = store::now_millis();
+        save(&session)?;
+    }
+    Ok(())
+}
+
 /// Resolve a dashboard name or the UUID of its linked agent conversation.
 ///
 /// Session names remain the primary lookup, so a dashboard whose name happens
@@ -501,11 +561,14 @@ fn load_or_new(id: &str, title: Option<String>) -> Result<Session> {
         return Ok(s);
     }
     let now = store::now_millis();
+    let thread = current_thread();
     Ok(Session {
         id: id.to_string(),
         title,
         agent_context: None,
         agent_session: None,
+        thread_id: thread.as_ref().map(|thread| thread.id.clone()),
+        thread_provider: thread.as_ref().map(|thread| thread.provider.clone()),
         created: now,
         updated: now,
         tiles: Vec::new(),
@@ -1196,6 +1259,15 @@ pub fn cli(args: &[String]) -> Result<i32> {
         .cloned()
         .or_else(|| p.get("session").map(str::to_string));
 
+    // Session subcommands identify their dashboard explicitly, so keep its
+    // current thread fresh even when MUCKDB_SESSION was not exported.
+    if !matches!(action, "create" | "list" | "import")
+        && let Some(name) = &session_arg
+    {
+        let id = resolve_session_or_agent_session(name)?;
+        sync_current_thread(&id)?;
+    }
+
     match action {
         "list" => {
             for s in list()? {
@@ -1213,6 +1285,9 @@ pub fn cli(args: &[String]) -> Result<i32> {
             // `--claude` remains a compatibility alias for existing scripts.
             if let Some(uuid) = agent_session_arg(&p) {
                 s.agent_session = Some(uuid.to_string());
+                if s.thread_id.is_none() {
+                    s.thread_id = Some(uuid.to_string());
+                }
             }
             save(&s)?;
             crate::facade::ensure_daemon()?;
@@ -2073,6 +2148,8 @@ mod tests {
             title: None,
             agent_context: None,
             agent_session: Some(uid.into()),
+            thread_id: None,
+            thread_provider: None,
             created: 1,
             updated: 1,
             tiles: vec![],
@@ -2094,6 +2171,23 @@ mod tests {
         let value = serde_json::to_value(session).unwrap();
         assert_eq!(value["agent_session"], "legacy-id");
         assert!(value.get("claude_session").is_none());
+    }
+
+    #[test]
+    fn thread_id_is_optional_and_roundtrips() {
+        let old: Session =
+            serde_json::from_str(r#"{"id":"handoff","created":1,"updated":1,"tiles":[]}"#).unwrap();
+        assert_eq!(old.thread_id, None);
+
+        let session: Session = serde_json::from_str(
+            r#"{"id":"handoff","thread_id":"thread-123","thread_provider":"codex","created":1,"updated":1,"tiles":[]}"#,
+        )
+        .unwrap();
+        assert_eq!(session.thread_id.as_deref(), Some("thread-123"));
+        assert_eq!(session.thread_provider.as_deref(), Some("codex"));
+        let value = serde_json::to_value(session).unwrap();
+        assert_eq!(value["thread_id"], "thread-123");
+        assert_eq!(value["thread_provider"], "codex");
     }
 
     #[test]

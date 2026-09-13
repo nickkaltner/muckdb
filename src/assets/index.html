@@ -773,6 +773,17 @@
      visible; the first takes over the right-push, the rest sit beside it. */
   .sess-act { display: inline-flex; margin-left: auto; }
   .sess-act ~ .sess-act, .sess-act ~ .toc-toggle { margin-left: 8px; }
+  /* Session routing help: standard square toolbar chrome with a circled glyph.
+     The tooltip lives outside the scrolling nav row and is positioned by JS. */
+  .session-info-btn { box-sizing: border-box; width: 26px; height: 26px; padding: 4px; justify-content: center; }
+  .session-info-btn:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; }
+  .session-info-pop { position: fixed; z-index: 90; display: grid; gap: 9px; width: min(360px, calc(100vw - 28px)); padding: 13px 14px 14px; color: var(--fg); background: var(--raised); border: 1px solid var(--primary-dim); border-radius: 7px; box-shadow: 0 14px 32px rgba(0,0,0,.38); font: 12px/1.45 var(--sans); opacity: 0; visibility: hidden; transform: translateY(-3px); transition: opacity 120ms ease, transform 120ms ease, visibility 120ms step-end; pointer-events: none; white-space: normal; }
+  .session-info-pop.show { opacity: 1; visibility: visible; transform: translateY(0); transition: opacity 120ms ease, transform 120ms ease; }
+  .session-info-pop strong { color: var(--primary); font-size: 10px; letter-spacing: .14em; text-transform: uppercase; }
+  .session-info-pop p { margin: 0; color: var(--muted); }
+  .session-info-pop code { color: var(--fg); background: var(--surface); border: 1px solid var(--line); border-radius: 3px; padding: 1px 4px; font: 10px var(--mono); overflow-wrap: anywhere; }
+  .session-info-route { display: grid; gap: 3px; padding: 8px 9px; background: color-mix(in srgb, var(--primary) 8%, var(--surface)); border-left: 2px solid var(--primary-dim); }
+  .session-info-route span { color: var(--faint); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
   /* Armed delete: first click arms it (turns red, asks "sure?"), the second
      within a few seconds actually deletes — no accidental single-click loss. */
   .sess-act.arm { color: var(--fail); border-color: var(--fail); }
@@ -1062,11 +1073,13 @@
 
     <section class="view flex active" id="view-sessions" aria-label="Sessions">
       <div class="navrow no-screenshot" id="session-nav"><span class="rowlabel">session</span><span id="session-chips"></span><span class="session-agent" id="session-agent"></span>
+        <button class="toc-toggle sess-act session-info-btn" id="session-info-btn" aria-label="Session routing information" aria-describedby="session-info-pop"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><circle cx="8" cy="8" r="5.5"/><path d="M8 7.2v3.6"/><circle cx="8" cy="5" r=".65" fill="currentColor" stroke="none"/></svg></button>
         <button class="toc-toggle sess-act" id="export-btn" title="Export this session as a .muckdb file (dashboard + database snapshots)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M8 2v8M5 7l3 3 3-3M3 13h10"/></svg><span>export</span></button>
         <button class="toc-toggle sess-act" id="poster-btn" title="Download a PNG poster of the whole dashboard"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="12" height="10" rx="1.5"/><circle cx="6" cy="6.5" r="1.1"/><path d="M2.5 11l3.2-2.7 2.3 1.9 3-2.4 2.5 2.1"/></svg><span>poster</span></button>
         <button class="toc-toggle sess-act" id="session-rm-btn" title="Delete this session (click twice)"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h11M6.5 4.5V3h3v1.5M4 4.5l.8 9h6.4l.8-9M6.5 7v4M9.5 7v4"/></svg><span>delete</span></button>
         <button class="toc-toggle" id="toc-toggle" title="Toggle contents" aria-label="Toggle table of contents"><svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M2 4h2M2 8h2M2 12h2M6 4h8M6 8h8M6 12h8"/></svg><span>contents</span></button>
       </div>
+      <div class="session-info-pop no-screenshot" id="session-info-pop" role="tooltip"></div>
       <div class="session-body" id="session-body">
         <div class="panels-scroll" id="panels-scroll">
           <div class="empty no-screenshot" id="session-empty" style="margin:18px">
@@ -3419,10 +3432,11 @@
   function renderSessionNav() {
     const ss = state.sessions;
     $("session-empty").style.display = ss.length ? "none" : "block";
-    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-agent").innerHTML = ""; return; }
+    if (!ss.length) { $("session-chips").innerHTML = '<span class="note">none</span>'; $("session-agent").innerHTML = ""; $("session-info-pop").textContent = "Select a session to see its event-routing details."; return; }
     const cur = ss.find((s) => s.id === state.selSession);
     const name = cur ? (cur.title || cur.id) : "select a session";
     $("session-chips").innerHTML = `<button class="combo" id="session-combo"><span class="cv-name">${esc(name)}</span><span class="cv-sub">${ss.length} ${ss.length === 1 ? "session" : "sessions"}</span><span class="cv-caret">▾</span></button>`;
+    if (cur) renderSessionHead(cur);
   }
   function openSessionCombo(anchor) {
     if (!state.sessions.length) return;
@@ -3442,6 +3456,34 @@
     el.innerHTML = cs
       ? `<span class="sh-label">agent session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button>`
       : "";
+    const info = $("session-info-pop");
+    if (!info) return;
+    const threadId = s.thread_id || null;
+    const provider = s.thread_provider || null;
+    const route = threadId
+      ? `<div class="session-info-route"><span>Current event route</span><code>${esc(provider || "provider not recorded")} · ${esc(threadId)}</code></div>`
+      : `<div class="session-info-route"><span>Current event route</span><p>No thread has been recorded yet.</p></div>`;
+    const origin = cs
+      ? `<p><strong>Creating agent session</strong><br><code>${esc(cs)}</code> is provenance: it identifies the conversation that originally created this dashboard.</p>`
+      : `<p><strong>Creating agent session</strong><br>No origin session was supplied. Use <code>--agent-session ID</code> on create when you want to retain that provenance.</p>`;
+    info.innerHTML = `<strong>Event routing</strong>${route}${origin}<p><strong>Keeping it current</strong><br>Set <code>MUCKDB_SESSION=${esc(s.id)}</code> while working. Every muckdb command refreshes <code>thread_id</code> and <code>thread_provider</code>.</p><p><strong>Agent contract</strong><br>Codex uses <code>CODEX_THREAD_ID</code> → <code>codex</code>; Claude Code uses <code>CLAUDE_CODE_SESSION_ID</code> → <code>claude_code</code>. Other agents set <code>MUCKDB_THREAD_ID</code> and <code>MUCKDB_THREAD_PROVIDER</code>.</p>`;
+  }
+  function showSessionInfo() {
+    const btn = $("session-info-btn"), pop = $("session-info-pop");
+    if (!btn || !pop) return;
+    pop.classList.add("show");
+    const scale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    const r = btn.getBoundingClientRect();
+    const vw = window.innerWidth / scale, vh = window.innerHeight / scale;
+    const w = pop.getBoundingClientRect().width / scale;
+    const h = pop.getBoundingClientRect().height / scale;
+    pop.style.left = Math.max(8, Math.min(r.right / scale - w, vw - w - 8)) + "px";
+    const below = r.bottom / scale + 8;
+    pop.style.top = (below + h <= vh - 8 ? below : Math.max(8, r.top / scale - h - 8)) + "px";
+  }
+  function hideSessionInfo() {
+    const pop = $("session-info-pop");
+    if (pop) pop.classList.remove("show");
   }
   function destroyCharts() { charts.forEach((c) => { try { c.destroy(); } catch (_) {} }); charts = []; }
   // Presentation mode moves the existing, live panel into a full-viewport
@@ -7704,6 +7746,24 @@
       }
     });
   })();
+
+  // The routing tooltip is portalled outside the horizontally scrolling nav.
+  // Hover and keyboard focus both reveal it; it remains informational only.
+  document.addEventListener("mouseover", (ev) => {
+    const btn = ev.target.closest && ev.target.closest("#session-info-btn");
+    if (btn && !btn.contains(ev.relatedTarget)) showSessionInfo();
+  });
+  document.addEventListener("mouseout", (ev) => {
+    const btn = ev.target.closest && ev.target.closest("#session-info-btn");
+    if (btn && !btn.contains(ev.relatedTarget)) hideSessionInfo();
+  });
+  document.addEventListener("focusin", (ev) => {
+    if (ev.target.closest && ev.target.closest("#session-info-btn")) showSessionInfo();
+  });
+  document.addEventListener("focusout", (ev) => {
+    if (ev.target.closest && ev.target.closest("#session-info-btn")) hideSessionInfo();
+  });
+  window.addEventListener("resize", hideSessionInfo);
 
   document.addEventListener("click", (ev) => {
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }

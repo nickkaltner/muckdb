@@ -14,6 +14,41 @@ test('seeded session renders its tiles', async ({ page }) => {
   await expect(page.locator('.panel', { hasText: 'All widgets' })).toBeVisible();
 });
 
+test('session routing help overlays content without changing toolbar overflow', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+
+  const nav = page.locator('#session-nav');
+  await expect(nav).toBeVisible();
+  const overflow = await nav.evaluate((node) => ({
+    horizontal: node.scrollWidth > node.clientWidth,
+    vertical: node.scrollHeight > node.clientHeight,
+  }));
+  expect(overflow).toEqual({ horizontal: false, vertical: false });
+
+  const button = page.locator('#session-info-btn');
+  const exportButton = page.locator('#export-btn');
+  await expect(button).toBeVisible();
+  const [infoBox, exportBox, radius] = await Promise.all([
+    button.boundingBox(),
+    exportButton.boundingBox(),
+    button.evaluate((node) => getComputedStyle(node).borderRadius),
+  ]);
+  expect(Math.abs(infoBox!.height - exportBox!.height)).toBeLessThan(1);
+  expect(infoBox?.width).toBe(infoBox?.height);
+  expect(Number.parseFloat(radius)).toBeLessThan((infoBox?.width ?? 0) / 2);
+
+  await button.hover();
+  const popover = page.locator('#session-info-pop');
+  await expect(popover).toBeVisible();
+  await expect(popover).toContainText('Event routing');
+  const [popoverBox, bodyBox] = await Promise.all([
+    popover.boundingBox(),
+    page.locator('#session-body').boundingBox(),
+  ]);
+  expect(popoverBox!.y + popoverBox!.height).toBeGreaterThan(bodyBox!.y);
+  expect(await popover.evaluate((node) => node.parentElement?.id)).toBe('view-sessions');
+});
+
 test('time-axis labels leave breathing room and reveal their full timestamp on hover', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
