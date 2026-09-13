@@ -66,9 +66,13 @@ test('time-axis labels leave breathing room and reveal their full timestamp on h
       x: rect.left + x.getPixelForTick(i) * rect.width / chart.width,
       y: rect.top + ((x.top + x.bottom) / 2) * rect.height / chart.height,
       count: x.ticks.length,
+      labelPadding: x.options.ticks.padding,
+      tickLength: x.options.grid.tickLength,
     };
   });
   expect(tick.count).toBeLessThanOrEqual(9);
+  expect(tick.labelPadding).toBe(3);
+  expect(tick.tickLength).toBe(4);
   await page.mouse.move(tick.x, tick.y);
   const tip = page.locator('.chart-time-tip');
   await expect(tip).toBeVisible();

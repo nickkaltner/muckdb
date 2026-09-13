@@ -117,6 +117,15 @@ test('live chart refreshes retain faded legend series', async ({ page }) => {
 
   await page.goto('/session/legend-refresh/');
   const canvas = page.locator('[data-tile="comparison"] canvas');
+  const xAxis = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return {
+      autoSkip: chart.scales.x.options.ticks.autoSkip,
+      labelPadding: chart.scales.x.options.ticks.padding,
+      tickLength: chart.scales.x.options.grid.tickLength,
+    };
+  });
+  expect(xAxis).toEqual({ autoSkip: false, labelPadding: 3, tickLength: 4 });
   await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
     const hit = chart.legend.legendHitBoxes[0], r = el.getBoundingClientRect();

@@ -6497,18 +6497,27 @@
     const gridMinor = mixColors("var(--fg)", isLight ? 8 : 7, "var(--surface)");
     const gridMajor = mixColors("var(--fg)", isLight ? 15 : 14, "var(--surface)");
     const gridCol = (ctx) => (ctx.tick && ctx.tick.major ? gridMajor : gridMinor);
+    // The cursor plugin records the nearest rendered x tick while a shared
+    // line-chart cursor is visible. Make that tick and its label unmistakable
+    // without adding a second DOM overlay over Chart.js's canvas axis.
+    const activeXTick = (ctx) => ctx.index === ctx.chart?.$muckHoverTickIndex;
+    const tickColor = (ctx) => activeXTick(ctx) ? (cssVar("--primary") || "#ff7d22") : (cssVar("--fg") || "#e8eaec");
+    const tickMarkColor = (ctx) => activeXTick(ctx) ? (cssVar("--primary") || "#ff7d22") : gridMinor;
     const x = time
       ? { type: "time",
           time: Object.assign({
             displayFormats: { hour: "HH:mm", minute: "HH:mm", day: "MMM d", week: "MMM d", month: "MMM yyyy", quarter: "MMM yyyy", year: "yyyy" },
             tooltipFormat: minUnit === "day" ? "MMM d, yyyy" : minUnit === "month" ? "MMM yyyy" : "MMM d yyyy, HH:mm",
           }, minUnit ? { minUnit } : {}),
-          offset: !!offset, grid: { color: gridCol, offset: !!offset },
-          ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, major: { enabled: true },
-            font: (ctx) => (ctx.tick && ctx.tick.major ? { weight: "bold" } : {}) } }
+          offset: !!offset, grid: { color: gridCol, offset: !!offset, drawTicks: true, tickLength: 4, tickColor: tickMarkColor,
+            tickWidth: 1 },
+          ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, padding: 3, color: tickColor, major: { enabled: true },
+            font: (ctx) => (activeXTick(ctx) || (ctx.tick && ctx.tick.major) ? { weight: "bold" } : {}) } }
       : { type: scatter ? "linear" : "category", grid: scatter ? { color: gridMinor } : {
-          color: gridMinor, drawOnChartArea: false, drawTicks: false,
-        } };
+          color: gridMinor, drawOnChartArea: false, drawTicks: true, tickLength: 4, tickColor: tickMarkColor,
+          tickWidth: 1,
+        }, ticks: { autoSkip: false, maxRotation: 0, padding: 3, color: tickColor,
+          font: (ctx) => activeXTick(ctx) ? { weight: "bold" } : {} } };
     if (stacked) x.stacked = true;
     const y = { grid: { color: gridMinor } };
     if (stacked) y.stacked = true;
@@ -7035,18 +7044,48 @@
     },
     afterDatasetsDraw(chart, _args, opts) {
       if (!opts || !opts.enabled || !chart.tooltip) return;
+      chart.$muckHoverTickIndex = null;
+      chart.$muckHoverTickPainted = null;
       const active = chart.tooltip.getActiveElements();
       const a = active && active[0], area = chart.chartArea;
       if (!a || !a.element || !isFinite(a.element.x)) return;
       const x = a.element.x;
       if (x < area.left || x > area.right) return;
-      const ctx = chart.ctx;
+      const scale = chart.scales.x;
+      if (!scale?.ticks?.length) return;
+      let tickIndex = 0;
+      for (let i = 1; i < scale.ticks.length; i++) {
+        if (Math.abs(x - scale.getPixelForTick(i)) < Math.abs(x - scale.getPixelForTick(tickIndex))) tickIndex = i;
+      }
+      chart.$muckHoverTickIndex = tickIndex;
+      const ctx = chart.ctx, col = cssVar("--primary") || "#ff7d22";
       ctx.save();
-      ctx.strokeStyle = cssVar("--primary") || "#ff7d22";
+      ctx.strokeStyle = col;
       ctx.globalAlpha = 0.7;
       ctx.lineWidth = 1;
       ctx.setLineDash([3, 3]);
       ctx.beginPath(); ctx.moveTo(x, area.top); ctx.lineTo(x, area.bottom); ctx.stroke();
+      // Paint the exact label geometry in the same pass as the cursor. This is
+      // more dependable than Chart.js's cached scriptable tick options, and the
+      // solid tick uses the cursor's exact accent colour.
+      const item = scale._labelItems?.[tickIndex];
+      if (item) {
+        const [labelX, labelY] = item.options.translation;
+        ctx.globalAlpha = 1; ctx.setLineDash([]); ctx.lineWidth = 1;
+        const tickX = scale.getPixelForTick(tickIndex);
+        ctx.beginPath(); ctx.moveTo(tickX, area.bottom);
+        ctx.lineTo(tickX, Math.min(scale.bottom, area.bottom + 4)); ctx.stroke();
+        ctx.translate(labelX, labelY);
+        if (item.options.rotation) ctx.rotate(item.options.rotation);
+        ctx.fillStyle = col;
+        ctx.font = `bold ${item.font.size}px ${item.font.family}`;
+        ctx.textAlign = item.options.textAlign; ctx.textBaseline = item.options.textBaseline;
+        // Chart.js translates to the label origin, then applies its per-label
+        // text offset. Matching that offset paints over the original glyphs
+        // instead of leaving a second, higher label behind.
+        ctx.fillText(Array.isArray(item.label) ? item.label.join(" ") : item.label, 0, item.textOffset || 0);
+        chart.$muckHoverTickPainted = tickIndex;
+      }
       ctx.restore();
     },
   };

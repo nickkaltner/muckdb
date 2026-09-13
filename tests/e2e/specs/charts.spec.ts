@@ -188,6 +188,29 @@ test('multi-series line snapping follows late x positions under console zoom', a
     await expect.poll(() => canvas.evaluate((el) =>
       (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.getActiveElements().map((a: any) => a.index)
     )).toEqual([index, index]);
+    await expect.poll(() => canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return Number.isInteger(chart.$muckHoverTickIndex)
+        && chart.$muckHoverTickPainted === chart.$muckHoverTickIndex;
+    })).toBe(true);
+    const highlighted = await canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const tick = chart.$muckHoverTickIndex, context = { chart, index: tick };
+      const ticks = chart.config.options.scales.x.ticks, grid = chart.config.options.scales.x.grid;
+      return {
+        tick,
+        painted: chart.$muckHoverTickPainted,
+        label: ticks.color(context),
+        mark: grid.tickColor(context),
+        weight: ticks.font(context).weight,
+        primary: getComputedStyle(document.documentElement).getPropertyValue('--primary').trim(),
+      };
+    });
+    expect(highlighted.tick).toBeGreaterThanOrEqual(0);
+    expect(highlighted.painted).toBe(highlighted.tick);
+    expect(highlighted.label).toBe(highlighted.primary);
+    expect(highlighted.mark).toBe(highlighted.primary);
+    expect(highlighted.weight).toBe('bold');
   }
 });
 
