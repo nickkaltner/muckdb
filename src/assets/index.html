@@ -2709,14 +2709,18 @@
     let data;
     if (continuousX) {
       const lo = Math.min(...xs), hi = Math.max(...xs), steps = 60;
-      data = Array.from({ length: steps + 1 }, (_, i) => {
-        const x = lo + ((hi - lo) * i) / steps;
-        return { x, y: fit(x) };
-      });
+      // Keep uniform samples for a smooth curve, but include every source x as
+      // well so a shared vertical cursor can report source + fitted values at
+      // the exact same position.
+      const sampleXs = Array.from(new Set([
+        ...Array.from({ length: steps + 1 }, (_, i) => lo + ((hi - lo) * i) / steps),
+        ...xs,
+      ])).sort((a, b) => a - b);
+      data = sampleXs.map((x) => ({ x, y: fit(x) }));
     } else {
       data = pts.map((p) => ({ x: p.x, y: fit(p.x) }));
     }
-    return { type: "line", label: "trend", data, borderColor: hexA(fg, 0.75), borderWidth: 2,
+    return { type: "line", label: "trend", data, _muckTrend: true, borderColor: hexA(fg, 0.75), borderWidth: 2,
       pointRadius: 0, pointHoverRadius: 0, fill: false, order: -1 };
   }
   async function renderPredictTimeseries(body, d) {
@@ -6684,7 +6688,19 @@
           const top = screen(0, Math.min(p.y, p.base)).y, bottom = screen(0, Math.max(p.y, p.base)).y;
           const pad = 7;
           if (pointerX >= left - pad && pointerX <= right + pad && pointerY >= top - pad && pointerY <= bottom + pad) {
-            return [{ element: bar, datasetIndex: meta.index, index }];
+            if (!chart.options.scales?.y?.stacked) return [{ element: bar, datasetIndex: meta.index, index }];
+            // A stacked bar is one whole. Once the pointer hits any segment,
+            // report every visible segment at that x position in visual
+            // top-to-bottom order.
+            return chart.getSortedVisibleDatasetMetas()
+              .filter((candidate) => candidate.type === "bar")
+              .sort((a, b) => b.index - a.index)
+              .flatMap((candidate) => {
+                const element = candidate.data[index];
+                return element && !element.skip
+                  ? [{ element, datasetIndex: candidate.index, index }]
+                  : [];
+              });
           }
         }
       }
@@ -6731,7 +6747,11 @@
       }
       let nearestX = null, nearestDistance = Infinity;
       const metas = chart.getSortedVisibleDatasetMetas().filter((meta) => meta.type === "line");
-      metas.forEach((meta) => meta.data.forEach((point) => {
+      // A fitted line has extra interpolation samples. Anchor the cursor to the
+      // real series so one of those in-between samples cannot make every source
+      // series disappear from the shared tooltip.
+      const anchors = metas.filter((meta) => !chart.data.datasets[meta.index]?._muckTrend);
+      (anchors.length ? anchors : metas).forEach((meta) => meta.data.forEach((point) => {
         if (!point || point.skip) return;
         const distance = Math.abs(point.getCenterPoint(useFinalPosition).x - pointerX);
         if (distance < nearestDistance) { nearestDistance = distance; nearestX = point.x; }
@@ -7128,7 +7148,12 @@
           hit.style.left = (p.x - p.width / 2) + "px"; hit.style.width = p.width + "px";
           hit.style.top = Math.min(p.y, p.base) + "px"; hit.style.height = Math.max(1, Math.abs(p.base - p.y)) + "px";
           const show = (event) => {
-            const active = [{ datasetIndex: meta.index, index }];
+            const active = chart.options.scales?.y?.stacked
+              ? chart.getSortedVisibleDatasetMetas()
+                .filter((candidate) => candidate.type === "bar" && candidate.data[index] && !candidate.data[index].skip)
+                .sort((a, b) => b.index - a.index)
+                .map((candidate) => ({ datasetIndex: candidate.index, index }))
+              : [{ datasetIndex: meta.index, index }];
             chart.setActiveElements(active); chart.tooltip.setActiveElements(active, { x: p.x, y: (p.y + p.base) / 2 }); chart.update("none");
           };
           const hide = () => { chart.setActiveElements([]); chart.tooltip.setActiveElements([], { x: 0, y: 0 }); chart.update("none"); };
@@ -7310,12 +7335,33 @@
       const yf0 = colFmt(db, ys[0], table);
       if (yf0 && o.scales && o.scales.y) o.scales.y.ticks = Object.assign({}, o.scales.y.ticks, { callback: (v) => applyFmt(yf0, v) });
       o.plugins = o.plugins || {};
-      o.plugins.tooltip = Object.assign({}, o.plugins.tooltip, { callbacks: { label: (cx) => {
+      const tooltipParts = (cx) => {
         const f = colFmt(db, ys[cx.datasetIndex] || ys[0], table);
         const val = cx.parsed && cx.parsed.y != null ? cx.parsed.y : cx.parsed;
-        const lbl = cx.dataset && cx.dataset.label ? cx.dataset.label + ": " : "";
-        return lbl + (f ? applyFmt(f, val) : val);
-      } } });
+        return {
+          label: cx.dataset && cx.dataset.label ? String(cx.dataset.label) : "",
+          value: String(f ? applyFmt(f, val) : val),
+        };
+      };
+      o.plugins.tooltip = Object.assign({}, o.plugins.tooltip, {
+        bodyFont: { family: cssVar("--mono") || "ui-monospace, monospace" },
+        callbacks: {
+          beforeBody: (items) => {
+            const parts = items.map(tooltipParts);
+            const chart = items[0]?.chart;
+            if (chart) chart.$muckTooltipWidths = {
+              label: Math.max(0, ...parts.map((part) => part.label.length)),
+              value: Math.max(0, ...parts.map((part) => part.value.length)),
+            };
+            return [];
+          },
+          label: (cx) => {
+            const part = tooltipParts(cx);
+            const widths = cx.chart.$muckTooltipWidths || { label: part.label.length, value: part.value.length };
+            return `${part.label.padEnd(widths.label)}: ${part.value.padStart(widths.value)}`;
+          },
+        },
+      });
       return o;
     };
     // Optional axis titles from --xlabel/--ylabel.
@@ -7438,7 +7484,7 @@
     if (type === "bar") {
       // A bar's entire painted rectangle is its hover target. This avoids a
       // misleading category-wide corridor and keeps tooltips from sticking.
-      o.interaction = { mode: "muckBarNearest", intersect: true };
+      o.interaction = { mode: "muckBarNearest", intersect: true, stacked };
       o.plugins.muckBarHits = { enabled: true };
       if (!timeX) o.plugins.muckBarLabelTicks = { enabled: true };
     } else if (type === "line") {
@@ -7451,6 +7497,12 @@
     }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.tooltip.filter = (ctx) => !ctx.dataset._muckBand;
+    // Dataset draw order puts the trend underneath the source (`order: -1`),
+    // but tooltip rows should retain semantic declaration order: source first,
+    // fitted value second, just like multiple y columns.
+    o.plugins.tooltip.itemSort = stacked
+      ? (a, b) => b.datasetIndex - a.datasetIndex
+      : (a, b) => a.datasetIndex - b.datasetIndex;
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };
   }

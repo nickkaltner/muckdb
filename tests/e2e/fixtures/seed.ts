@@ -29,6 +29,10 @@ INSERT INTO collaborative_todos VALUES
   ('Retire obsolete panel', NULL, 'skipped', TIMESTAMP '2026-01-03 04:05:06'),
   ('Resolve broken export', 'Success means an exported archive imports cleanly.', 'failure', TIMESTAMP '2026-01-04 05:06:07');
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
+CREATE VIEW stack_by_category AS SELECT * FROM (VALUES
+  ('Alpha', 2, 30, 400),
+  ('Beta', 12, 3, 40)
+) s(category, us, eu, apac);
 CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GROUP BY 1 ORDER BY 1;
 CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
 -- A box tile with two complete summaries and one incomplete one. The incomplete
@@ -202,4 +206,10 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, por
   run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-day-multi', '--title', 'Multiple daily series',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n,n',
     '--caption', 'Two line series sharing an x-axis.']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'trend', '--title', 'Smoothed history',
+    '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n', '--trend',
+    '--caption', 'A source series and its fitted trend share hover values.']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'stack', '--title', 'Category by region',
+    '--db', dbPath, '--view', 'stack_by_category', '--chart', 'stacked', '--x', 'category', '--y', 'us,eu,apac',
+    '--caption', 'Each category total is split into US, EU, and APAC segments.']);
 }

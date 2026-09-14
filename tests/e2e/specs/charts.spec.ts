@@ -143,6 +143,58 @@ test('a single-series line keeps the shared vertical hover cursor', async ({ pag
     (window as any).Chart.getChart(el).$muckHoverTickIndex)).not.toBeNull();
 });
 
+test('a trendline tooltip reports both source and fitted values', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="trend"] canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  const point = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el);
+    const item = chart.getDatasetMeta(0).data[Math.floor(chart.getDatasetMeta(0).data.length / 2)];
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + item.x * rect.width / chart.width, y: rect.top + item.y * rect.height / chart.height };
+  });
+  await page.mouse.move(point.x, point.y);
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el);
+    return {
+      active: chart.tooltip.getActiveElements()
+        .map((item: any) => chart.data.datasets[item.datasetIndex].label)
+        .sort(),
+      displayed: chart.tooltip.dataPoints.map((item: any) => item.dataset.label),
+    };
+  })).toEqual({ active: ['n', 'trend'], displayed: ['n', 'trend'] });
+});
+
+test('a stacked bar tooltip reports every segment in stack order with aligned values', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="stack"] canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  const point = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el);
+    const item = chart.getDatasetMeta(1).data[0];
+    const center = item.getCenterPoint(true);
+    const rect = el.getBoundingClientRect();
+    return { x: rect.left + center.x * rect.width / chart.width, y: rect.top + center.y * rect.height / chart.height };
+  });
+  await page.mouse.move(point.x, point.y);
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el);
+    return {
+      active: chart.tooltip.getActiveElements().map((item: any) => chart.data.datasets[item.datasetIndex].label),
+      displayed: chart.tooltip.dataPoints.map((item: any) => item.dataset.label),
+      lines: chart.tooltip.body.map((item: any) => item.lines[0]),
+      font: chart.options.plugins.tooltip.bodyFont.family,
+    };
+  })).toEqual({
+      active: ['apac', 'eu', 'us'],
+      displayed: ['apac', 'eu', 'us'],
+      lines: ['apac: 400', 'eu  :  30', 'us  :   2'],
+    font: expect.stringContaining('Mono'),
+  });
+});
+
 test('bar tooltips follow the final three hovered bars under console zoom', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const panel = page.locator('.panel', { hasText: 'By category' });
