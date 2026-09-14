@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test';
+import { expect, test } from '../fixtures/test';
 import { readState } from '../constants';
 
 test('analysis tabs provide a screenshot download', async ({ page }) => {

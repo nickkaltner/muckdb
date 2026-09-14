@@ -1,11 +1,11 @@
-import { test, expect, Response } from '@playwright/test';
+import { test, expect, Response } from '../fixtures/test';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
-import { BINARY, PORT, readState } from '../constants';
+import { BINARY, readState } from '../constants';
 
 function cli(...args: string[]) {
-  const { tmpDir } = readState();
-  return execFileSync(BINARY, ['--port', String(PORT), ...args], {
+  const { tmpDir, port } = readState();
+  return execFileSync(BINARY, ['--port', String(port), ...args], {
     env: { ...process.env, XDG_DATA_HOME: join(tmpDir, 'data'), XDG_STATE_HOME: join(tmpDir, 'state') },
     encoding: 'utf8',
   });

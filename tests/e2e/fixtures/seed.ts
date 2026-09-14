@@ -1,9 +1,7 @@
 import { execFileSync } from 'node:child_process';
-import { PORT } from '../constants';
-
 // Run one `muckdb` command with the isolated env; throws on failure.
-function run(binary: string, env: NodeJS.ProcessEnv, args: string[]): void {
-  execFileSync(binary, ['--port', String(PORT), ...args], {
+function run(binary: string, env: NodeJS.ProcessEnv, port: number, args: string[]): void {
+  execFileSync(binary, ['--port', String(port), ...args], {
     env,
     stdio: 'pipe',
   });
@@ -107,55 +105,55 @@ ORDER BY seq;
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
-export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): void {
+export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, port: number): void {
   // 1. Build the database (this also registers it in the ledger so the daemon can browse it).
-  run(binary, env, [dbPath, '-c', CREATE_SQL]);
+  run(binary, env, port, [dbPath, '-c', CREATE_SQL]);
 
   // Unit format on the array column, so empty vs non-empty rendering is exercised.
-  run(binary, env, ['format', dbPath, 'sizes', '--suffix', ' Gbps', '--thousands']);
+  run(binary, env, port, ['format', dbPath, 'sizes', '--suffix', ' Gbps', '--thousands']);
 
   // A link + link_title on the timeline's `sid` column, scoped to deploy_timeline,
   // with a deliberately hostile link_title — regression coverage for the tlTip()
   // XSS fix (the tooltip must render this as escaped text, never as a live <img>).
-  run(binary, env, [
+  run(binary, env, port, [
     'format', dbPath, 'sid', '--table', 'deploy_timeline',
     '--link', 'https://example.test/{value}',
     '--link-title', '<img src=x onerror=alert(1)>',
   ]);
 
   // 2. Build the dashboard session.
-  run(binary, env, [
+  run(binary, env, port, [
     'session', 'create', 'e2e', '--title', 'E2E fixtures',
     '--agent-session', '11111111-2222-4333-8444-555555555555',
   ]);
-  run(binary, env, ['session', 'post', 'e2e', '--name', 'summary', '--title', 'Summary',
+  run(binary, env, port, ['session', 'post', 'e2e', '--name', 'summary', '--title', 'Summary',
     '--md', '# E2E\n\n**200 widgets**, 5 categories.']);
-  run(binary, env, ['session', 'section', 'e2e', '--name', 'analysis', '--title', 'Data tour']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'by-cat', '--title', 'By category',
+  run(binary, env, port, ['session', 'section', 'e2e', '--name', 'analysis', '--title', 'Data tour']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-cat', '--title', 'By category',
     '--db', dbPath, '--view', 'by_category', '--chart', 'bar', '--x', 'category', '--y', 'n',
     '--caption', 'Widgets per category (deterministic: 40 each).']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'by-day', '--title', 'By day',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-day', '--title', 'By day',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n',
     '--caption', 'Widgets created per day.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'boxes', '--title', 'Box ranges',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'boxes', '--title', 'Box ranges',
     '--db', dbPath, '--view', 'box_ranges', '--chart', 'box', '--x', 'group_name',
     '--y', 'min_value,q1,median,q3,max_value',
     '--caption', 'Two complete distributions share a 40–90 range; an incomplete summary is ignored.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'probability', '--title', 'Probability ranges',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'probability', '--title', 'Probability ranges',
     '--db', dbPath, '--view', 'probability_samples', '--chart', 'probability', '--x', 'group_name',
     '--y', 'observed_value', '--desc', 'note',
     '--caption', 'Density estimates from raw samples; skew and tails remain visible.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'map', '--title', 'Widget map',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'map', '--title', 'Widget map',
     '--db', dbPath, '--view', 'widget_map', '--chart', 'map',
     '--lat', 'latitude', '--lon', 'longitude', '--label', 'category',
     '--caption', 'Widgets by lat/long — hover a marker for its category.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'flows', '--title', 'Flows',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'flows', '--title', 'Flows',
     '--db', dbPath, '--view', 'widget_flows', '--chart', 'map',
     '--from-lat', 'from_lat', '--from-lon', 'from_lon', '--to-lat', 'to_lat', '--to-lon', 'to_lon',
     '--from-label', 'from_city', '--to-label', 'to_city',
     '--label', 'label', '--value', 'gbps',
     '--caption', 'Connections drawn as arcs between city pairs.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'timeline', '--title', 'Deploy timeline',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'timeline', '--title', 'Deploy timeline',
     '--db', dbPath, '--view', 'deploy_timeline', '--chart', 'timeline',
     '--lane', 'lane', '--label', 'task', '--start', 't0', '--end', 't1',
     '--color', 'status', '--id', 'sid', '--depends-on', 'parent',
@@ -163,45 +161,45 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
     '--caption', 'A Gantt-style timeline: lanes stack overlapping bars into sublanes; colour = status.']);
   // An absolute-time timeline in local zone — regression coverage for the UTC
   // hover readout and the tz-aware axis.
-  run(binary, env, ['format', dbPath, 'started', '--table', 'ts_timeline', '--tz', 'local']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'timeline-ts', '--title', 'Incident (local tz)',
+  run(binary, env, port, ['format', dbPath, 'started', '--table', 'ts_timeline', '--tz', 'local']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'timeline-ts', '--title', 'Incident (local tz)',
     '--db', dbPath, '--view', 'ts_timeline', '--chart', 'timeline',
     '--lane', 'sys', '--label', 'phase', '--start', 'started', '--end', 'ended',
     '--event', '2026-05-01 14:15|escalated',
     '--caption', 'Absolute-time timeline shown in local zone; hover shows UTC too.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'incident', '--title', 'Incident narrative',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'incident', '--title', 'Incident narrative',
     '--db', dbPath, '--view', 'incident_events', '--chart', 'incident',
     '--start', 'occurred_at', '--label', 'event_name', '--desc', 'narrative', '--color', 'severity',
     '--caption', 'Chronological incident milestones; colour indicates severity and descriptions add response context.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'todos', '--title', 'Collaborative checklist',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'todos', '--title', 'Collaborative checklist',
     '--db', dbPath, '--view', 'collaborative_todos', '--chart', 'todo',
     '--caption', 'A shared checklist whose state can be changed by the user or agent.']);
 
   // A --link format on the sequence fixture's `trace` column, scoped to `messages`
   // — tooltip-link coverage. `note` (seeded above with a hostile value) has no
   // format, so it renders as plain escaped text (XSS coverage).
-  run(binary, env, [
+  run(binary, env, port, [
     'format', dbPath, 'trace', '--table', 'messages',
     '--link', 'https://trace.example.test/{value}',
   ]);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'sequence', '--title', 'Service comms',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'sequence', '--title', 'Service comms',
     '--db', dbPath, '--view', 'messages', '--chart', 'sequence',
     '--from', 'src', '--to', 'dst', '--label', 'msg', '--message-type', 'mtype',
     '--from-type', 'st', '--to-type', 'dt', '--group', 'grp', '--group-branch', 'branch',
     '--autonumber',
     '--caption', 'A sequence diagram: participant types, arrow kinds, a self-message, an alt group.']);
 
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'sequence-loop', '--title', 'Retry loop',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'sequence-loop', '--title', 'Retry loop',
     '--db', dbPath, '--view', 'msgs_loop', '--chart', 'sequence',
     '--from', 'src', '--to', 'dst', '--label', 'msg', '--group', 'grp', '--group-branch', 'branch',
     '--caption', 'A loop frame whose group-branch changes mid-frame — must export valid mermaid (no else/and).']);
-  run(binary, env, ['session', 'mermaid', 'e2e', '--name', 'authored-tree', '--title', 'Authored service tree',
+  run(binary, env, port, ['session', 'mermaid', 'e2e', '--name', 'authored-tree', '--title', 'Authored service tree',
     '--mmd', 'flowchart TD\n  app[Application] --> api[API]\n  api --> jobs[Workers]\n  api --> db[(DuckDB)]',
     '--caption', 'Tree-shaped architecture stored directly as Mermaid source.']);
-  run(binary, env, ['session', 'tile', 'e2e', '--name', 'by-day-multi', '--title', 'Multiple daily series',
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-day-multi', '--title', 'Multiple daily series',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n,n',
     '--caption', 'Two line series sharing an x-axis.']);
 }

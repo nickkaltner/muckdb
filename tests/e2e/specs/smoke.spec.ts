@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect } from '../fixtures/test';
 
 // Shared helper: fail a test if the page logs any uncaught error, with a small
 // allowlist for benign noise.
