@@ -7441,13 +7441,13 @@
       o.interaction = { mode: "muckBarNearest", intersect: true };
       o.plugins.muckBarHits = { enabled: true };
       if (!timeX) o.plugins.muckBarLabelTicks = { enabled: true };
-    } else if (type === "line" && !single) {
-      // All series at one x-value belong together: one tooltip and one cursor
-      // make comparisons much easier than selecting whichever stroke is closest.
+    } else if (type === "line") {
+      // A line chart is read by x-position: keep one vertical guide and one
+      // shared tooltip whether it has one source series, many, or a fitted
+      // trend. Requiring multiple y columns made the interaction disappear on
+      // the simplest charts and whenever callers expected a trend to add it.
       o.interaction = { mode: "muckLineIndex", axis: "x", intersect: false };
       o.plugins.muckHoverCursor = { enabled: true };
-    } else if (type === "line") {
-      o.interaction = { mode: "muckLineSnap", snapDistance: 14 };
     }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.tooltip.filter = (ctx) => !ctx.dataset._muckBand;
