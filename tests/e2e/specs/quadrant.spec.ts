@@ -8,9 +8,10 @@ test('quadrant structural lines snap cleanly and clustered labels avoid overlap'
   await expect(svg.locator('.quad-label')).toHaveCount(4);
   await expect(svg.locator('.quad-axis-end')).toHaveCount(4);
   await expect(svg.locator('.quad-axis-cue')).toHaveCount(0);
-  await expect(svg.locator('.quad-gutter')).toHaveCount(4);
-  await expect(svg.locator('.quad-gutter-divider')).toHaveCount(2);
+  await expect(svg.locator('.quad-gutter')).toHaveCount(0);
+  await expect(svg.locator('.quad-gutter-divider')).toHaveCount(0);
   await expect(svg.locator('.quad-axis-tag')).toHaveCount(0);
+  await expect(svg.locator('.quad-q')).toHaveCount(0);
   const result = await svg.evaluate((el) => {
     const labels = [...el.querySelectorAll('.quad-label')].map((label) => {
       const rect = label.getBoundingClientRect();
@@ -23,8 +24,9 @@ test('quadrant structural lines snap cleanly and clustered labels avoid overlap'
       border: getComputedStyle(el.querySelector('.quad-bg')!).shapeRendering,
       axes: getComputedStyle(el.querySelector('.quad-axis')!).shapeRendering,
       grid: getComputedStyle(el.querySelector('.quad-grid')!).shapeRendering,
+      labelShadow: getComputedStyle(el.querySelector('.quad-label')!).textShadow,
       overlaps,
     };
   });
-  expect(result).toEqual({ border: 'crispedges', axes: 'crispedges', grid: 'crispedges', overlaps: false });
+  expect(result).toEqual({ border: 'crispedges', axes: 'crispedges', grid: 'crispedges', labelShadow: 'none', overlaps: false });
 });

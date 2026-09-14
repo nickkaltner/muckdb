@@ -665,18 +665,14 @@
   .quad-wrap { overflow-x: auto; padding: 4px 0; }
   .quad-svg { display: block; width: 100%; min-width: 440px; height: auto; font-family: inherit; }
   .quad-bg { fill: var(--raised); stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
-  .quad-q { fill: var(--surface); opacity: .56; }
-  .quad-gutter { pointer-events: none; }
   .quad-axis { stroke: var(--muted); stroke-width: 1; shape-rendering: crispEdges; }
   .quad-grid { stroke: color-mix(in srgb, var(--muted) 68%, var(--raised)); stroke-width: 1; stroke-dasharray: 3 4; stroke-opacity: .88; shape-rendering: crispEdges; }
   .quad-axis-lbl { fill: var(--muted); font-size: 10.5px; font-weight: 600; letter-spacing: .035em; }
   .quad-axis-end.high .quad-axis-lbl { fill: var(--fg); }
-  .quad-gutter-divider { stroke: var(--bg); stroke-width: 2; shape-rendering: crispEdges; }
   .quad-title { fill: var(--fg); font-size: 12px; font-weight: 600; }
   .quad-point { fill: var(--primary); stroke: var(--surface); stroke-width: 2; cursor: pointer; }
   .quad-point:hover, .quad-label:hover + .quad-point { fill: var(--highlight); }
-  .quad-label { fill: var(--fg); font-size: 11px; cursor: pointer; paint-order: stroke; stroke: var(--bg); stroke-width: 2px; stroke-linejoin: round;
-    text-shadow: -1px -1px 0 var(--bg), 1px -1px 0 var(--bg), -1px 1px 0 var(--bg), 1px 1px 0 var(--bg); }
+  .quad-label { fill: var(--fg); font-size: 11px; cursor: pointer; paint-order: stroke; stroke: var(--raised); stroke-width: 2px; stroke-linejoin: round; }
   .pd-detail { border: 1px solid var(--line); border-radius: 6px; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); padding: 12px 14px; }
   .pd-detail-head { display: flex; align-items: center; gap: 10px; font-size: 13px; color: var(--fg); margin-bottom: 10px; }
   .pd-detail-head b { color: var(--primary); font-weight: 400; }
@@ -5429,7 +5425,6 @@
     });
     return core.join("<br>") + (extra.length ? `<div class="tl-tip-sep"></div>${extra.join("<br>")}` : "");
   }
-  let quadrantSerial = 0;
   function quadrantHtml(cols, rows, spec, db, table) {
     const xi = cols.indexOf(spec.x), yi = cols.indexOf((spec.y || [])[0]), li = cols.indexOf(spec.label);
     if (xi < 0 || yi < 0 || li < 0) return '<div class="note">quadrant needs --x, --y and --label.</div>';
@@ -5487,28 +5482,13 @@
       const x = px(p.x), y = py(p.y), o = layout.get(p.ri), tip = attr(quadrantTip(p, cols, p.row, spec, db, table));
       return `<g class="wm-x" data-tip="${tip}"><circle class="quad-point" cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="5.5"/><text class="quad-label" x="${o.x.toFixed(1)}" y="${o.y.toFixed(1)}" text-anchor="${o.anchor}">${esc(p.label)}</text></g>`;
     }).join("");
-    const gid = `quad-gutter-${++quadrantSerial}`;
-    // The colour lives outside the decision surface: four quiet directional
-    // washes connect each half of the matrix to its low/high axis endpoint.
-    const gutters = `<defs>
-      <linearGradient id="${gid}-impact-high" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="var(--primary)" stop-opacity=".10"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="${gid}-impact-low" x1="1" y1="0" x2="0" y2="0"><stop offset="0" stop-color="var(--primary)" stop-opacity=".075"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="${gid}-effort-low" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity=".075"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient>
-      <linearGradient id="${gid}-effort-high" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--primary)" stop-opacity=".10"/><stop offset="1" stop-color="var(--primary)" stop-opacity="0"/></linearGradient>
-    </defs>
-      <rect class="quad-gutter" x="${L - 20}" y="${T + 6}" width="20" height="${PH / 2 - 7}" fill="url(#${gid}-impact-high)"/>
-      <rect class="quad-gutter" x="${L - 20}" y="${T + PH / 2 + 1}" width="20" height="${PH / 2 - 7}" fill="url(#${gid}-impact-low)"/>
-      <rect class="quad-gutter" x="${L + 6}" y="${T + PH}" width="${PW / 2 - 7}" height="22" fill="url(#${gid}-effort-low)"/>
-      <rect class="quad-gutter" x="${L + PW / 2 + 1}" y="${T + PH}" width="${PW / 2 - 7}" height="22" fill="url(#${gid}-effort-high)"/>
-      <line class="quad-gutter-divider" x1="${L - 20}" y1="${T + PH / 2}" x2="${L}" y2="${T + PH / 2}"/>
-      <line class="quad-gutter-divider" x1="${L + PW / 2}" y1="${T + PH}" x2="${L + PW / 2}" y2="${T + PH + 22}"/>`;
     const axisTag = (label, x, y, anchor, tone, vertical = false) => {
       const body = `<text class="quad-axis-lbl" x="${x.toFixed(1)}" y="${y.toFixed(1)}" text-anchor="${anchor}">${esc(label)}</text>`;
       return `<g class="quad-axis-end ${tone}">${vertical ? `<g transform="rotate(-90 ${x} ${y})">${body}</g>` : body}</g>`;
     };
     const axisTags = `${axisTag(`Low ${xTitle}`, L + 12, T + PH + 30, "start", "low")}${axisTag(`High ${xTitle}`, L + PW - 12, T + PH + 30, "end", "high")}${axisTag(`High ${yTitle}`, 19, T + 50, "middle", "high", true)}${axisTag(`Low ${yTitle}`, 19, T + PH - 50, "middle", "low", true)}`;
     return `<div class="quad-wrap"><svg class="quad-svg" viewBox="0 0 ${W} ${H}" role="img" aria-label="${attr(`${yTitle} versus ${xTitle} quadrant chart`)}">
-      ${gutters}<rect class="quad-bg" x="${L}" y="${T}" width="${PW}" height="${PH}" rx="5"/><rect class="quad-q" x="${L + PW / 2}" y="${T}" width="${PW / 2}" height="${PH / 2}"/><rect class="quad-q" x="${L}" y="${T + PH / 2}" width="${PW / 2}" height="${PH / 2}"/>
+      <rect class="quad-bg" x="${L}" y="${T}" width="${PW}" height="${PH}" rx="5"/>
       ${grid}<line class="quad-axis" x1="${L + PW / 2}" y1="${T}" x2="${L + PW / 2}" y2="${T + PH}"/><line class="quad-axis" x1="${L}" y1="${T + PH / 2}" x2="${L + PW}" y2="${T + PH / 2}"/>
       <text class="quad-title" x="${W / 2}" y="18" text-anchor="middle">${esc(yTitle)} vs ${esc(xTitle)}</text>${axisTags}${marks}
     </svg></div>`;
