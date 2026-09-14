@@ -4065,9 +4065,10 @@
       backgroundColor: bg,
       scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
       useCORS: true,
-      // The browser paints the SVG foreign object itself, preserving its native
-      // system font (notably SF Mono on macOS) and root CSS zoom exactly.
-      foreignObjectRendering: true,
+      // Keep html2canvas's regular renderer here. Its foreignObject renderer
+      // serialises the subtree into an SVG, which WebKit refuses to draw back
+      // to a canvas in common macOS configurations; canvas.toBlob() then fails
+      // and both copy-image and poster export stop producing PNGs.
       logging: false,
       ignoreElements: (el) => el.classList && el.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
@@ -4090,9 +4091,8 @@
       backgroundColor: bg,
       scale: 2,
       useCORS: true,
-      // See renderElementBlob: html2canvas's canvas text renderer does not
-      // faithfully reproduce macOS system fonts when the document is zoomed.
-      foreignObjectRendering: true,
+      // See renderElementBlob: foreignObject rendering is not portable to the
+      // macOS browser engines we support.
       logging: false,
       ignoreElements: (e) => e.classList && e.classList.contains("no-screenshot"),
       onclone: sanitizeForCapture,
