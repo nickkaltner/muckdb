@@ -14,6 +14,34 @@ test('seeded session renders its tiles', async ({ page }) => {
   await expect(page.locator('.panel', { hasText: 'All widgets' })).toBeVisible();
 });
 
+test('linked session UUID is shown beside the picker and copies', async ({ page, context }) => {
+  await context.grantPermissions(['clipboard-read', 'clipboard-write']);
+  await page.goto(`/session/${SESSION_ID}/`);
+
+  const uuid = '11111111-2222-4333-8444-555555555555';
+  const agent = page.locator('#session-agent');
+  await expect(agent.locator('.sh-label')).toHaveText('session uuid');
+  await expect(agent.locator('.sh-uuid')).toHaveText(uuid);
+  await agent.locator('[title="Copy session UUID"]').click();
+  await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(uuid);
+});
+
+test('current thread UUID is shown when legacy agent session provenance is absent', async ({ page }) => {
+  await page.route(`/api/session?id=${SESSION_ID}`, async (route) => {
+    const response = await route.fetch();
+    const session = await response.json();
+    delete session.agent_session;
+    session.thread_id = 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee';
+    await route.fulfill({ response, json: session });
+  });
+  await page.goto(`/session/${SESSION_ID}/`);
+
+  const agent = page.locator('#session-agent');
+  await expect(agent.locator('.sh-uuid')).toHaveText('aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+  await expect(agent.locator('[title="Copy session UUID"]')).toHaveAttribute(
+    'data-copytext', 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee');
+});
+
 test('session routing help overlays content without changing toolbar overflow', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
 
@@ -43,6 +71,11 @@ test('session routing help overlays content without changing toolbar overflow', 
   await expect(popover).toContainText('Session details');
   await expect(popover).toContainText('Last updated');
   await expect(popover.locator('time')).toHaveAttribute('datetime', /^\d{4}-\d{2}-\d{2}T/);
+  const expectedUpdated = await page.evaluate(async (sessionId) => {
+    const session = await (await fetch(`/api/session?id=${sessionId}`)).json();
+    return new Date(Number(session.updated)).toLocaleString(document.documentElement.lang);
+  }, SESSION_ID);
+  await expect(popover.locator('time')).toHaveText(expectedUpdated);
   const [popoverBox, bodyBox] = await Promise.all([
     popover.boundingBox(),
     page.locator('#session-body').boundingBox(),

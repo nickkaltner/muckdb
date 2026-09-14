@@ -813,10 +813,10 @@
     #view-sessions.toc-open .session-toc { display: block; }
     #view-sessions.toc-open .toc-resizer { display: block; }
   }
-  .session-agent { display: inline-flex; align-items: center; gap: 8px; flex: none; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
+  .session-agent { display: inline-flex; align-items: center; gap: 8px; flex: 0 1 auto; min-width: 0; margin-left: 14px; padding-left: 14px; border-left: 1px solid var(--line); }
   .session-agent:empty { display: none; }
   .sh-label { font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: var(--faint); }
-  .sh-uuid { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
+  .sh-uuid { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); }
   .panels { display: flex; flex-direction: column; gap: 14px; padding: 16px 18px 28px; max-width: 1100px; margin: 0 auto; }
   .panel { position: relative; background: var(--grad-panel), var(--surface); box-shadow: var(--hi); overflow: hidden; scroll-margin-top: 14px; }
   /* Table tiles toggled to full width break out of the centred 1100px column to
@@ -3440,7 +3440,10 @@
     const cur = ss.find((s) => s.id === state.selSession);
     const name = cur ? (cur.title || cur.id) : "select a session";
     $("session-chips").innerHTML = `<button class="combo" id="session-combo"><span class="cv-name">${esc(name)}</span><span class="cv-sub">${ss.length} ${ss.length === 1 ? "session" : "sessions"}</span><span class="cv-caret">▾</span></button>`;
-    if (cur) renderSessionHead(cur);
+    if (cur) {
+      const detail = state.sessionData && state.sessionData.id === cur.id ? state.sessionData : cur;
+      renderSessionHead(detail);
+    }
   }
   function openSessionCombo(anchor) {
     if (!state.sessions.length) return;
@@ -3457,8 +3460,9 @@
     const el = $("session-agent");
     if (!el) return;
     const cs = s.agent_session ?? s.claude_session;
-    el.innerHTML = cs
-      ? `<span class="sh-label">agent session</span><span class="sh-uuid">${esc(cs)}</span><button class="sl-copy" data-copytext="${attr(cs)}" title="Copy session UUID">⧉</button>`
+    const sessionUuid = cs || s.thread_id || null;
+    el.innerHTML = sessionUuid
+      ? `<span class="sh-label">session uuid</span><span class="sh-uuid">${esc(sessionUuid)}</span><button class="sl-copy" data-copytext="${attr(sessionUuid)}" title="Copy session UUID">⧉</button>`
       : "";
     const info = $("session-info-pop");
     if (!info) return;
@@ -3472,8 +3476,9 @@
       : `<p><strong>Creating agent session</strong><br>No origin session was supplied. Use <code>--agent-session ID</code> on create when you want to retain that provenance.</p>`;
     const updated = Number(s.updated);
     const updatedDate = Number.isFinite(updated) ? new Date(updated) : null;
+    const locale = document.documentElement.lang || undefined;
     const updatedText = updatedDate && !Number.isNaN(updatedDate.getTime())
-      ? `<time datetime="${attr(updatedDate.toISOString())}" title="${attr(updatedDate.toISOString())}">${esc(updatedDate.toLocaleString())}</time>`
+      ? `<time datetime="${attr(updatedDate.toISOString())}" title="${attr(updatedDate.toISOString())}">${esc(updatedDate.toLocaleString(locale))}</time>`
       : "Not recorded";
     info.innerHTML = `<strong>Session details</strong><p><strong>Last updated</strong><br>${updatedText}</p>${route}${origin}<p><strong>Keeping it current</strong><br>Set <code>MUCKDB_SESSION=${esc(s.id)}</code> while working. Every muckdb command refreshes <code>thread_id</code> and <code>thread_provider</code>.</p><p><strong>Agent contract</strong><br>Codex uses <code>CODEX_THREAD_ID</code> → <code>codex</code>; Claude Code uses <code>CLAUDE_CODE_SESSION_ID</code> → <code>claude_code</code>. Other agents set <code>MUCKDB_THREAD_ID</code> and <code>MUCKDB_THREAD_PROVIDER</code>.</p>`;
   }
@@ -3635,6 +3640,7 @@
       if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; if (SHOT) markShotReady(); syncUrl(!!push); return; }
       const previous = state.sessionData;
       state.sessionData = s;
+      renderSessionHead(s);
       if (keepReaderPosition && previous) reconcilePanels(previous, s, panelPosition);
       else renderPanels(s, panelPosition);
     } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }

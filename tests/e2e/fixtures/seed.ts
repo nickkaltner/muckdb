@@ -124,7 +124,10 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string): vo
   ]);
 
   // 2. Build the dashboard session.
-  run(binary, env, ['session', 'create', 'e2e', '--title', 'E2E fixtures']);
+  run(binary, env, [
+    'session', 'create', 'e2e', '--title', 'E2E fixtures',
+    '--agent-session', '11111111-2222-4333-8444-555555555555',
+  ]);
   run(binary, env, ['session', 'post', 'e2e', '--name', 'summary', '--title', 'Summary',
     '--md', '# E2E\n\n**200 widgets**, 5 categories.']);
   run(binary, env, ['session', 'section', 'e2e', '--name', 'analysis', '--title', 'Data tour']);
