@@ -33,6 +33,12 @@ CREATE VIEW stack_by_category AS SELECT * FROM (VALUES
   ('Alpha', 2, 30, 400),
   ('Beta', 12, 3, 40)
 ) s(category, us, eu, apac);
+CREATE VIEW quadrant_items AS SELECT * FROM (VALUES
+  (-0.62, 0.62, 'Fast fix'),
+  (-0.54, 0.54, 'Quick win'),
+  (-0.46, 0.46, 'Near-term work'),
+  (0.58, 0.58, 'Strategic bet')
+) q(effort, impact, initiative);
 CREATE VIEW by_day AS SELECT created::DATE AS day, count(*) AS n FROM widgets GROUP BY 1 ORDER BY 1;
 CREATE VIEW widget_map AS SELECT id, category, latitude, longitude FROM widgets;
 -- A box tile with two complete summaries and one incomplete one. The incomplete
@@ -212,4 +218,8 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, por
   run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'stack', '--title', 'Category by region',
     '--db', dbPath, '--view', 'stack_by_category', '--chart', 'stacked', '--x', 'category', '--y', 'us,eu,apac',
     '--caption', 'Each category total is split into US, EU, and APAC segments.']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'quadrant', '--title', 'Initiative priority',
+    '--db', dbPath, '--view', 'quadrant_items', '--chart', 'quadrant', '--x', 'effort', '--y', 'impact', '--label', 'initiative',
+    '--xlabel', 'Effort', '--ylabel', 'Impact',
+    '--caption', 'Initiatives positioned by relative effort and impact.']);
 }
