@@ -4016,6 +4016,34 @@
       }
     });
   }
+  // html2canvas mixes zoomed DOM text positions with unzoomed glyph widths.
+  // Let it measure and clone the live target in logical coordinates, then put
+  // the UI zoom into the raster scale. Restore the live document as soon as
+  // cloning finishes (normally within the same frame), before rasterisation.
+  function captureCanvas(el, options) {
+    const root = document.documentElement;
+    const priorZoom = root.style.zoom;
+    const uiScale = Number.parseFloat(getComputedStyle(root).zoom) || 1;
+    let restored = false;
+    const restore = () => {
+      if (restored) return;
+      restored = true;
+      root.style.zoom = priorZoom;
+    };
+    root.style.zoom = "1";
+    try {
+      return html2canvas(el, {
+        ...options,
+        scale: options.scale * uiScale,
+        onclone: (doc) => {
+          try { options.onclone?.(doc); } finally { restore(); }
+        },
+      }).finally(restore);
+    } catch (e) {
+      restore();
+      return Promise.reject(e);
+    }
+  }
   // canvas.toBlob() produces a perfectly valid PNG but no descriptive chunks.
   // Add the standard PNG creation-time chunk plus textual fields before handing
   // the image to the clipboard or download, so Finder/Preview and other image
@@ -4061,7 +4089,7 @@
     if (!el) return Promise.reject(new Error("capture target not found"));
     if (typeof html2canvas !== "function") return Promise.reject(new Error("html2canvas not loaded"));
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1a1712";
-    return html2canvas(el, {
+    return captureCanvas(el, {
       backgroundColor: bg,
       scale: Math.min(3, Math.max(2, window.devicePixelRatio || 1)),
       useCORS: true,
@@ -4087,7 +4115,7 @@
     if (!el) return Promise.reject(new Error("no dashboard"));
     if (typeof html2canvas !== "function") return Promise.reject(new Error("html2canvas not loaded"));
     const bg = getComputedStyle(document.documentElement).getPropertyValue("--bg").trim() || "#1a1712";
-    return html2canvas(el, {
+    return captureCanvas(el, {
       backgroundColor: bg,
       scale: 2,
       useCORS: true,

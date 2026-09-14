@@ -11,6 +11,30 @@ test('dashboard poster exports despite color-mix styles', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   await expect(page.locator('.panel[data-tile="timeline"]')).toBeVisible();
 
+  // Capture must neutralise the app's root CSS zoom while measuring/cloning and
+  // carry it in the raster scale instead. Mixing the two coordinate systems
+  // makes macOS captures progressively widen the spaces between text runs.
+  await page.evaluate(() => {
+    const win = window as typeof window & {
+      html2canvas: typeof window.html2canvas;
+      captureProbe?: { zoom: string; scale: number };
+    };
+    const render = win.html2canvas;
+    win.html2canvas = (element, options = {}) => {
+      const onclone = options.onclone;
+      return render(element, {
+        ...options,
+        onclone: (doc, cloned) => {
+          onclone?.(doc, cloned);
+          win.captureProbe = {
+            zoom: doc.documentElement.style.zoom,
+            scale: Number(options.scale),
+          };
+        },
+      });
+    };
+  });
+
   const [download] = await Promise.all([
     page.waitForEvent('download', { timeout: 30000 }),
     page.click('#poster-btn'),
@@ -24,4 +48,8 @@ test('dashboard poster exports despite color-mix styles', async ({ page }) => {
   expect(png.toString('latin1')).toMatch(/Software\0muckdb \d+\.\d+\.\d+ by Nick Kaltner/);
   expect(png.toString('latin1')).toContain('Creation Time\0');
   expect(png.subarray(37, 41).toString('ascii')).toBe('tIME');
+  await expect.poll(() => page.evaluate(() => (window as any).captureProbe)).toEqual({
+    zoom: '1',
+    scale: 2.5,
+  });
 });
