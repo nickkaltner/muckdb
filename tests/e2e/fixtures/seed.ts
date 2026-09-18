@@ -29,6 +29,13 @@ INSERT INTO collaborative_todos VALUES
   ('Retire obsolete panel', NULL, 'skipped', TIMESTAMP '2026-01-03 04:05:06'),
   ('Resolve broken export', 'Success means an exported archive imports cleanly.', 'failure', TIMESTAMP '2026-01-04 05:06:07');
 CREATE VIEW by_category AS SELECT category, count(*) AS n FROM widgets GROUP BY 1 ORDER BY n DESC;
+CREATE VIEW long_category_labels AS SELECT * FROM (VALUES
+  ('Customer success and account retention', 31),
+  ('Enterprise platform reliability engineering', 27),
+  ('International partnerships and expansion', 24),
+  ('Product research and usability testing', 19),
+  ('Revenue operations and sales enablement', 16)
+) l(category, n);
 CREATE VIEW stack_by_category AS SELECT * FROM (VALUES
   ('Alpha', 2, 30, 400),
   ('Beta', 12, 3, 40)
@@ -142,6 +149,9 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, por
   run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-cat', '--title', 'By category',
     '--db', dbPath, '--view', 'by_category', '--chart', 'bar', '--x', 'category', '--y', 'n',
     '--caption', 'Widgets per category (deterministic: 40 each).']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'long-labels', '--title', 'Long category labels',
+    '--db', dbPath, '--view', 'long_category_labels', '--chart', 'bar', '--x', 'category', '--y', 'n',
+    '--caption', 'Long category names rotate only when needed, keeping every bar labelled.']);
   run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'by-day', '--title', 'By day',
     '--db', dbPath, '--view', 'by_day', '--chart', 'line', '--x', 'day', '--y', 'n',
     '--caption', 'Widgets created per day.']);

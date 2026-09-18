@@ -6681,7 +6681,11 @@
       : { type: scatter ? "linear" : "category", grid: scatter ? { color: gridMinor } : {
           color: gridMinor, drawOnChartArea: false, drawTicks: true, tickLength: 4, tickColor: tickMarkColor,
           tickWidth: 1,
-        }, ticks: { autoSkip: false, maxRotation: 0, padding: 3, color: tickColor,
+        // Keep every categorical label (each bar needs its own name), but let
+        // Chart.js rotate only when the available slot is too narrow. This
+        // leaves short labels horizontal and makes dense, verbose bar charts
+        // readable without dropping categories.
+        }, ticks: { autoSkip: false, minRotation: 0, maxRotation: 45, padding: 3, color: tickColor,
           font: (ctx) => activeXTick(ctx) ? { weight: "bold" } : {} } };
     if (stacked) x.stacked = true;
     const y = { grid: { color: gridMinor } };

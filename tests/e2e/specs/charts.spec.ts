@@ -124,6 +124,27 @@ test('chart tiles render canvases; table tile renders a table', async ({ page })
   await expect(page.locator('.panel', { hasText: 'All widgets' }).locator('table')).toBeVisible();
 });
 
+test('long categorical bar labels rotate instead of overlapping', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="long-labels"] canvas');
+  await expect(canvas).toBeVisible();
+  await canvas.scrollIntoViewIfNeeded();
+  const axis = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return {
+      rotation: chart.scales.x.labelRotation,
+      minRotation: chart.scales.x.options.ticks.minRotation,
+      maxRotation: chart.scales.x.options.ticks.maxRotation,
+      labels: chart.scales.x.ticks.length,
+    };
+  });
+  expect(axis.minRotation).toBe(0);
+  expect(axis.maxRotation).toBe(45);
+  expect(axis.labels).toBe(5);
+  expect(axis.rotation).toBeGreaterThan(0);
+  expect(axis.rotation).toBeLessThanOrEqual(axis.maxRotation);
+});
+
 test('a single-series line keeps the shared vertical hover cursor', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
