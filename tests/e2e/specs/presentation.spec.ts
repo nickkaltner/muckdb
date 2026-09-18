@@ -13,6 +13,15 @@ test.describe('presentation mode', () => {
     await expect(deck.locator('.presentation-stage > .panel')).toHaveCount(1);
     await expect(deck.locator('.presentation-page')).toHaveText(/^1 \/ \d+$/);
 
+    const advanceTo = async (tile: string) => {
+      const target = deck.locator(`.presentation-stage > .panel[data-tile="${tile}"]`);
+      for (let i = 0; i < 100; i++) {
+        if (await target.isVisible()) return;
+        await page.keyboard.press('ArrowRight');
+      }
+      throw new Error(`presentation did not reach tile ${tile}`);
+    };
+
     await page.keyboard.press('ArrowRight');
     await expect(deck.locator('.presentation-page')).toHaveText(/^2 \/ \d+$/);
     const section = deck.locator('.presentation-stage > .section-panel');
@@ -28,15 +37,14 @@ test.describe('presentation mode', () => {
     await expect(deck.locator('.presentation-page')).toHaveText(/^1 \/ \d+$/);
 
     // A Chart.js tile replays its native draw animation on presentation entry.
-    await page.keyboard.press('ArrowRight');
-    await page.keyboard.press('ArrowRight');
+    await advanceTo('by-cat');
     const chartCanvas = deck.locator('.presentation-stage > .panel[data-tile="by-cat"] canvas');
     await expect(chartCanvas).toBeVisible();
     await expect.poll(() => chartCanvas.evaluate((canvas) => (window as any).Chart.getChart(canvas).options.animation.duration))
       .toBe(900);
 
     // Maps use a wider stage (96vw) than ordinary presentation slides.
-    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await advanceTo('map');
     const stage = deck.locator('.presentation-stage');
     await expect(stage).toHaveClass(/\bpresentation-map\b/);
     const mapBox = await deck.locator('.presentation-stage > .panel').boundingBox();
@@ -48,12 +56,12 @@ test.describe('presentation mode', () => {
 
     // The incident narrative is a normal slide between the Gantt view and the
     // table, preserving its readable chronological order in a presentation.
-    for (let i = 0; i < 4; i++) await page.keyboard.press('ArrowRight');
+    await advanceTo('incident');
     await expect(deck.locator('.presentation-stage > .panel[data-tile="incident"]')).toBeVisible();
 
     // The table's "more rows" exploration hint is useful in the dashboard,
     // but not to an audience. The reusable opt-out class hides it in slides.
-    await page.keyboard.press('ArrowRight');
+    await advanceTo('all');
     await expect(deck.locator('.presentation-stage > .panel[data-tile="all"]')).toBeVisible();
     await expect(deck.locator('.hide-presentation')).toBeHidden();
 
