@@ -317,7 +317,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|topology|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--limit N] (positive row limit, default 10000; applies to views and inline SQL)
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
@@ -338,6 +338,11 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--group COL]  (sequence: 'kind:label' — loop|opt|alt|par; contiguous equal values = one frame)
         [--group-branch COL]  (sequence: else/and compartment label within a frame)
         [--autonumber]  (sequence: number the messages)
+        [--chart topology --from COL [--to COL]]  (network/service topology; one row per connection, NULL/missing --to permits isolated nodes)
+        [--from-within C1,C2] [--to-within C1,C2]  (topology: successive outermost-to-innermost containment columns)
+        [--from-mark C1,C2] [--to-mark C1,C2]  (topology: arbitrary badges such as AZ, diversity domain, owner, or trust boundary)
+        [--from-port COL] [--to-port COL]  (topology: labels at the two ends of a connection; --label labels its middle)
+        [--direction right|down] [--routing orthogonal|metro] [--spacing compact|comfortable]  (topology layout)
         [--xlabel L] [--ylabel L] [--bars gradient|solid] [--y-range tight]
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
@@ -441,7 +446,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | probability | quadrant | map | timeline | sequence`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | probability | quadrant | map | timeline | sequence | topology`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets sit on their boundaries instead
@@ -737,6 +742,38 @@ One mapping caveat: **mermaid has no database or boundary participant
 shape**, so `database`/`boundary` participants export as plain `participant`
 with a preceding `%% database` / `%% boundary` comment marking what they
 really are; `actor` exports as mermaid's `actor` (its one distinct shape).
+
+## Topology tiles (networks, infrastructure, service architecture)
+
+A `topology` tile renders one row per connection as a deterministic transit
+schematic. `--from` is required; `--to` may be omitted or NULL for isolated
+nodes. `--from-label`/`--to-label` name the nodes, while `--label` names the
+connection and `--from-port`/`--to-port` label its two ends. Multiple node types
+may be comma-separated in `--from-type`/`--to-type` values.
+
+Containment and markup are deliberately separate. Pass successive
+outermost-to-innermost columns to `--from-within` and `--to-within` (for example
+`country,region,metro,dc`, or `zone,dmz`). Pass arbitrary annotation columns to
+`--from-mark`/`--to-mark`; availability zone, diversity domain, owner and trust
+boundary then render as compact badges without distorting the nesting tree.
+`--color` groups connection tracks and adds a legend.
+
+```sh
+muckdb session tile infra --name network --db infra.duckdb --view links \
+  --chart topology --from src --to dst --from-label src_name --to-label dst_name \
+  --from-type src_types --to-type dst_types --label protocol \
+  --from-port src_port --to-port dst_port \
+  --from-within src_country,src_region,src_metro,src_dc \
+  --to-within dst_country,dst_region,dst_metro,dst_dc \
+  --from-mark src_az,src_diversity --to-mark dst_az,dst_diversity \
+  --color traffic_class --direction right --routing metro --spacing comfortable \
+  --caption "Service paths across physical sites, availability zones and diversity domains."
+```
+
+Layout options stay intentionally small: `--direction right|down`,
+`--routing orthogonal|metro` (45° transit corners), and
+`--spacing compact|comfortable`. The layout is stable across refreshes; do not
+encode coordinates in the data.
 
 **Worked example** — a login flow across gateway/auth/orders, with an `alt`
 frame for the valid-vs-expired-token branches:

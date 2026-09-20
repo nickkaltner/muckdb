@@ -153,6 +153,31 @@ pub struct Chart {
     /// Sequence: number the messages 1,2,3… (`--autonumber`).
     #[serde(default, skip_serializing_if = "is_false")]
     pub autonumber: bool,
+    /// Topology: successive containment columns, ordered outermost to innermost.
+    /// Each endpoint has its own path because links commonly cross boundaries.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from_within: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to_within: Vec<String>,
+    /// Topology: arbitrary endpoint metadata rendered as badges/overlays (for
+    /// example availability_zone, diversity_domain, owner, or trust_boundary).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub from_marks: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub to_marks: Vec<String>,
+    /// Topology: labels placed at the source/destination end of a connection.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub from_port: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub to_port: Option<String>,
+    /// Topology layout controls. Direction is right|down, routing is
+    /// orthogonal|metro, and spacing is compact|comfortable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub direction: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub routing: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spacing: Option<String>,
 }
 
 /// One panel in a session.
@@ -829,6 +854,15 @@ fn parse_markers(raw: &[&str]) -> Vec<Marker> {
         .collect()
 }
 
+fn parse_columns(raw: Option<&str>) -> Vec<String> {
+    raw.into_iter()
+        .flat_map(|value| value.split(','))
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_string)
+        .collect()
+}
+
 /// Levenshtein distance, for "did you mean" suggestions on typo'd names.
 fn edit_distance(a: &str, b: &str) -> usize {
     let a: Vec<char> = a.chars().collect();
@@ -1205,6 +1239,57 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             }
         }
     }
+    if chart.kind == "topology" {
+        let from = chart
+            .from_participant
+            .as_deref()
+            .context("--chart topology needs --from <column> (the source node id)")?;
+        check("--from", from)?;
+        if let Some(to) = chart.to_participant.as_deref() {
+            check("--to", to)?;
+        }
+        for (flag, col) in [
+            ("--from-type", &chart.from_type),
+            ("--to-type", &chart.to_type),
+            ("--from-port", &chart.from_port),
+            ("--to-port", &chart.to_port),
+            ("--color", &chart.color),
+        ] {
+            if let Some(c) = col {
+                check(flag, c)?;
+            }
+        }
+        for (flag, columns) in [
+            ("--from-within", &chart.from_within),
+            ("--to-within", &chart.to_within),
+            ("--from-mark", &chart.from_marks),
+            ("--to-mark", &chart.to_marks),
+        ] {
+            for column in columns {
+                check(flag, column)?;
+            }
+        }
+        if chart.to_participant.is_none()
+            && (chart.label.is_some() || chart.to_port.is_some() || chart.to_type.is_some())
+        {
+            bail!("--chart topology needs --to when connection or destination fields are used");
+        }
+        if let Some(value) = chart.direction.as_deref()
+            && !matches!(value, "right" | "down")
+        {
+            bail!("--direction must be 'right' or 'down' (got '{value}')");
+        }
+        if let Some(value) = chart.routing.as_deref()
+            && !matches!(value, "orthogonal" | "metro")
+        {
+            bail!("--routing must be 'orthogonal' or 'metro' (got '{value}')");
+        }
+        if let Some(value) = chart.spacing.as_deref()
+            && !matches!(value, "compact" | "comfortable")
+        {
+            bail!("--spacing must be 'compact' or 'comfortable' (got '{value}')");
+        }
+    }
     Ok(())
 }
 
@@ -1569,6 +1654,15 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     group: p.get("group").map(str::to_string),
                     group_branch: p.get("group-branch").map(str::to_string),
                     autonumber: p.get("autonumber").is_some(),
+                    from_within: parse_columns(p.get("from-within")),
+                    to_within: parse_columns(p.get("to-within")),
+                    from_marks: parse_columns(p.get("from-mark")),
+                    to_marks: parse_columns(p.get("to-mark")),
+                    from_port: p.get("from-port").map(str::to_string),
+                    to_port: p.get("to-port").map(str::to_string),
+                    direction: p.get("direction").map(str::to_string),
+                    routing: p.get("routing").map(str::to_string),
+                    spacing: p.get("spacing").map(str::to_string),
                 }),
                 caption: p.get("caption").map(str::to_string),
                 skip_presentation: if p.get("include-presentation").is_some() {
@@ -1822,6 +1916,15 @@ mod tests {
             group: None,
             group_branch: None,
             autonumber: false,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("\"value\":\"sites\""));
@@ -1877,6 +1980,15 @@ mod tests {
             group: None,
             group_branch: None,
             autonumber: false,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -1935,6 +2047,15 @@ mod tests {
             group: None,
             group_branch: None,
             autonumber: false,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -2001,6 +2122,15 @@ mod tests {
             group: Some("grp".into()),
             group_branch: Some("branch".into()),
             autonumber: true,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -2297,6 +2427,15 @@ mod tests {
             group: None,
             group_branch: None,
             autonumber: false,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         // Missing --lane fails.
         let mut c = base();
@@ -2380,6 +2519,15 @@ mod tests {
             group: None,
             group_branch: None,
             autonumber: false,
+            from_within: vec![],
+            to_within: vec![],
+            from_marks: vec![],
+            to_marks: vec![],
+            from_port: None,
+            to_port: None,
+            direction: None,
+            routing: None,
+            spacing: None,
         };
         // A fully-specified valid spec passes.
         assert!(mk(base()).is_ok());
@@ -2420,6 +2568,76 @@ mod tests {
         c.x = Some("msg".into());
         c.y = vec!["impact".into()];
         assert!(mk(c).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn topology_validation_checks_bindings_and_layout_options() {
+        if !duckdb_ok() {
+            eprintln!("skipping topology_validation_checks_bindings_and_layout_options: no duckdb");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("muckdb-topology-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("topology.duckdb");
+        let dbs = db.to_str().unwrap();
+        run_sql(
+            dbs,
+            "CREATE TABLE links AS SELECT 'edge-1' src, 'api-1' dst, 'router' src_type, \
+             'service,application' dst_type, 'AU' country, 'brisbane' metro, 'az-a' az, \
+             'xe-0/0' src_port, 'https' dst_port, '10 Gbps' link_label",
+        );
+        let chart = |extra: serde_json::Value| {
+            let mut value = serde_json::json!({
+                "kind": "topology",
+                "from_participant": "src",
+                "to_participant": "dst",
+                "from_type": "src_type",
+                "to_type": "dst_type",
+                "label": "link_label",
+                "from_within": ["country", "metro"],
+                "to_within": ["country", "metro"],
+                "from_marks": ["az"],
+                "to_marks": ["az"],
+                "from_port": "src_port",
+                "to_port": "dst_port",
+                "direction": "right",
+                "routing": "metro",
+                "spacing": "comfortable"
+            });
+            if let (Some(base), Some(add)) = (value.as_object_mut(), extra.as_object()) {
+                base.extend(add.clone());
+            }
+            serde_json::from_value::<Chart>(value).unwrap()
+        };
+        assert!(validate_tile(dbs, Some("links"), None, &chart(serde_json::json!({}))).is_ok());
+        assert!(
+            validate_tile(
+                dbs,
+                Some("links"),
+                None,
+                &chart(serde_json::json!({"direction": "radial"}))
+            )
+            .is_err()
+        );
+        assert!(
+            validate_tile(
+                dbs,
+                Some("links"),
+                None,
+                &chart(serde_json::json!({"from_marks": ["missing_zone"]}))
+            )
+            .is_err()
+        );
+        assert!(
+            validate_tile(
+                dbs,
+                Some("links"),
+                None,
+                &chart(serde_json::json!({"from_participant": null}))
+            )
+            .is_err()
+        );
         std::fs::remove_dir_all(&dir).ok();
     }
 }

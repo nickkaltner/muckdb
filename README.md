@@ -202,6 +202,15 @@ save writes the source back to the session. Rendering uses a bundled Mermaid
 runtime in strict mode and works offline. Keep relational/generated sequences as
 DuckDB-backed `--chart sequence` tiles so they remain explorable and refreshable.
 
+`--chart topology` turns an edge-list view into a stable, transit-style network
+map. Bind node IDs with `--from`/`--to`, node names and types with
+`--from-label`/`--to-label` and `--from-type`/`--to-type`, and connection text
+with `--label`, `--from-port`, and `--to-port`. Nested containment uses
+`--from-within`/`--to-within` (for example `country,region,metro,dc`); independent
+attributes such as availability zone or diversity domain use
+`--from-mark`/`--to-mark`. See the installed skill for the full schema and
+layout controls.
+
 `session screenshot` (and the copy-image button) render through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a
 browser binary. The image auto-fits the rendered content height.

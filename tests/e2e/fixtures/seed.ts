@@ -119,6 +119,19 @@ CREATE VIEW msgs_loop AS SELECT * FROM (VALUES
   (3,'client','server','attempt','loop:retry','try3')
 ) t(seq,src,dst,msg,grp,branch)
 ORDER BY seq;
+
+-- Nested network/service topology. Containment (country→region→metro→DC) is
+-- independent of AZ/diversity markup, and the application hop crosses a DMZ.
+CREATE VIEW topology_links AS SELECT * FROM (VALUES
+  ('edge-a','lb-a','Edge A','Public LB','router,device','load balancer','BGP','xe-0/0','443','AU','east','Brisbane','dc-1','AU','east','Brisbane','dc-1','az-a','power-a','az-a','power-b','network'),
+  ('edge-b','lb-b','Edge B','Public LB standby','router,device','load balancer','BGP','xe-0/0','443','AU','east','Brisbane','dc-2','AU','east','Brisbane','dc-2','az-b','power-b','az-b','power-a','network'),
+  ('lb-a','api-a','Public LB','Orders API','load balancer','application,service','HTTPS','443','8443','AU','east','Brisbane','dc-1','AU','east','Brisbane','dc-1','az-a','power-b','az-b','power-a','request'),
+  ('lb-b','api-a','Public LB standby','Orders API','load balancer','application,service','HTTPS','443','8443','AU','east','Brisbane','dc-2','AU','east','Brisbane','dc-1','az-b','power-a','az-b','power-a','request'),
+  ('api-a','db-a','Orders API','Orders DB','application,service','database','SQL','5432','5432','AU','east','Brisbane','dc-1','AU','east','Sydney','dc-3','az-b','power-a','az-c','power-c','data'),
+  ('observer',NULL,'Topology observer',NULL,'service',NULL,NULL,NULL,NULL,'AU','east','Brisbane','dc-2',NULL,NULL,NULL,NULL,'az-b','power-a',NULL,NULL,NULL)
+) t(src,dst,src_name,dst_name,src_type,dst_type,link_label,src_port,dst_port,
+    src_country,src_region,src_metro,src_dc,dst_country,dst_region,dst_metro,dst_dc,
+    src_az,src_diversity,dst_az,dst_diversity,traffic_class);
 `;
 
 // Build the seed database + session. `dbPath` must live under the run's temp dir.
@@ -216,6 +229,16 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, por
     '--db', dbPath, '--view', 'msgs_loop', '--chart', 'sequence',
     '--from', 'src', '--to', 'dst', '--label', 'msg', '--group', 'grp', '--group-branch', 'branch',
     '--caption', 'A loop frame whose group-branch changes mid-frame — must export valid mermaid (no else/and).']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'topology', '--title', 'Edge to data topology',
+    '--db', dbPath, '--view', 'topology_links', '--chart', 'topology',
+    '--from', 'src', '--to', 'dst', '--from-label', 'src_name', '--to-label', 'dst_name',
+    '--from-type', 'src_type', '--to-type', 'dst_type', '--label', 'link_label',
+    '--from-port', 'src_port', '--to-port', 'dst_port',
+    '--from-within', 'src_country,src_region,src_metro,src_dc',
+    '--to-within', 'dst_country,dst_region,dst_metro,dst_dc',
+    '--from-mark', 'src_az,src_diversity', '--to-mark', 'dst_az,dst_diversity',
+    '--color', 'traffic_class', '--routing', 'metro', '--spacing', 'comfortable',
+    '--caption', 'Transit-style service paths nested by physical location; badges show AZ and power diversity.']);
   run(binary, env, port, ['session', 'mermaid', 'e2e', '--name', 'authored-tree', '--title', 'Authored service tree',
     '--mmd', 'flowchart TD\n  app[Application] --> api[API]\n  api --> jobs[Workers]\n  api --> db[(DuckDB)]',
     '--caption', 'Tree-shaped architecture stored directly as Mermaid source.']);
