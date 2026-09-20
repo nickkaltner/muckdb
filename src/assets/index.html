@@ -4880,7 +4880,8 @@
     // adjacent ranks rather than jittering like a force simulation.
     const ids = [...nodes.keys()].sort((a, b) => a.localeCompare(b));
     const incoming = new Map(ids.map((id) => [id, 0])), outgoing = new Map(ids.map((id) => [id, new Set()]));
-    edges.forEach((e) => { if (e.from !== e.to) outgoing.get(e.from).add(e.to); });
+    const isLateral = (edge) => edge.color.toLowerCase() === "mesh" && nodes.get(edge.from).path.join("\u001f") === nodes.get(edge.to).path.join("\u001f");
+    edges.forEach((e) => { if (e.from !== e.to && !isLateral(e)) outgoing.get(e.from).add(e.to); });
     outgoing.forEach((targets) => targets.forEach((to) => incoming.set(to, (incoming.get(to) || 0) + 1)));
     const rank = new Map(ids.map((id) => [id, 0]));
     const queue = ids.filter((id) => incoming.get(id) === 0);
@@ -4897,18 +4898,39 @@
 
     const compact = spec.spacing === "compact", vertical = spec.direction === "down";
     const nodeW = compact ? 126 : 148, nodeH = compact ? 60 : 72;
-    const laneGap = compact ? 70 : 88;
     const degree = new Map(ids.map((id) => [id, { incoming: 0, outgoing: 0 }]));
     edges.forEach((edge) => {
       degree.get(edge.from).outgoing++;
       degree.get(edge.to).incoming++;
     });
+    // Allocate by physical side, including both incoming and outgoing links.
+    // Cross-zone arrivals and departures both attach on the right; separate
+    // direction counters would put them on exactly the same horizontal stub.
+    const sidePorts = new Map(ids.map((id) => [id, new Map()]));
+    edges.forEach((edge) => {
+      const a = nodes.get(edge.from), b = nodes.get(edge.to);
+      const cross = a.path.length && b.path.length && a.path.join("\u001f") !== b.path.join("\u001f");
+      const forward = rank.get(b.id) >= rank.get(a.id);
+      const sides = a === b ? ["top", "right"] : !vertical && (cross || isLateral(edge)) ? ["right", "right"] :
+        vertical ? (forward ? ["bottom", "top"] : ["top", "bottom"]) : (forward ? ["right", "left"] : ["left", "right"]);
+      [a, b].forEach((node, endpoint) => {
+        const ports = sidePorts.get(node.id), side = sides[endpoint];
+        if (!ports.has(side)) ports.set(side, []);
+        ports.get(side).push({ edge, endpoint });
+      });
+    });
+    sidePorts.forEach((sides) => sides.forEach((ports) => ports.forEach(({ edge, endpoint }, index) => {
+      edge[endpoint ? "toOffset" : "fromOffset"] = (index - (ports.length - 1) / 2) * 18;
+    })));
+    const badgeMeasure = document.createElement("canvas").getContext("2d");
+    badgeMeasure.font = `8.5px ${getComputedStyle(document.body).fontFamily}`;
+    const badgeWidth = (label) => Math.ceil(badgeMeasure.measureText(label).width) + 12;
     nodes.forEach((node) => {
-      const busiestSide = Math.max(degree.get(node.id).incoming, degree.get(node.id).outgoing, 1);
+      const busiestSide = Math.max(1, ...[...sidePorts.get(node.id).values()].map((ports) => ports.length));
       node.h = Math.max(nodeH, 48 + (busiestSide - 1) * 18);
       const markText = [...node.marks.values()].map(([key, value]) => `${key}: ${value}`);
       const contentChars = Math.max(node.label.length, [...node.types].join(" · ").length, ...markText.map((value) => value.length), 0);
-      node.w = Math.max(nodeW, Math.min(300, 34 + contentChars * 6.2));
+      node.w = Math.max(nodeW, Math.min(300, 34 + contentChars * 6.2), ...markText.map((label) => 30 + badgeWidth(label)));
     });
     const leafKeys = [...new Set(ids.map((id) => nodes.get(id).path.join("\u001f")))].sort();
     const maxDepth = Math.max(0, ...[...nodes.values()].map((node) => node.path.length));
@@ -4941,14 +4963,16 @@
     leafKeys.forEach((leaf, leafIndex) => {
       const members = ids.filter((id) => nodes.get(id).path.join("\u001f") === leaf)
         .sort((a, b) => rank.get(a) - rank.get(b) || a.localeCompare(b));
-      const slots = new Map(); let maxStack = 1;
+      const stackOffsets = new Map(); let maxStackExtent = 0;
       members.forEach((id) => {
         // Ranks are local to a leaf zone: peer metros/DCs align as containers,
         // while cross-zone links still show the relationship between them.
-        const r = nodes.get(id).localRank, slot = slots.get(r) || 0;
-        slots.set(r, slot + 1); maxStack = Math.max(maxStack, slot + 1);
-        const flow = rankX[r], cross = bandStart + slot * laneGap;
-        const n = nodes.get(id); n.x = vertical ? cross : flow; n.y = vertical ? flow : cross;
+        const n = nodes.get(id), r = n.localRank, stackOffset = stackOffsets.get(r) || 0;
+        const flow = rankX[r], cross = bandStart + stackOffset;
+        n.x = vertical ? cross : flow; n.y = vertical ? flow : cross;
+        const extent = stackOffset + (vertical ? n.w : n.h);
+        maxStackExtent = Math.max(maxStackExtent, extent);
+        stackOffsets.set(r, extent + (compact ? 18 : 24));
       });
       const nextLeaf = leafKeys[leafIndex + 1];
       if (nextLeaf) {
@@ -4957,11 +4981,11 @@
         while (common < here.length && common < next.length && here[common] === next[common]) common++;
         const childDepth = Math.min(maxDepth - 1, common);
         const levels = Math.max(0, maxDepth - 1 - childDepth);
-        const boundaryPadY = (compact ? 24 : 36) + levels * (compact ? 18 : 30);
+        const boundaryTopY = (compact ? 24 : 36) + levels * (compact ? 18 : 30);
+        const boundaryBottomY = (compact ? 10 : 16) + levels * (compact ? 6 : 10);
         const header = compact ? 22 : 30;
-        const tallest = Math.max(...members.map((id) => nodes.get(id).h));
-        const minimumDelta = tallest + boundaryPadY * 2 + header + (compact ? 12 : 20);
-        bandStart += (maxStack - 1) * laneGap + minimumDelta;
+        const minimumDelta = maxStackExtent + boundaryTopY + boundaryBottomY + header + (compact ? 12 : 20);
+        bandStart += minimumDelta;
       }
     });
 
@@ -4984,12 +5008,13 @@
       // Horizontal nesting only needs enough room for the border and its label
       // inset. Vertical nesting also reserves each zone's header row.
       const padX = (compact ? 18 : 26) + ancestorLevels * (compact ? 5 : 8);
-      const padY = (compact ? 24 : 36) + ancestorLevels * (compact ? 18 : 30);
+      const padTopY = (compact ? 24 : 36) + ancestorLevels * (compact ? 18 : 30);
+      const padBottomY = (compact ? 10 : 16) + ancestorLevels * (compact ? 6 : 10);
       const header = compact ? 22 : 30;
       g.x = Math.min(...bs.map((b) => b.x1)) - padX;
-      g.y = Math.min(...bs.map((b) => b.y1)) - padY - header;
+      g.y = Math.min(...bs.map((b) => b.y1)) - padTopY - header;
       g.w = Math.max(...bs.map((b) => b.x2)) - g.x + padX;
-      g.h = Math.max(...bs.map((b) => b.y2)) - g.y + padY;
+      g.h = Math.max(...bs.map((b) => b.y2)) - g.y + padBottomY;
     });
     // Siblings occupy comparable zones rather than shrink-wrapping to wildly
     // different widths. This keeps peer metros (Brisbane/Sydney) and peer DCs
@@ -5022,7 +5047,8 @@
       const count = crossScopeCounts.get(scope) || 0;
       if (count) scopeCursor += count * 18 + 12;
     }
-    const routeReserve = Math.max(40, scopeCursor + 55);
+    const lateralReserve = edges.filter(isLateral).length * 14 + (edges.some(isLateral) ? 18 : 0);
+    const routeReserve = Math.max(40, lateralReserve + scopeCursor + 55);
     const minX = Math.min(...[...nodes.values()].map((n) => n.x), ...[...groups.values()].map((g) => g.x)) - 12;
     const minY = Math.min(...[...nodes.values()].map((n) => n.y), ...[...groups.values()].map((g) => g.y)) - 12;
     const maxX = Math.max(...[...nodes.values()].map((n) => n.x + n.w), ...[...groups.values()].map((g) => g.x + g.w)) + routeReserve;
@@ -5036,16 +5062,7 @@
     const colors = [...new Set(edges.map((e) => e.color).filter(Boolean))];
     const pairN = new Map();
     const scopeTrackN = new Map();
-    const outTotals = new Map(), inTotals = new Map(), outSeen = new Map(), inSeen = new Map();
-    edges.forEach((edge) => {
-      outTotals.set(edge.from, (outTotals.get(edge.from) || 0) + 1);
-      inTotals.set(edge.to, (inTotals.get(edge.to) || 0) + 1);
-    });
-    const portOffset = (seen, totals, id) => {
-      const index = seen.get(id) || 0, total = totals.get(id) || 1;
-      seen.set(id, index + 1);
-      return (index - (total - 1) / 2) * 18;
-    };
+    let lateralTrackN = 0;
     const roundedRoute = (points, radius = 9) => {
       points = points.filter((point, index) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
       if (points.length < 3) return `M${points.map((p) => p.join(" ")).join(" L")}`;
@@ -5066,13 +5083,19 @@
     const edgeSvg = edges.map((e) => {
       const a = nodes.get(e.from), b = nodes.get(e.to), key = `${e.from}\u001f${e.to}`, parallel = pairN.get(key) || 0; pairN.set(key, parallel + 1);
       const off = parallel * 6;
-      const fromOff = portOffset(outSeen, outTotals, e.from), toOff = portOffset(inSeen, inTotals, e.to);
+      const fromOff = e.fromOffset, toOff = e.toOffset;
       const aLeaf = groups.get(a.path.join("\u001f")), bLeaf = groups.get(b.path.join("\u001f"));
       const crossesZone = aLeaf && bLeaf && aLeaf.key !== bLeaf.key;
       let sx, sy, tx, ty, d, lx, ly, edgeLabelAnchor = "middle";
       if (a === b) {
         sx = a.x + a.w * .7 + fromOff; sy = a.y; tx = a.x + a.w; ty = a.y + a.h * .45 + toOff;
         d = `M${sx} ${sy} C${sx} ${sy - 35 - off} ${tx + 38 + off} ${sy - 35 - off} ${tx} ${ty}`; lx = tx + 25; ly = sy - 27 - off;
+      } else if (!vertical && isLateral(e)) {
+        sx = a.x + a.w; sy = a.y + a.h / 2 + fromOff;
+        tx = b.x + b.w; ty = b.y + b.h / 2 + toOff;
+        const trunkX = Math.max(sx, tx) + 22 + lateralTrackN++ * 14;
+        d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
+        lx = trunkX + 4; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical && crossesZone) {
         // Boundary-crossing traffic uses a trunk outside the right edge of
         // the containers it crosses, then enters the destination from its
@@ -5089,7 +5112,7 @@
         const scopeLane = scopeTrackN.get(scopeKey) || 0;
         scopeTrackN.set(scopeKey, scopeLane + 1);
         const scopeDistance = Math.max(1, maxDepth - common);
-        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w) + 64 + (scopeOffsets.get(scopeDistance) || 0) + scopeLane * 18 + off;
+        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w) + 64 + lateralReserve + (scopeOffsets.get(scopeDistance) || 0) + scopeLane * 18 + off;
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
         lx = trunkX; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical) {
@@ -5150,7 +5173,7 @@
     }).join("");
     const nodeSvg = [...nodes.values()].map((n) => {
       const types = [...n.types], marks = [...n.marks.values()].slice(0, 3);
-      const badges = marks.map(([k, v], i) => { const label = `${k}: ${v}`, bw = Math.min(n.w - 18, 12 + label.length * 4.7), by = n.y + 38 + i * 12; return `<rect class="topo-mark-bg" x="${n.x + 20}" y="${by}" width="${bw}" height="10" rx="5"/><text class="topo-mark" x="${n.x + 25}" y="${by + 8}">${esc(label)}</text>`; }).join("");
+      const badges = marks.map(([k, v], i) => { const label = `${k}: ${v}`, bw = badgeWidth(label), by = n.y + 38 + i * 12; return `<rect class="topo-mark-bg" x="${n.x + 20}" y="${by}" width="${bw}" height="11" rx="5"/><text class="topo-mark" x="${n.x + 26}" y="${by + 8}">${esc(label)}</text>`; }).join("");
       const detail = [n.path.join(" / "), types.length ? `types: ${types.join(", ")}` : "", ...marks.map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join("\n");
       return `<g class="topo-node-wrap" data-node="${attr(n.id)}"><rect class="topo-node" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8"><title>${esc(n.label)}${detail ? `\n${esc(detail)}` : ""}</title></rect><circle class="topo-station" cx="${n.x + 11}" cy="${n.y + 15}" r="5"/><text class="topo-node-name" x="${n.x + 21}" y="${n.y + 18}">${esc(n.label)}</text>${types.length ? `<text class="topo-type" x="${n.x + 21}" y="${n.y + 31}">${esc(types.join(" · "))}</text>` : ""}${badges}</g>`;
     }).join("");

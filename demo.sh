@@ -219,6 +219,19 @@ CREATE OR REPLACE VIEW service_calls AS SELECT * FROM (VALUES
   (10, 'payments','gateway','webhook',            'lost',  'participant','participant', NULL,               NULL,      'trace-8a10')
 ) t(seq, caller, callee, message, msg_type, caller_type, callee_type, grp, branch, trace) ORDER BY seq;
 
+-- A transit-style network topology: logical services nested inside physical
+-- country/region/metro/DC containment, with endpoint ports and AZ/diversity
+-- markup carried by every connection row.
+CREATE OR REPLACE VIEW edge_data_topology AS SELECT * FROM (VALUES
+  ('edge-a','lb-a','Edge A','Public LB','router,device','load balancer','BGP','xe-0/0','443','AU','east','Brisbane','dc-1','AU','east','Brisbane','dc-1','az-a','power-a','az-a','power-b','network'),
+  ('edge-b','lb-b','Edge B','Public LB standby','router,device','load balancer','BGP','xe-0/0','443','AU','east','Brisbane','dc-2','AU','east','Brisbane','dc-2','az-b','power-b','az-b','power-a','network'),
+  ('lb-a','api-a','Public LB','Orders API','load balancer','application,service','HTTPS','443','8443','AU','east','Brisbane','dc-1','AU','east','Brisbane','dc-1','az-a','power-b','az-b','power-a','request'),
+  ('lb-b','api-a','Public LB standby','Orders API','load balancer','application,service','HTTPS','443','8443','AU','east','Brisbane','dc-2','AU','east','Brisbane','dc-1','az-b','power-a','az-b','power-a','request'),
+  ('api-a','db-a','Orders API','Orders DB','application,service','database','SQL','5432','5432','AU','east','Brisbane','dc-1','AU','east','Sydney','dc-3','az-b','power-a','az-c','power-c','data')
+) t(src,dst,src_name,dst_name,src_type,dst_type,link_label,src_port,dst_port,
+    src_country,src_region,src_metro,src_dc,dst_country,dst_region,dst_metro,dst_dc,
+    src_az,src_diversity,dst_az,dst_diversity,traffic_class);
+
 -- A column comment carries a display format that travels with the database.
 COMMENT ON COLUMN sales.qty IS 'order size muckdb:{\"suffix\":\" units\"}';
 " >/dev/null
@@ -269,6 +282,7 @@ A quick tour of what muckdb can do, all driven from the command line.
 - ⚡ An **irregular** event stream (\`events\`) — notice how the points per time period vary a lot
 - 🔥 A **heatmap** (weekday × hour density) and 📦 **box plots** comparing whole distributions on one scale, each box with its own note
 - 🎯 A **quadrant chart** for low/high effort versus low/high impact priorities
+- 🚇 A **network topology** from edge routers through services to data
 
 ## What's in this database
 
@@ -390,6 +404,18 @@ MD
   --from-label from_city --to-label to_city \
   --label label --value gbps \
   --caption "A connections map: each row links two cities as a fluid semi-transparent arc — drawn over the ASCII backdrop or the hi-fi world map (whose sea gently shimmers), taking the shorter way round the globe when that wraps the date line, with opacity scaling with capacity. Arc labels sit on a top layer and shift to avoid overlapping; hover an arc for its route, or a city marker for its name (--from-label/--to-label)." >/dev/null
+
+"$MUCKDB" session section "$SESSION" --name sec-topology --title "Topologies" >/dev/null
+
+"$MUCKDB" session tile "$SESSION" --name edge-data-topology --title "Edge to data topology" \
+  --db "$DB" --view edge_data_topology --chart topology \
+  --from src --to dst --from-label src_name --to-label dst_name --label link_label --color traffic_class \
+  --from-type src_type --to-type dst_type \
+  --from-within src_country,src_region,src_metro,src_dc \
+  --to-within dst_country,dst_region,dst_metro,dst_dc \
+  --from-mark src_az,src_diversity --to-mark dst_az,dst_diversity \
+  --from-port src_port --to-port dst_port --routing metro --spacing comfortable \
+  --caption "Transit-style service paths nested by physical location; badges show AZ and power diversity." >/dev/null
 
 "$MUCKDB" session section "$SESSION" --name sec-timeline --title "Timelines" >/dev/null
 

@@ -63,6 +63,16 @@ test.describe('topology tile', () => {
     }));
     expect(trunkXs[1]).toBeGreaterThan(trunkXs[0]);
 
+    // API's cross-DC arrival and cross-metro departure share its right side.
+    // Their horizontal stubs must use distinct ports, as with LACP/DX at a LAG.
+    const sharedSideYs = await panel.locator('.topo-track').evaluateAll((tracks) => {
+      const numbers = (index: number) => (tracks[index].getAttribute('d') || '')
+        .match(/-?\d+(?:\.\d+)?/g)!.map(Number);
+      const arrival = numbers(3), departure = numbers(4);
+      return [arrival[arrival.length - 1], departure[1]];
+    });
+    expect(Math.abs(sharedSideYs[0] - sharedSideYs[1])).toBeGreaterThanOrEqual(18);
+
     // Topologies can break out to the full viewport and use intrinsic SVG
     // height, so they deliberately have no drag-resize grip.
     await expect(panel.locator('[data-widen]')).toHaveCount(1);
