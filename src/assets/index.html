@@ -6,6 +6,9 @@
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <link rel="icon" type="image/x-icon" href="/favicon.ico" sizes="any" />
 <link rel="apple-touch-icon" href="/favicon.svg" />
+<link rel="stylesheet" href="/leaflet.css" />
+<link rel="stylesheet" href="/MarkerCluster.css" />
+<link rel="stylesheet" href="/MarkerCluster.Default.css" />
 <title>muckdb — live console</title>
 <style>
   :root {
@@ -492,12 +495,23 @@
      lives in a positioned stage so the fluid connection overlay can sit on top. */
   .worldmap-wrap.mode-ascii .wm-svg-host { display: none; }
   .worldmap-wrap.mode-svg .wm-ascii-stage { display: none; }
+  .worldmap-wrap:not(.mode-zoomed) .wm-zoom-host { display: none; }
+  .worldmap-wrap.mode-zoomed .wm-ascii-stage, .worldmap-wrap.mode-zoomed .wm-svg-host { display: none; }
   .wm-ascii-stage { position: relative; display: inline-block; max-width: 100%; overflow: hidden; }
   /* Looping static video behind the ascii backdrop (the sea texture). */
   .wm-ascii-vid { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; pointer-events: none; opacity: var(--wm-static-opacity, 0.08); }
   .wm-ascii-overlay { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
   .wm-ascii-overlay .wm-x, .wm-ascii-overlay .wm-arc, .wm-ascii-overlay .wm-arc-label { pointer-events: auto; }
   .wm-svg-host { width: 100%; }
+  .wm-zoom-host { width: 100%; height: clamp(300px, 55cqw, 620px); background: var(--surface); }
+  .wm-zoom-host .leaflet-control-zoom a { background: var(--raised); color: var(--fg); border-color: var(--line); }
+  .wm-zoom-host .leaflet-control-attribution { background: color-mix(in srgb, var(--surface) 88%, transparent); color: var(--faint); }
+  .wm-zoom-host .leaflet-control-attribution a { color: var(--primary); }
+  .wm-zoom-host .marker-cluster div { color: var(--on-accent); background: var(--primary); }
+  .wm-zoom-host .marker-cluster { background: color-mix(in srgb, var(--primary) 35%, transparent); }
+  .wm-zoom-host .leaflet-control-layers { background: var(--raised); color: var(--fg); border-color: var(--line); }
+  .wm-zoom-host .leaflet-control-layers-separator { border-color: var(--line); }
+  .wm-zoom-host .leaflet-control-layers-toggle { filter: invert(.75); }
   /* color drives the SVG's currentColor land fill (fill-opacity set in the file,
      so it never falls back to solid black even if this rule is missing). */
   .wm-svg { display: block; width: 100%; height: auto; color: var(--fg); }
@@ -1117,6 +1131,8 @@
 <script src="/html2canvas.js"></script>
 <script src="/timeline-route.js?v=__MUCKDB_VERSION__"></script>
 <script src="/sql-formatter.js"></script>
+<script src="/leaflet.js"></script>
+<script src="/leaflet.markercluster.js"></script>
 <script>
 (() => {
   "use strict";
@@ -3420,7 +3436,7 @@
       if (kind === "box") { slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "probability") { slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "quadrant") { slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
+      if (kind === "map") { slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); hydrateZoomMaps(slot); return; }
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -4655,7 +4671,7 @@
     if (kind === "box") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "probability") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
     if (kind === "quadrant") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = quadrantHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "map") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); return; }
+    if (kind === "map") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = mapHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateMaps(slot); hydrateAsciiArcs(slot); hydrateZoomMaps(slot); return; }
     if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
@@ -6007,17 +6023,19 @@
   // crop only trims the viewBox — the same lon/lat→SVG mapping still holds.
   const wmSvgX = (lon) => 6.38188 * lon + 1140.51;
   const wmSvgY = (lat) => -6.32404 * lat + 601.48;
-  // Map render mode ("ascii" | "svg"), global + persisted; toggled per map tile.
+  // Map render mode ("ascii" | "svg" | "zoomed"), global + persisted.
   let mapModePref = null;
   function mapMode() {
     if (mapModePref === null) {
-      try { mapModePref = localStorage.getItem("muckdb.mapmode") === "svg" ? "svg" : "ascii"; } catch (_) { mapModePref = "ascii"; }
+      try { const m = localStorage.getItem("muckdb.mapmode"); mapModePref = ["ascii", "svg", "zoomed"].includes(m) ? m : "ascii"; } catch (_) { mapModePref = "ascii"; }
     }
     return mapModePref;
   }
   let wmSvgText = null;        // /worldmap.svg, fetched once
+  let wmGeoJsonPromise = null; // local Natural Earth countries, fetched once
   const wmDots = {};           // per-render overlay markup, consumed on hydrate
   const wmAscii = {};          // per-render ascii-overlay data, consumed on hydrate
+  const wmZoom = {};           // raw points/connections for Leaflet's fitted view
   let wmDotSeq = 0;
   // Draw the fluid connection overlay (markers + arcs + labels) over an ascii
   // map's <pre> backdrop. Uses the pre's measured pixel box so the overlay lines
@@ -6075,6 +6093,66 @@
         if (payload.labels) g += '<g class="wm-conn-labels">' + payload.labels + "</g>";
         svg.insertAdjacentHTML("beforeend", g);
       }
+    });
+  }
+  // Leaflet fits this third representation to the data instead of the whole
+  // world. MarkerCluster expands dense cells and spiderfies coincident points.
+  function hydrateZoomMaps(scope) {
+    const hosts = [...(scope || document).querySelectorAll(".worldmap-wrap.mode-zoomed .wm-zoom-host:not([data-hydrated])")];
+    hosts.forEach((host) => {
+      host.dataset.hydrated = "1";
+      const payload = wmZoom[host.dataset.zoom] || {};
+      delete wmZoom[host.dataset.zoom];
+      if (!window.L) { host.innerHTML = '<div class="note">zoomed map unavailable.</div>'; return; }
+      const map = L.map(host, { worldCopyJump: true, minZoom: 1, maxZoom: 18 });
+      map.createPane("wmBasemap");
+      map.getPane("wmBasemap").style.zIndex = 200;
+      const street = L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        crossOrigin: true,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+      });
+      let basePref = "street";
+      try { basePref = localStorage.getItem("muckdb.maplayer") === "offline" ? "offline" : "street"; } catch (_) {}
+      if (basePref === "street") street.addTo(map);
+      if (!wmGeoJsonPromise) wmGeoJsonPromise = fetch("/worldmap.geojson?v=__WORLDMAP_GEO_REV__").then((r) => r.json());
+      const layers = L.control.layers({ "Street map": street }, {}, { collapsed: true }).addTo(map);
+      wmGeoJsonPromise.then((countries) => {
+        const offline = L.geoJSON(countries, {
+          pane: "wmBasemap",
+          interactive: false,
+          style: {
+            className: "wm-zoom-land",
+            color: mixColors('var(--fg)', 36, 'var(--surface)'),
+            weight: .7,
+            fillColor: mixColors('var(--fg)', 22, 'var(--surface)'),
+            fillOpacity: 1,
+          },
+        });
+        layers.addBaseLayer(offline, "Offline countries");
+        if (basePref === "offline") offline.addTo(map);
+      }).catch(() => {});
+      map.on("baselayerchange", (ev) => {
+        try { localStorage.setItem("muckdb.maplayer", ev.layer === street ? "street" : "offline"); } catch (_) {}
+      });
+      const markers = L.markerClusterGroup({ showCoverageOnHover: false, spiderfyOnMaxZoom: true, maxClusterRadius: 34 });
+      const bounds = [];
+      (payload.pts || []).forEach((p) => {
+        const fill = mixColors('var(--primary-deep)', 80, 'var(--surface)');
+        const marker = L.circleMarker([p.lat, p.lon], { radius: 6, color: fill, weight: 2, fillColor: fill, fillOpacity: .78 });
+        marker.bindTooltip(p.tip, { sticky: true, className: "wm-leaflet-tip" });
+        markers.addLayer(marker); bounds.push([p.lat, p.lon]);
+      });
+      map.addLayer(markers);
+      layers.addOverlay(markers, "Points");
+      const connections = L.layerGroup();
+      (payload.conns || []).forEach((c) => L.polyline([[c.alat, c.alon], [c.blat, c.blon]], { color: 'var(--primary)', opacity: .45, weight: 2 }).bindTooltip(c.tip || "", { sticky: true }).addTo(connections));
+      if ((payload.conns || []).length) { connections.addTo(map); layers.addOverlay(connections, "Connections"); }
+      if (bounds.length === 1) map.setView(bounds[0], 9);
+      else if (bounds.length) map.fitBounds(bounds, { padding: [28, 28], maxZoom: 10 });
+      else map.setView([14, 0], 1);
+      host._leafletMap = map;
+      setTimeout(() => map.invalidateSize(), 0);
     });
   }
   // Connection-arc styling, set per active theme by applyTheme() (like barRadius):
@@ -6308,6 +6386,12 @@
     const mode = mapMode();
     const did = "wmd" + wmDotSeq++;
     wmDots[did] = { arcs: hiOv.arcs, dots, labels: hiOv.labels };
+    const zid = "wmz" + wmDotSeq++;
+    const pointTip = (p) => `<b>${esc(p.label || "point")}</b><div class="wm-tip-sub">${p.lat.toFixed(4)}°, ${p.lon.toFixed(4)}°</div>`;
+    wmZoom[zid] = {
+      pts: pts.map((p) => ({ lat: p.lat, lon: p.lon, tip: pointTip(p) })),
+      conns: conns.map((c) => ({ ...c, tip: esc(c.label || "connection") })),
+    };
     // The ascii <pre> sits in a positioned stage. A connections map stashes its
     // overlay data (keyed by data-arcs) for hydrateAsciiArcs to draw a fluid SVG
     // layer over the backdrop once the <pre> is measured.
@@ -6320,14 +6404,15 @@
     // A looping VHS/TV-static clip sits behind the ASCII backdrop as the sea
     // texture (the '*' land glyphs render on top of it).
     const asciiVid = `<video class="wm-ascii-vid" src="/sea-static.mp4" autoplay loop muted playsinline></video>`;
-    // The ascii/hi-fi toggle lives in the tile's header actions (mapModeToggle),
+    // The ascii/hi-fi/zoomed toggle lives in the tile's header actions (mapModeToggle),
     // excluded from every capture — so the body is just the map + legend.
     return `<div class="worldmap-wrap mode-${mode}">`
       + `<div class="wm-ascii-stage"${aidAttr}>${asciiVid}<pre class="worldmap" style="color:${land}">${out.replace(/\n$/, "")}</pre></div>`
       + `<div class="wm-svg-host" data-dots="${did}"></div>`
+      + `<div class="wm-zoom-host" data-zoom="${zid}" aria-label="Interactive map fitted to all points"></div>`
       + `</div>${legend}`;
   }
-  // The ascii/hi-fi map-mode toggle, rendered among a tile's header action
+  // The three-way map-mode toggle, rendered among a tile's header action
   // buttons (map tiles only). Excluded from poster/screenshot captures like the
   // other panel-actions. All toggles share the global mode, so any one flips all.
   function mapModeToggle() {
@@ -6335,6 +6420,7 @@
     return `<span class="wm-toggle">`
       + `<button class="panel-act wm-mode${m === "ascii" ? " on" : ""}" data-mapmode="ascii">ascii</button>`
       + `<button class="panel-act wm-mode${m === "svg" ? " on" : ""}" data-mapmode="svg">hi-fi</button>`
+      + `<button class="panel-act wm-mode${m === "zoomed" ? " on" : ""}" data-mapmode="zoomed">zoomed</button>`
       + `</span>`;
   }
   const TILE_TABLE_ROWS = 20;
@@ -8131,16 +8217,18 @@
     const zm = ev.target.closest("[data-zoom]"); if (zm) { zoomTile(zm.dataset.zoom); return; }
     const mm = ev.target.closest("[data-mapmode]");
     if (mm) {
-      const mode = mm.dataset.mapmode === "svg" ? "svg" : "ascii";
+      const mode = ["ascii", "svg", "zoomed"].includes(mm.dataset.mapmode) ? mm.dataset.mapmode : "ascii";
       mapModePref = mode;
       try { localStorage.setItem("muckdb.mapmode", mode); } catch (_) {}
       // Flip every rendered map (dashboard + any open zoom) to the new mode.
       document.querySelectorAll(".worldmap-wrap").forEach((w) => {
         w.classList.toggle("mode-svg", mode === "svg");
-        w.classList.toggle("mode-ascii", mode !== "svg");
+        w.classList.toggle("mode-ascii", mode === "ascii");
+        w.classList.toggle("mode-zoomed", mode === "zoomed");
       });
       document.querySelectorAll(".wm-mode").forEach((b) => b.classList.toggle("on", b.dataset.mapmode === mode));
       if (mode === "svg") hydrateMaps(document);
+      else if (mode === "zoomed") hydrateZoomMaps(document);
       else hydrateAsciiArcs(document);
       return;
     }

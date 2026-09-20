@@ -108,7 +108,13 @@ pub async fn run() -> Result<()> {
         .route("/favicon.ico", get(favicon_ico))
         .route("/favicon.svg", get(favicon_svg))
         .route("/worldmap.svg", get(worldmap_svg))
+        .route("/worldmap.geojson", get(worldmap_geojson))
         .route("/sea-static.mp4", get(sea_static_mp4))
+        .route("/leaflet.js", get(leaflet_js))
+        .route("/leaflet.css", get(leaflet_css))
+        .route("/leaflet.markercluster.js", get(leaflet_markercluster_js))
+        .route("/MarkerCluster.css", get(markercluster_css))
+        .route("/MarkerCluster.Default.css", get(markercluster_default_css))
         .route("/ws", get(ws_handler))
         // SPA fallback: client-routed paths like /db/<name>/<table> serve the app.
         .fallback(get(index))
@@ -308,9 +314,13 @@ async fn index() -> Response {
         let mut h = std::collections::hash_map::DefaultHasher::new();
         include_str!("assets/worldmap.svg").hash(&mut h);
         let rev = format!("{:x}", h.finish());
+        let mut gh = std::collections::hash_map::DefaultHasher::new();
+        include_str!("assets/worldmap.geojson").hash(&mut gh);
+        let geo_rev = format!("{:x}", gh.finish());
         include_str!("assets/index.html")
             .replace("__MUCKDB_VERSION__", env!("CARGO_PKG_VERSION"))
             .replace("__WORLDMAP_REV__", &rev)
+            .replace("__WORLDMAP_GEO_REV__", &geo_rev)
     });
     // Always revalidate the HTML so a rebuilt app (new asset stamps) is picked up
     // on the next load rather than served from the browser's heuristic cache.
@@ -1092,6 +1102,19 @@ async fn worldmap_svg() -> Response {
         .into_response()
 }
 
+/// Natural Earth country polygons used by Leaflet's local, correctly
+/// georeferenced zoomed mode. No viewport or point data leaves the machine.
+async fn worldmap_geojson() -> Response {
+    (
+        [
+            (header::CONTENT_TYPE, "application/geo+json"),
+            (header::CACHE_CONTROL, "public, max-age=604800"),
+        ],
+        include_str!("assets/worldmap.geojson"),
+    )
+        .into_response()
+}
+
 /// A short looping VHS/TV-static clip used as the sea texture behind the ASCII map.
 async fn sea_static_mp4() -> Response {
     (
@@ -1103,6 +1126,43 @@ async fn sea_static_mp4() -> Response {
     )
         .into_response()
 }
+
+macro_rules! static_text_asset {
+    ($name:ident, $mime:literal, $path:literal) => {
+        async fn $name() -> Response {
+            (
+                [
+                    (header::CONTENT_TYPE, $mime),
+                    (header::CACHE_CONTROL, "public, max-age=604800"),
+                ],
+                include_str!($path),
+            )
+                .into_response()
+        }
+    };
+}
+
+static_text_asset!(
+    leaflet_js,
+    "text/javascript; charset=utf-8",
+    "assets/leaflet.js"
+);
+static_text_asset!(leaflet_css, "text/css; charset=utf-8", "assets/leaflet.css");
+static_text_asset!(
+    leaflet_markercluster_js,
+    "text/javascript; charset=utf-8",
+    "assets/leaflet.markercluster.js"
+);
+static_text_asset!(
+    markercluster_css,
+    "text/css; charset=utf-8",
+    "assets/MarkerCluster.css"
+);
+static_text_asset!(
+    markercluster_default_css,
+    "text/css; charset=utf-8",
+    "assets/MarkerCluster.Default.css"
+);
 
 fn error_json(e: &anyhow::Error) -> Response {
     (StatusCode::OK, Json(json!({ "error": format!("{e:#}") }))).into_response()

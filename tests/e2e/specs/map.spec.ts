@@ -56,6 +56,29 @@ test.describe('map tile', () => {
     await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-ascii\b/);
   });
 
+  test('zoomed mode fits the data and exposes clustered points', async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="map"]');
+    await panel.locator('.wm-mode[data-mapmode="zoomed"]').click();
+    await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-zoomed\b/);
+    await expect(panel.locator('.wm-zoom-host.leaflet-container')).toHaveCount(1);
+    const layerControl = panel.locator('.leaflet-control-layers');
+    await layerControl.evaluate((el) => el.classList.add('leaflet-control-layers-expanded'));
+    await expect(layerControl).toContainText('Street map');
+    await expect(layerControl).toContainText('Offline countries');
+    await expect(layerControl).toContainText('Points');
+    await layerControl.locator('input[type="radio"]').nth(1).evaluate((el: HTMLInputElement) => el.click());
+    await expect(panel.locator('.wm-zoom-host .wm-zoom-land').first()).toBeVisible();
+    await layerControl.evaluate((el) => el.classList.add('leaflet-control-layers-expanded'));
+    await layerControl.locator('input[type="radio"]').nth(0).evaluate((el: HTMLInputElement) => el.click());
+    await expect(panel.locator('.leaflet-control-attribution')).toContainText('OpenStreetMap');
+    expect(await panel.locator('.wm-zoom-host .marker-cluster, .wm-zoom-host .leaflet-marker-pane path').count()).toBeGreaterThan(0);
+    await expect(panel.locator('.wm-zoom-host .leaflet-control-zoom')).toBeVisible();
+    await page.reload();
+    await expect(panel.locator('.worldmap-wrap')).toHaveClass(/\bmode-zoomed\b/);
+    await panel.locator('.wm-mode[data-mapmode="ascii"]').click();
+  });
+
   test('expanded map goes near full-screen (wide modal) with a copy-image button', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     await page.locator('.panel[data-tile="map"] [data-zoom]').click();
