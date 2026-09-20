@@ -10,6 +10,26 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+/// DuckDB reports a file-lock collision immediately, which makes dashboard
+/// refreshes flaky while another process is briefly committing to the same DB.
+/// Retry only that transient class of error; syntax, schema, and other failures
+/// still return on the first attempt. The full backoff is 3.15 seconds.
+const LOCK_RETRY_DELAYS: [Duration; 6] = [
+    Duration::from_millis(50),
+    Duration::from_millis(100),
+    Duration::from_millis(200),
+    Duration::from_millis(400),
+    Duration::from_millis(800),
+    Duration::from_millis(1600),
+];
+
+fn is_transient_lock_error(stderr: &str) -> bool {
+    let lower = stderr.to_ascii_lowercase();
+    lower.contains("conflicting lock")
+        || lower.contains("could not set lock on file")
+        || lower.contains("database is locked")
+}
+
 /// A table (or view) discovered in a database.
 #[derive(Debug, Clone, Serialize)]
 pub struct TableInfo {
@@ -34,19 +54,34 @@ pub struct Preview {
 
 /// Run a read-only query against `db` and parse `duckdb -json` output into rows.
 pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
-    let output = Command::new("duckdb")
-        .arg("-readonly")
-        .arg("-json")
-        .arg(db)
-        .arg("-c")
-        .arg(sql)
-        .output()
-        .context("failed to run `duckdb` — is it installed and on PATH?")?;
+    let mut retries = 0;
+    let output = loop {
+        let output = Command::new("duckdb")
+            .arg("-readonly")
+            .arg("-json")
+            .arg(db)
+            .arg("-c")
+            .arg(sql)
+            .output()
+            .context("failed to run `duckdb` — is it installed and on PATH?")?;
 
-    if !output.status.success() {
+        if output.status.success() {
+            break output;
+        }
         let stderr = String::from_utf8_lossy(&output.stderr);
+        if retries < LOCK_RETRY_DELAYS.len() && is_transient_lock_error(&stderr) {
+            std::thread::sleep(LOCK_RETRY_DELAYS[retries]);
+            retries += 1;
+            continue;
+        }
+        if retries > 0 {
+            bail!(
+                "duckdb error after {retries} lock retries: {}",
+                stderr.trim()
+            );
+        }
         bail!("duckdb error: {}", stderr.trim());
-    }
+    };
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let trimmed = stdout.trim();
@@ -1543,6 +1578,23 @@ fn histogram_buckets(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn recognises_only_transient_duckdb_lock_errors() {
+        assert!(is_transient_lock_error(
+            "IO Error: Could not set lock on file /data/live.duckdb"
+        ));
+        assert!(is_transient_lock_error(
+            "Conflicting lock is held in /usr/bin/python3"
+        ));
+        assert!(is_transient_lock_error("database is locked"));
+        assert!(!is_transient_lock_error(
+            "Catalog Error: Table with name missing does not exist"
+        ));
+        assert!(!is_transient_lock_error(
+            "Parser Error: syntax error at or near SELECT"
+        ));
+    }
 
     /// A value (exact-match) filter.
     fn vf(column: &str, value: &str) -> Filter {
