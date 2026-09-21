@@ -12,6 +12,10 @@ test('todo tile renders states, updates DuckDB, and can leave presentation mode'
 
   const pending = panel.locator('.todo-item', { hasText: 'Review the dashboard' });
   await pending.hover();
+  // A late layout/scroll update can lose hover before the click. The reserved
+  // control area must still accept a real pointer move/click and reveal itself.
+  await page.mouse.move(0, 0);
+  await expect(pending.locator('.todo-picker')).toHaveCSS('opacity', '0');
   await pending.locator('[data-todo-status="success"]').click();
   await expect(pending).toHaveAttribute('data-status', 'success');
   expect(await page.locator('.panel[data-tile="all"]').evaluate((element: any) => element.identityMarker)).toBe(true);
@@ -32,8 +36,8 @@ test('todo tile renders states, updates DuckDB, and can leave presentation mode'
   await expect.poll(async () => (await page.request.get(`/api/session?id=${SESSION_ID}`)).json())
     .toMatchObject({ tiles: expect.arrayContaining([expect.objectContaining({ name: 'todos', skip_presentation: true })]) });
 
-  await page.keyboard.press('p');
-  await page.keyboard.press('p');
+  // Keep the double-key shortcut within its one-second window under CI load.
+  await page.keyboard.type('pp');
   await expect(page.locator('.presentation-overlay')).toBeVisible();
   await expect(page.locator('.presentation-overlay [data-tile="todos"]')).toHaveCount(0);
   await page.keyboard.press('Escape');

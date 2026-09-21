@@ -922,7 +922,9 @@
   .todo-item[data-status="failure"] .todo-mark { color: var(--fail); border-color: var(--fail); }
   .todo-item[data-status="skipped"] .todo-mark { color: var(--muted); border-color: var(--muted); }
   .todo-item:not([data-status="pending"]) .todo-text { text-decoration: line-through; color: var(--muted); }
-  .todo-picker { display: flex; gap: 3px; opacity: 0; transform: translateX(4px); pointer-events: none; transition: opacity .1s, transform .1s; }
+  /* Keep the reserved button area hit-testable: moving onto a choice restores
+     row hover even if loading or scrolling displaced the previously hovered row. */
+  .todo-picker { display: flex; gap: 3px; opacity: 0; transform: translateX(4px); transition: opacity .1s, transform .1s; }
   .todo-item:hover .todo-picker, .todo-item:focus-within .todo-picker { opacity: 1; transform: none; pointer-events: auto; }
   .todo-choice { width: 25px; height: 25px; padding: 0; border: 1px solid var(--line); border-radius: 4px; background: var(--surface); color: var(--muted); cursor: pointer; font: 700 12px var(--mono); }
   .todo-choice:hover, .todo-choice.active { border-color: var(--primary); color: var(--primary); }
