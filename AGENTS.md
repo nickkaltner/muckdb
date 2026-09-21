@@ -226,7 +226,13 @@ muckdb session rm <name> [--tile TILE]
   such as `country,region,metro,dc` or `zone,dmz`. Keep orthogonal metadata out
   of that tree: `--from-mark`/`--to-mark` accept arbitrary badge columns such as
   availability zone, diversity domain, owner, or trust boundary. `--color`
-  colours connection classes. Layout controls are `--direction right|down`,
+  colours connection classes. Services stack vertically within each group by
+  default, in first-appearance order. Use an explicit `--direction right` for
+  horizontal service chains, or `--direction down` for downward flow with peer
+  groups beside one another. Enclosures contain their internal wiring. Hovering
+  a link or its label highlights both; displaced labels have attachment leaders.
+  Compact labels avoid tracks and are included in the diagram bounds.
+  Layout controls are `--direction right|down`,
   `--routing orthogonal|metro`, and `--spacing compact|comfortable`.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a

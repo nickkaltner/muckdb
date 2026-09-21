@@ -770,6 +770,14 @@ muckdb session tile infra --name network --db infra.duckdb --view links \
   --caption "Service paths across physical sites, availability zones and diversity domains."
 ```
 
+By default, services stack vertically within each containment group, in order
+of first appearance. Enclosures include all links internal to them. Links use
+ordered ports and nested routing lanes; compact labels avoid link paths and
+stay inside the diagram, with leaders attaching displaced labels to their links.
+Hover a link or its label to highlight both. Use an explicit `--direction right` for horizontal
+service chains, or `--direction down` for downward flow with peer groups beside
+one another.
+
 Layout options stay intentionally small: `--direction right|down`,
 `--routing orthogonal|metro` (45° transit corners), and
 `--spacing compact|comfortable`. The layout is stable across refreshes; do not

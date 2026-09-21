@@ -678,7 +678,7 @@
   .seq-hit { fill: transparent; }
   /* ---- topology / transit schematic ----------------------------------- */
   .topo-wrap { overflow: auto; padding: 6px 0 2px; }
-  .topo-svg { display: block; min-width: 620px; width: 100%; height: auto; font-family: inherit; }
+  .topo-svg { display: block; width: min(100%, var(--topo-natural-width)); height: auto; margin-inline: auto; font-family: inherit; }
   .topo-zone { fill: color-mix(in srgb, var(--raised) 54%, transparent); stroke: color-mix(in srgb, var(--line) 82%, transparent); stroke-width: 1; }
   .topo-zone.depth-0 { fill: color-mix(in srgb, var(--raised) 78%, transparent); stroke: var(--line); }
   /* A whisper of colour separates adjacent containment groups while keeping
@@ -687,13 +687,22 @@
   .topo-zone.depth-1.tone-0, .topo-zone.depth-2.tone-0, .topo-zone.depth-3.tone-0 { fill: color-mix(in srgb, var(--primary) 5%, transparent); }
   .topo-zone.depth-1.tone-1, .topo-zone.depth-2.tone-1, .topo-zone.depth-3.tone-1 { fill: color-mix(in srgb, var(--highlight) 4%, transparent); }
   .topo-zone.depth-1.tone-2, .topo-zone.depth-2.tone-2, .topo-zone.depth-3.tone-2 { fill: color-mix(in srgb, var(--anno-event) 4%, transparent); }
-  .topo-zone.depth-1.tone-3, .topo-zone.depth-2.tone-3, .topo-zone.depth-3.tone-3 { fill: color-mix(in srgb, var(--anno-threshold) 4%, transparent); }
+  .topo-zone.depth-1.tone-3, .topo-zone.depth-2.tone-3, .topo-zone.depth-3.tone-3 { fill: color-mix(in srgb, var(--anno-threshold, var(--fail)) 4%, transparent); }
   .topo-zone-label { fill: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .045em; text-transform: uppercase; }
   .topo-track { fill: none; stroke: color-mix(in srgb, var(--primary) 72%, var(--fg)); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; opacity: .82; }
   .topo-track[data-color-index="1"] { stroke: var(--highlight); }
   .topo-track[data-color-index="2"] { stroke: var(--anno-event); }
   .topo-track[data-color-index="3"] { stroke: var(--anno-threshold); }
   .topo-track-hit { fill: none; stroke: transparent; stroke-width: 15; pointer-events: stroke; }
+  .topo-track.is-hovered { opacity: 1; stroke-width: 4.5; }
+  .topo-label-layer [data-topo-edge] { cursor: default; }
+  .topo-label-leader { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: .65; pointer-events: stroke; }
+  .topo-label-anchor { fill: var(--muted); }
+  .topo-label-layer .is-hovered .topo-label-leader { stroke: var(--highlight); stroke-width: 2; stroke-dasharray: none; opacity: 1; }
+  .topo-label-layer .is-hovered .topo-label-anchor { fill: var(--highlight); }
+  .topo-label-layer .is-hovered .topo-edge-label-bg { filter: brightness(1.4); }
+  .topo-label-layer .is-hovered .topo-edge-label,
+  .topo-label-layer .is-hovered .topo-port-label { font-weight: 700; }
   .topo-node { fill: var(--surface); stroke: var(--primary-dim); stroke-width: 1.25; }
   .topo-node:hover { stroke: var(--highlight); stroke-width: 1.8; }
   .topo-station { fill: var(--primary); stroke: var(--surface); stroke-width: 2; }
@@ -716,7 +725,6 @@
   .topo-key:nth-child(4)::before { background: var(--anno-threshold); }
   @media (prefers-reduced-motion: no-preference) {
     .topo-track { transition: opacity .16s, stroke-width .16s; }
-    .topo-track-hit:hover + .topo-track { opacity: 1; stroke-width: 4.5; }
   }
   .quad-wrap { overflow-x: auto; padding: 4px 0; }
   .quad-svg { display: block; width: 100%; min-width: 440px; height: auto; font-family: inherit; }
@@ -4834,6 +4842,17 @@
     return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
   }
   // ---- topology / transit schematic -------------------------------------
+  // Delegation also covers live replacements, zoom views and screenshot SVGs.
+  for (const event of ["pointerover", "pointerout"]) document.addEventListener(event, (e) => {
+    const target = e.target.closest?.("[data-topo-edge]");
+    const svg = target?.closest(".topo-svg");
+    if (!svg) return;
+    const id = target.dataset.topoEdge;
+    if (e.relatedTarget?.closest?.("[data-topo-edge]")?.dataset.topoEdge === id
+        && e.relatedTarget.closest(".topo-svg") === svg) return;
+    svg.querySelectorAll(`[data-topo-edge="${id}"]`).forEach((el) => el.classList.toggle("is-hovered", event === "pointerover"));
+  });
+
   function topologyHtml(cols, rows, spec, db, table) {
     const ci = (name) => name == null ? -1 : cols.indexOf(name);
     const fromI = ci(spec.from_participant), toI = ci(spec.to_participant);
@@ -4900,6 +4919,7 @@
 
     const compact = spec.spacing === "compact", vertical = spec.direction === "down";
     const nodeW = compact ? 126 : 148, nodeH = compact ? 60 : 72;
+    const portPitch = compact ? 22 : 24, trackPitch = compact ? 12 : 14;
     const degree = new Map(ids.map((id) => [id, { incoming: 0, outgoing: 0 }]));
     edges.forEach((edge) => {
       degree.get(edge.from).outgoing++;
@@ -4913,7 +4933,7 @@
       const a = nodes.get(edge.from), b = nodes.get(edge.to);
       const cross = a.path.length && b.path.length && a.path.join("\u001f") !== b.path.join("\u001f");
       const forward = rank.get(b.id) >= rank.get(a.id);
-      const sides = a === b ? ["top", "right"] : !vertical && (cross || isLateral(edge)) ? ["right", "right"] :
+      const sides = a === b ? ["top", "right"] : !vertical && (!spec.direction || cross || isLateral(edge)) ? ["right", "right"] :
         vertical ? (forward ? ["bottom", "top"] : ["top", "bottom"]) : (forward ? ["right", "left"] : ["left", "right"]);
       [a, b].forEach((node, endpoint) => {
         const ports = sidePorts.get(node.id), side = sides[endpoint];
@@ -4921,28 +4941,28 @@
         ports.get(side).push({ edge, endpoint });
       });
     });
-    sidePorts.forEach((sides) => sides.forEach((ports) => ports.forEach(({ edge, endpoint }, index) => {
-      edge[endpoint ? "toOffset" : "fromOffset"] = (index - (ports.length - 1) / 2) * 18;
-    })));
     const badgeMeasure = document.createElement("canvas").getContext("2d");
     badgeMeasure.font = `8.5px ${getComputedStyle(document.body).fontFamily}`;
     const badgeWidth = (label) => Math.ceil(badgeMeasure.measureText(label).width) + 12;
     nodes.forEach((node) => {
       const busiestSide = Math.max(1, ...[...sidePorts.get(node.id).values()].map((ports) => ports.length));
-      node.h = Math.max(nodeH, 48 + (busiestSide - 1) * 18);
+      node.h = Math.max(nodeH, 48 + (busiestSide - 1) * portPitch);
       const markText = [...node.marks.values()].map(([key, value]) => `${key}: ${value}`);
       const contentChars = Math.max(node.label.length, [...node.types].join(" · ").length, ...markText.map((value) => value.length), 0);
       node.w = Math.max(nodeW, Math.min(300, 34 + contentChars * 6.2), ...markText.map((label) => 30 + badgeWidth(label)));
+      if (vertical) node.w = Math.max(node.w, 48 + (busiestSide - 1) * portPitch);
     });
     const leafKeys = [...new Set(ids.map((id) => nodes.get(id).path.join("\u001f")))].sort();
     const maxDepth = Math.max(0, ...[...nodes.values()].map((node) => node.path.length));
     leafKeys.forEach((leaf) => {
       const members = ids.filter((id) => nodes.get(id).path.join("\u001f") === leaf);
       const firstRank = Math.min(...members.map((id) => rank.get(id)));
-      members.forEach((id) => { nodes.get(id).localRank = rank.get(id) - firstRank; });
+      // Containment peers stack vertically by default. Only an explicit flow
+      // direction spreads a service chain across ranks inside its enclosure.
+      members.forEach((id) => { nodes.get(id).localRank = spec.direction ? rank.get(id) - firstRank : 0; });
     });
     const maxLocalRank = Math.max(0, ...[...nodes.values()].map((node) => node.localRank));
-    const rankWidths = Array.from({ length: maxLocalRank + 1 }, (_, r) => Math.max(nodeW, ...[...nodes.values()].filter((node) => node.localRank === r).map((node) => node.w)));
+    const rankWidths = Array.from({ length: maxLocalRank + 1 }, (_, r) => Math.max(vertical ? nodeH : nodeW, ...[...nodes.values()].filter((node) => node.localRank === r).map((node) => vertical ? node.h : node.w)));
     // A connection gutter has three independent text channels: source port,
     // link label, and destination port. Size each rank gap for its busiest
     // adjacent edge instead of forcing dense fan-outs into a fixed 72px gap.
@@ -4962,9 +4982,10 @@
     // at the same rank stack. The extra inter-band gutter leaves room for both
     // sibling zone borders, so one DC can never appear inside another DC.
     let bandStart = 100;
+    const appearance = new Map([...nodes.keys()].map((id, i) => [id, i]));
     leafKeys.forEach((leaf, leafIndex) => {
       const members = ids.filter((id) => nodes.get(id).path.join("\u001f") === leaf)
-        .sort((a, b) => rank.get(a) - rank.get(b) || a.localeCompare(b));
+        .sort((a, b) => spec.direction ? rank.get(a) - rank.get(b) || a.localeCompare(b) : appearance.get(a) - appearance.get(b));
       const stackOffsets = new Map(); let maxStackExtent = 0;
       members.forEach((id) => {
         // Ranks are local to a leaf zone: peer metros/DCs align as containers,
@@ -4983,13 +5004,32 @@
         while (common < here.length && common < next.length && here[common] === next[common]) common++;
         const childDepth = Math.min(maxDepth - 1, common);
         const levels = Math.max(0, maxDepth - 1 - childDepth);
-        const boundaryTopY = (compact ? 24 : 36) + levels * (compact ? 18 : 30);
+        const boundaryTopY = (compact ? 8 : 10) + levels * (compact ? 18 : 24);
         const boundaryBottomY = (compact ? 10 : 16) + levels * (compact ? 6 : 10);
-        const header = compact ? 22 : 30;
+        const header = compact ? 18 : 22;
         const minimumDelta = maxStackExtent + boundaryTopY + boundaryBottomY + header + (compact ? 12 : 20);
         bandStart += minimumDelta;
       }
     });
+
+    // Allocate ports in geometric order, not SQL row order. Same-side trunks
+    // nest: distant destinations take the outside ports of each fan-out.
+    sidePorts.forEach((sides, id) => sides.forEach((ports, side) => {
+      ports.sort((a, b) => {
+        const other = (p) => nodes.get(p.endpoint ? p.edge.from : p.edge.to);
+        const aa = other(a), bb = other(b);
+        // Arrivals from above precede departures below. Within either half,
+        // the farther span takes the outer port so nested U-routes do not
+        // cross merely because they share a service.
+        const above = (node) => node.y < nodes.get(id).y ? 0 : 1;
+        return (side === "right" || side === "left" ? above(aa) - above(bb) || bb.y - aa.y : aa.x - bb.x)
+          || a.edge.from.localeCompare(b.edge.from) || a.edge.to.localeCompare(b.edge.to)
+          || a.edge.label.localeCompare(b.edge.label);
+      });
+      ports.forEach(({ edge, endpoint }, index) => {
+        edge[endpoint ? "toOffset" : "fromOffset"] = (index - (ports.length - 1) / 2) * portPitch;
+      });
+    }));
 
     // Every prefix becomes a nested enclosure. Full ancestry is the key, so
     // identical names beneath different regions never collapse together.
@@ -5010,9 +5050,9 @@
       // Horizontal nesting only needs enough room for the border and its label
       // inset. Vertical nesting also reserves each zone's header row.
       const padX = (compact ? 18 : 26) + ancestorLevels * (compact ? 5 : 8);
-      const padTopY = (compact ? 24 : 36) + ancestorLevels * (compact ? 18 : 30);
+      const padTopY = (compact ? 8 : 10) + ancestorLevels * (compact ? 18 : 24);
       const padBottomY = (compact ? 10 : 16) + ancestorLevels * (compact ? 6 : 10);
-      const header = compact ? 22 : 30;
+      const header = compact ? 18 : 22;
       g.x = Math.min(...bs.map((b) => b.x1)) - padX;
       g.y = Math.min(...bs.map((b) => b.y1)) - padTopY - header;
       g.w = Math.max(...bs.map((b) => b.x2)) - g.x + padX;
@@ -5029,42 +5069,89 @@
     });
     siblingSets.forEach((siblings) => {
       if (siblings.length < 2) return;
-      const left = Math.min(...siblings.map((g) => g.x));
-      const right = Math.max(...siblings.map((g) => g.x + g.w));
-      siblings.forEach((g) => { g.x = left; g.w = right - left; });
+      const axis = vertical ? "y" : "x", size = vertical ? "h" : "w";
+      const first = Math.min(...siblings.map((g) => g[axis]));
+      const last = Math.max(...siblings.map((g) => g[axis] + g[size]));
+      siblings.forEach((g) => { g[axis] = first; g[size] = last - first; });
     });
-    const crossScopeCounts = new Map();
-    edges.forEach((edge) => {
-      const aPath = nodes.get(edge.from).path, bPath = nodes.get(edge.to).path;
-      let common = 0;
-      while (common < aPath.length && common < bPath.length && aPath[common] === bPath[common]) common++;
-      if (common < Math.max(aPath.length, bPath.length)) {
-        const scope = Math.max(1, maxDepth - common);
-        crossScopeCounts.set(scope, (crossScopeCounts.get(scope) || 0) + 1);
-      }
-    });
-    const scopeOffsets = new Map(); let scopeCursor = 0;
-    for (let scope = 1; scope <= maxDepth; scope++) {
-      scopeOffsets.set(scope, scopeCursor);
-      const count = crossScopeCounts.get(scope) || 0;
-      if (count) scopeCursor += count * 18 + 12;
-    }
-    const lateralReserve = edges.filter(isLateral).length * 14 + (edges.some(isLateral) ? 18 : 0);
-    const routeReserve = Math.max(40, lateralReserve + scopeCursor + 55);
+    // Leave a real label runway before the first bend. Otherwise a local
+    // mesh trunk starts immediately beside the card and strands port labels.
+    const portRunway = Math.max(24, ...edges.flatMap((e) => [labelWidth(e.fromPort, 5.5), labelWidth(e.toPort, 5.5)])) + 12;
+    const linkRunway = Math.max(24, ...edges.map((e) => labelWidth(e.label, 6))) + 12;
+    const routeReserve = 40;
     const minX = Math.min(...[...nodes.values()].map((n) => n.x), ...[...groups.values()].map((g) => g.x)) - 12;
     const minY = Math.min(...[...nodes.values()].map((n) => n.y), ...[...groups.values()].map((g) => g.y)) - 12;
     const maxX = Math.max(...[...nodes.values()].map((n) => n.x + n.w), ...[...groups.values()].map((g) => g.x + g.w)) + routeReserve;
     const maxY = Math.max(...[...nodes.values()].map((n) => n.y + n.h), ...[...groups.values()].map((g) => g.y + g.h)) + 12;
     const width = Math.max(640, maxX - minX), height = Math.max(180, maxY - minY);
     const defs = `<defs><marker id="topo-arrow" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="4" markerHeight="4" orient="auto"><path d="M1 1L7 4L1 7z" fill="context-stroke"/></marker></defs>`;
-    const zoneSvg = [...groups.values()].sort((a, b) => a.depth - b.depth || a.key.localeCompare(b.key)).map((g) => {
-      const tone = [...g.key].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 4;
-      return `<g><rect class="topo-zone depth-${g.depth} tone-${tone}" x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="${12 - Math.min(5, g.depth)}"/><text class="topo-zone-label" x="${g.x + 10}" y="${g.y + 14}">${esc(g.label)}</text></g>`;
-    }).join("");
     const colors = [...new Set(edges.map((e) => e.color).filter(Boolean))];
     const pairN = new Map();
     const scopeTrackN = new Map();
-    let lateralTrackN = 0;
+    // Optimize the lane order of each leaf's internal U-routes independently.
+    // The pair cost is the number of an outer route's horizontal endpoints
+    // lying inside an inner route's vertical span: exactly their crossings.
+    const localRoutes = new Map();
+    if (!vertical) edges.forEach((e) => {
+      const a = nodes.get(e.from), b = nodes.get(e.to), leaf = a.path.join("\u001f");
+      if (a === b || leaf !== b.path.join("\u001f") || !(isLateral(e) || a.x === b.x)) return;
+      if (!localRoutes.has(leaf)) localRoutes.set(leaf, []);
+      localRoutes.get(leaf).push(e);
+    });
+    localRoutes.forEach((routes) => {
+      const span = (e) => {
+        const a = nodes.get(e.from), b = nodes.get(e.to);
+        const ys = [a.y + a.h / 2 + e.fromOffset, b.y + b.h / 2 + e.toOffset];
+        return [Math.min(...ys), Math.max(...ys)];
+      };
+      routes.sort((a, b) => {
+        const aa = span(a), bb = span(b);
+        return aa[1] - aa[0] - (bb[1] - bb[0]) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.label.localeCompare(b.label);
+      });
+      const spans = routes.map(span), n = routes.length;
+      const cost = (i, j) => Number(spans[j][0] > spans[i][0] && spans[j][0] < spans[i][1])
+        + Number(spans[j][1] > spans[i][0] && spans[j][1] < spans[i][1]);
+      let order = routes.map((_, i) => i);
+      if (n <= 12) {
+        // Exact subset search for small meshes, including the four-MCR case.
+        const size = 1 << n, best = new Float64Array(size).fill(Infinity), last = new Int16Array(size);
+        best[0] = 0;
+        for (let mask = 1; mask < size; mask++) for (let j = 0; j < n; j++) {
+          if (!(mask & (1 << j))) continue;
+          const prev = mask ^ (1 << j);
+          let score = best[prev];
+          for (let i = 0; i < n; i++) if (prev & (1 << i)) score += cost(i, j);
+          if (score < best[mask]) { best[mask] = score; last[mask] = j; }
+        }
+        const baseline = order.reduce((total, j, at) => total + order.slice(0, at).reduce((sum, i) => sum + cost(i, j), 0), 0);
+        if (best[size - 1] < baseline) {
+          order = [];
+          for (let mask = size - 1; mask; mask ^= 1 << last[mask]) order.unshift(last[mask]);
+        }
+      } else if (n <= 64) {
+        // Bound work for larger diagrams. Only accept crossing-reducing swaps,
+        // preserving deterministic ordering when alternatives tie.
+        for (let pass = 0; pass < n; pass++) {
+          let changed = false;
+          for (let at = 1; at < n; at++) {
+            const a = order[at - 1], b = order[at];
+            if (cost(b, a) < cost(a, b)) { [order[at - 1], order[at]] = [b, a]; changed = true; }
+          }
+          if (!changed) break;
+        }
+      }
+      const assigned = [];
+      order.forEach((index) => {
+        let lane = 0;
+        for (const prior of assigned) {
+          if (spans[index][0] <= spans[prior][1] + 8 && spans[index][1] >= spans[prior][0] - 8) {
+            lane = Math.max(lane, routes[prior].localLane + 1);
+          }
+        }
+        routes[index].localLane = lane;
+        assigned.push(index);
+      });
+    });
     const roundedRoute = (points, radius = 9) => {
       points = points.filter((point, index) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
       if (points.length < 3) return `M${points.map((p) => p.join(" ")).join(" L")}`;
@@ -5081,8 +5168,23 @@
       const last = points[points.length - 1];
       return `${path} L${last[0]} ${last[1]}`;
     };
-    const labelCandidates = [];
-    const edgeSvg = edges.map((e) => {
+    const labelCandidates = [], trackObstacles = [];
+    // Short spans take inner trunks; long spans wrap around them. Preserve
+    // source order in the SVG, while assigning lanes independently of it.
+    const routeOrder = [...edges].sort((a, b) => {
+      const span = (e) => Math.abs(nodes.get(e.from).y - nodes.get(e.to).y);
+      const scope = (e) => {
+        const aa = nodes.get(e.from).path, bb = nodes.get(e.to).path;
+        let common = 0;
+        while (common < aa.length && common < bb.length && aa[common] === bb[common]) common++;
+        return Math.max(aa.length, bb.length) - common;
+      };
+      // Finish internal wiring and its enclosure before routing traffic that
+      // leaves it. Wider-scope trunks then clear the actual expanded boundary.
+      return scope(a) - scope(b) || span(a) - span(b) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.label.localeCompare(b.label);
+    });
+    const renderedEdges = new Map();
+    routeOrder.forEach((e) => {
       const a = nodes.get(e.from), b = nodes.get(e.to), key = `${e.from}\u001f${e.to}`, parallel = pairN.get(key) || 0; pairN.set(key, parallel + 1);
       const off = parallel * 6;
       const fromOff = e.fromOffset, toOff = e.toOffset;
@@ -5092,12 +5194,12 @@
       if (a === b) {
         sx = a.x + a.w * .7 + fromOff; sy = a.y; tx = a.x + a.w; ty = a.y + a.h * .45 + toOff;
         d = `M${sx} ${sy} C${sx} ${sy - 35 - off} ${tx + 38 + off} ${sy - 35 - off} ${tx} ${ty}`; lx = tx + 25; ly = sy - 27 - off;
-      } else if (!vertical && isLateral(e)) {
+      } else if (!vertical && (isLateral(e) || (!crossesZone && a.x === b.x))) {
         sx = a.x + a.w; sy = a.y + a.h / 2 + fromOff;
         tx = b.x + b.w; ty = b.y + b.h / 2 + toOff;
-        const trunkX = Math.max(sx, tx) + 22 + lateralTrackN++ * 14;
+        const trunkX = Math.max(...[...nodes.values()].map((n) => n.x + n.w)) + portRunway + linkRunway + (e.localLane || 0) * trackPitch;
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
-        lx = trunkX + 4; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
+        lx = sx + portRunway; ly = sy - 9; edgeLabelAnchor = "start";
       } else if (!vertical && crossesZone) {
         // Boundary-crossing traffic uses a trunk outside the right edge of
         // the containers it crosses, then enters the destination from its
@@ -5113,8 +5215,9 @@
         const scopeKey = `${common}:${aParts.slice(0, common).join("\u001f")}`;
         const scopeLane = scopeTrackN.get(scopeKey) || 0;
         scopeTrackN.set(scopeKey, scopeLane + 1);
-        const scopeDistance = Math.max(1, maxDepth - common);
-        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w) + 64 + lateralReserve + (scopeOffsets.get(scopeDistance) || 0) + scopeLane * 18 + off;
+        // The enclosure already includes its internal tracks. Only reserve
+        // the next external lane here, rather than charging that space twice.
+        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w) + 24 + scopeLane * trackPitch + off;
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
         lx = trunkX; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical) {
@@ -5144,34 +5247,98 @@
       const tip = `${a.label} → ${b.label}${e.label ? ` · ${e.label}` : ""}${e.color ? ` · ${e.color}` : ""}`;
       const fromRight = vertical || sx >= a.x + a.w / 2;
       const toRight = vertical || tx >= b.x + b.w / 2;
-      const fromLabelY = sy + (vertical ? -7 : 4);
-      const toLabelY = ty + (vertical ? -7 : 4);
-      if (e.label) labelCandidates.push({ text: e.label, cls: "topo-edge-label", x: lx, y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone });
-      if (e.fromPort) labelCandidates.push({ text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 6 : -6), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1 });
-      if (e.toPort) labelCandidates.push({ text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 6 : -6), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1 });
-      return `<g><path class="topo-track-hit" d="${d}"><title>${esc(tip)}</title></path><path class="topo-track" data-color-index="${colorIndex}" d="${d}" marker-end="url(#topo-arrow)"/></g>`;
-    }).join("");
+      const fromLabelY = sy - 9;
+      const toLabelY = ty - 9;
+      // Sample the actual rounded/metro path, including self-loops. Reserving
+      // all strokes keeps both label text and its background off crossings.
+      const geometry = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      geometry.setAttribute("d", d);
+      const length = geometry.getTotalLength();
+      let routeRight = -Infinity, routeBottom = -Infinity;
+      for (let distance = 0; distance <= length; distance += 4) {
+        const p = geometry.getPointAtLength(distance);
+        trackObstacles.push({ x: p.x - 4, y: p.y - 4, w: 8, h: 8 });
+        routeRight = Math.max(routeRight, p.x); routeBottom = Math.max(routeBottom, p.y);
+      }
+      let common = 0;
+      while (common < a.path.length && common < b.path.length && a.path[common] === b.path[common]) common++;
+      for (let depth = common - 1; depth >= 0; depth--) {
+        const g = groups.get(a.path.slice(0, depth + 1).join("\u001f"));
+        const padding = 16 + (common - depth - 1) * 8;
+        g.w = Math.max(g.w, routeRight - g.x + padding);
+        g.h = Math.max(g.h, routeBottom - g.y + padding);
+      }
+      if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone,
+        attachment: crossesZone && !vertical ? { x: lx, minY: Math.min(sy, ty) + 10, maxY: Math.max(sy, ty) - 10,
+          sourceX: sx + portRunway + 7, sourceY: sy } : null });
+      if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1 });
+      if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1 });
+      renderedEdges.set(e, `<g data-topo-edge="${e.order}"><title>${esc(tip)}</title><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}" marker-end="url(#topo-arrow)"/></g>`);
+    });
+    const edgeSvg = edges.map((e) => renderedEdges.get(e)).join("");
     const occupied = [...nodes.values()].map((n) => ({ x: n.x - 3, y: n.y - 3, w: n.w + 6, h: n.h + 6 }));
+    groups.forEach((g) => occupied.push({ x: g.x + 5, y: g.y + 2, w: g.label.length * 7 + 12, h: 18 }));
     const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     const labelSvg = labelCandidates.sort((a, b) => a.priority - b.priority).map((label) => {
-      const w = Math.max(12, label.text.length * (label.priority ? 5.1 : 5.8)), h = 11;
-      const shifts = label.priority ? [0, 13, -13, 26, -26, 39, -39] : [0, -13, 13, -26, 26, -39, 39];
+      // Reserve the bold hover width too, so highlighting cannot clip text.
+      badgeMeasure.font = `700 ${label.priority ? 8.5 : 9.5}px ${getComputedStyle(document.body).fontFamily}`;
+      const metrics = badgeMeasure.measureText(label.text);
+      const w = Math.max(12, metrics.width), ascent = Math.ceil(metrics.actualBoundingBoxAscent), descent = Math.max(2, Math.ceil(metrics.actualBoundingBoxDescent));
+      const padX = label.pill ? 3 : 2, padY = 2, h = ascent + descent + 2 * padY;
+      const shifts = [0, -16, 16, -32, 32, -48, 48, -64, 64, -80, 80, -112, 112];
       let placed;
-      for (const shift of shifts) {
-        const y = label.y + shift;
-        const x = label.anchor === "middle" ? label.x - w / 2 : label.anchor === "end" ? label.x - w : label.x;
-        const rect = { x: x - 2, y: y - h, w: w + 4, h: h + 3 };
-        if (!occupied.some((other) => intersects(rect, other))) { placed = { y, rect }; break; }
+      const candidates = [0, 24, -24, 48, -48, w + 16, -w - 16].flatMap((dx) => shifts.map((shift) => ({ dx, shift })));
+      const attach = label.attachment;
+      if (attach) {
+        candidates.push({ dx: attach.sourceX - label.x, shift: attach.sourceY - 9 - label.y, horizontal: true });
+        // Try both sides along the owning trunk before sending its label past
+        // neighboring tracks. Favor a short attachment over the old midpoint.
+        const step = Math.max(4, (attach.maxY - attach.minY) / 256);
+        const baselines = [label.y, attach.maxY + ascent + padY - h / 2];
+        for (let cy = attach.minY; cy <= attach.maxY; cy += step) baselines.push(cy + ascent + padY - h / 2);
+        for (const y of baselines) for (const x of [attach.x + padX + 5, attach.x - w - padX - 5]) {
+          candidates.push({ dx: x - label.x, shift: y - label.y });
+        }
       }
-      placed ||= { y: label.y, rect: { x: label.x, y: label.y - h, w, h } };
+      const candidateScore = ({ dx, shift, horizontal }) => {
+        if (!attach) return Math.abs(dx) + 2 * Math.abs(shift);
+        if (horizontal) return 100 * (9 - descent - padY) + Math.abs(shift) + 40;
+        const x = label.x + dx - padX, right = x + w + 2 * padX;
+        const cy = label.y + shift - ascent - padY + h / 2;
+        const ay = Math.max(attach.minY, Math.min(attach.maxY, cy));
+        const gap = Math.min(Math.abs(x - attach.x), Math.abs(right - attach.x));
+        return 100 * Math.hypot(gap, cy - ay) + Math.abs(shift);
+      };
+      candidates.sort((a, b) => candidateScore(a) - candidateScore(b));
+      for (const { dx, shift, horizontal } of candidates) {
+        const y = label.y + shift, labelX = label.x + dx;
+        const x = label.anchor === "middle" ? labelX - w / 2 : label.anchor === "end" ? labelX - w : labelX;
+        const rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h };
+        if (!occupied.some((other) => intersects(rect, other)) && !trackObstacles.some((other) => intersects(rect, other))) { placed = { x: labelX, y, rect, horizontal }; break; }
+      }
+      // A crowded diagram must never silently fall back to covering a link.
+      // Its clear right margin is an always-available final label column.
+      if (!placed) {
+        const x = Math.max(maxX, ...trackObstacles.map((r) => r.x + r.w)) + 12;
+        let y = label.y, rect;
+        do { rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h }; y += h + 4; }
+        while (occupied.some((other) => intersects(rect, other)));
+        placed = { x: x + (label.anchor === "middle" ? w / 2 : label.anchor === "end" ? w : 0), y: y - h - 4, rect };
+      }
+      label.x = placed.x;
       occupied.push(placed.rect);
       if (label.pill) {
-        const topPad = 2, rightPad = 2, bottomPad = 4;
-        const px = label.x, py = placed.y - h - topPad, pw = w + rightPad, ph = h + topPad + bottomPad, radius = 2;
+        const px = placed.rect.x, py = placed.rect.y, pw = placed.rect.w, ph = placed.rect.h, radius = 2;
         const pillPath = `M${px} ${py}H${px + pw - radius}Q${px + pw} ${py} ${px + pw} ${py + radius}V${py + ph - radius}Q${px + pw} ${py + ph} ${px + pw - radius} ${py + ph}H${px}Z`;
-        return `<g class="topo-edge-label-pill" data-color-index="${label.colorIndex}"><path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
+        const cy = py + ph / 2, ay = attach ? Math.max(attach.minY, Math.min(attach.maxY, cy)) : cy;
+        const labelEdge = attach && attach.x > px + pw / 2 ? px + pw : px;
+        const ax = placed.horizontal ? px + pw / 2 : attach?.x;
+        const anchorY = placed.horizontal ? attach.sourceY : ay;
+        const endX = placed.horizontal ? ax : labelEdge, endY = placed.horizontal ? py + ph : cy;
+        const leader = attach ? `<path class="topo-label-leader" d="M${ax} ${anchorY}L${endX} ${endY}"/><circle class="topo-label-anchor" cx="${ax}" cy="${anchorY}" r="2"/>` : "";
+        return `<g class="topo-edge-label-pill" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex}"><title>${esc(label.tip)}</title>${leader}<path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
       }
-      return `<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text>`;
+      return `<g data-topo-edge="${label.edge}"><title>${esc(label.tip)}</title><text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
     }).join("");
     const nodeSvg = [...nodes.values()].map((n) => {
       const types = [...n.types], marks = [...n.marks.values()].slice(0, 3);
@@ -5180,7 +5347,16 @@
       return `<g class="topo-node-wrap" data-node="${attr(n.id)}"><rect class="topo-node" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8"><title>${esc(n.label)}${detail ? `\n${esc(detail)}` : ""}</title></rect><circle class="topo-station" cx="${n.x + 11}" cy="${n.y + 15}" r="5"/><text class="topo-node-name" x="${n.x + 21}" y="${n.y + 18}">${esc(n.label)}</text>${types.length ? `<text class="topo-type" x="${n.x + 21}" y="${n.y + 31}">${esc(types.join(" · "))}</text>` : ""}${badges}</g>`;
     }).join("");
     const legend = colors.length ? `<div class="topo-legend">${colors.slice(0, 4).map((c) => `<span class="topo-key">${esc(c)}</span>`).join("")}</div>` : "";
-    return `<div class="topo-wrap"><svg class="topo-svg" viewBox="${minX} ${minY} ${width} ${height}" role="img" aria-label="Network topology">${defs}${zoneSvg}${edgeSvg}${nodeSvg}<g class="topo-label-layer">${labelSvg}</g></svg>${legend}</div>`;
+    const zoneSvg = [...groups.values()].sort((a, b) => a.depth - b.depth || a.key.localeCompare(b.key)).map((g) => {
+      const tone = [...g.key].reduce((sum, char) => sum + char.charCodeAt(0), 0) % 4;
+      return `<g><rect class="topo-zone depth-${g.depth} tone-${tone}" x="${g.x}" y="${g.y}" width="${g.w}" height="${g.h}" rx="${12 - Math.min(5, g.depth)}"/><text class="topo-zone-label" x="${g.x + 10}" y="${g.y + 14}">${esc(g.label)}</text></g>`;
+    }).join("");
+    const bounds = [...occupied, ...trackObstacles, ...groups.values()].reduce((b, r) => ({
+      x1: Math.min(b.x1, r.x - 8), y1: Math.min(b.y1, r.y - 8),
+      x2: Math.max(b.x2, r.x + r.w + 8), y2: Math.max(b.y2, r.y + r.h + 8),
+    }), { x1: minX, y1: minY, x2: minX + width, y2: minY + height });
+    const boundsX = bounds.x1, boundsY = bounds.y1, boundsW = bounds.x2 - boundsX, boundsH = bounds.y2 - boundsY;
+    return `<div class="topo-wrap"><svg class="topo-svg" style="--topo-natural-width:${boundsW}px" viewBox="${boundsX} ${boundsY} ${boundsW} ${boundsH}" role="img" aria-label="Network topology">${defs}${zoneSvg}${edgeSvg}${nodeSvg}<g class="topo-label-layer">${labelSvg}</g></svg>${legend}</div>`;
   }
 
   // ---- timeline (Gantt-like) tile ---------------------------------------
