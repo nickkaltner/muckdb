@@ -4087,6 +4087,20 @@
   function sanitizeForCapture(doc) {
     doc.querySelectorAll(".updated, .enter").forEach((el) => el.classList.remove("updated", "enter"));
     const win = doc.defaultView || window;
+    // html2canvas serializes SVGs as standalone images. Keep page centering
+    // outside that image: copied auto margins otherwise offset the artwork a
+    // second time and clip its right edge. Freeze responsive sizing as well.
+    doc.querySelectorAll(".topo-svg").forEach((svg) => {
+      const cs = win.getComputedStyle(svg);
+      const width = cs.width, height = cs.height;
+      const frame = doc.createElement("div");
+      frame.style.width = width; frame.style.height = height;
+      frame.style.marginLeft = cs.marginLeft; frame.style.marginRight = cs.marginRight;
+      svg.before(frame); frame.append(svg);
+      svg.style.width = width; svg.style.height = height; svg.style.margin = "0";
+      svg.setAttribute("width", parseFloat(width));
+      svg.setAttribute("height", parseFloat(height));
+    });
     doc.querySelectorAll("*").forEach((el) => {
       const cs = win.getComputedStyle(el);
       for (const prop of CAPTURE_COLOR_PROPS) {
