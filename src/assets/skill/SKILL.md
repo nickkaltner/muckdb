@@ -770,8 +770,14 @@ muckdb session tile infra --name network --db infra.duckdb --view links \
   --caption "Service paths across physical sites, availability zones and diversity domains."
 ```
 
-By default, services stack vertically within each containment group, in order
-of first appearance. Enclosures include all links internal to them. Links use
+Topology tiles default to **Wide**: local-only services sit left of services
+that connect outside their area, and independent top-level areas can sit side
+by side. The tile's **1 column / 2 columns / Wide** controls remember the choice
+per tile in the browser; Wide also expands the tile to the viewport width.
+Chains of externally connected areas also sit side by side in Wide mode,
+keeping each area's services stacked and its internal mesh wiring separate
+from the links between areas. Areas remain in one routing diagram. Links have no
+arrowheads, representing bidirectional connectivity. Enclosures include all links internal to them. Links use
 ordered ports and nested routing lanes; compact labels avoid link paths and
 stay inside the diagram, with leaders attaching displaced labels to their links.
 Hover a link or its label to highlight both. Use an explicit `--direction right` for horizontal

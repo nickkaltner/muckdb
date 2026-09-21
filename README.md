@@ -209,7 +209,12 @@ with `--label`, `--from-port`, and `--to-port`. Nested containment uses
 `--from-within`/`--to-within` (for example `country,region,metro,dc`); independent
 attributes such as availability zone or diversity domain use
 `--from-mark`/`--to-mark`. See the installed skill for the full schema and
-layout controls.
+layout controls. Topology tiles default to **Wide**, placing local services left
+of externally connected services and independent areas side by side. Connected
+chains of areas also run horizontally, with separate internal wiring. Switch to
+**1 column** or **2 columns** at the top of the tile; the browser remembers the
+choice. Connections are bidirectional, without arrowheads, and label colours
+stay matched to their lines when hovered.
 
 `session screenshot` (and the copy-image button) render through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a

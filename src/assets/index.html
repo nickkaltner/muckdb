@@ -689,18 +689,20 @@
   .topo-zone.depth-1.tone-2, .topo-zone.depth-2.tone-2, .topo-zone.depth-3.tone-2 { fill: color-mix(in srgb, var(--anno-event) 4%, transparent); }
   .topo-zone.depth-1.tone-3, .topo-zone.depth-2.tone-3, .topo-zone.depth-3.tone-3 { fill: color-mix(in srgb, var(--anno-threshold, var(--fail)) 4%, transparent); }
   .topo-zone-label { fill: var(--muted); font-size: 10px; font-weight: 650; letter-spacing: .045em; text-transform: uppercase; }
-  .topo-track { fill: none; stroke: color-mix(in srgb, var(--primary) 72%, var(--fg)); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; opacity: .82; }
-  .topo-track[data-color-index="1"] { stroke: var(--highlight); }
-  .topo-track[data-color-index="2"] { stroke: var(--anno-event); }
-  .topo-track[data-color-index="3"] { stroke: var(--anno-threshold); }
+  .topo-svg [data-color-index] { --topo-link-color: color-mix(in srgb, var(--primary) 72%, var(--fg)); }
+  .topo-svg [data-color-index="1"] { --topo-link-color: var(--highlight); }
+  .topo-svg [data-color-index="2"] { --topo-link-color: var(--anno-event); }
+  .topo-svg [data-color-index="3"] { --topo-link-color: var(--anno-threshold); }
+  .topo-track { fill: none; stroke: var(--topo-link-color); stroke-width: 2.4; stroke-linecap: round; stroke-linejoin: round; }
   .topo-track-hit { fill: none; stroke: transparent; stroke-width: 15; pointer-events: stroke; }
   .topo-track.is-hovered { opacity: 1; stroke-width: 4.5; }
   .topo-label-layer [data-topo-edge] { cursor: default; }
-  .topo-label-leader { fill: none; stroke: var(--muted); stroke-width: 1; stroke-dasharray: 2 3; opacity: .65; pointer-events: stroke; }
-  .topo-label-anchor { fill: var(--muted); }
-  .topo-label-layer .is-hovered .topo-label-leader { stroke: var(--highlight); stroke-width: 2; stroke-dasharray: none; opacity: 1; }
-  .topo-label-layer .is-hovered .topo-label-anchor { fill: var(--highlight); }
-  .topo-label-layer .is-hovered .topo-edge-label-bg { filter: brightness(1.4); }
+  .topo-label-leader { fill: none; stroke: var(--topo-link-color); stroke-width: 1; stroke-dasharray: 2 3; opacity: .65; pointer-events: stroke; }
+  .topo-label-anchor { fill: var(--topo-link-color); }
+  .topo-label-layer .is-hovered .topo-label-leader { stroke-width: 2; stroke-dasharray: none; opacity: 1; }
+  .topo-layout-controls { display: flex; gap: 6px; margin-bottom: 12px; }
+  .topo-layout-controls [aria-pressed="true"] { background: var(--raised); color: var(--fg); border-color: var(--primary); }
+  .topo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px; align-items: start; }
   .topo-label-layer .is-hovered .topo-edge-label,
   .topo-label-layer .is-hovered .topo-port-label { font-weight: 700; }
   .topo-node { fill: var(--surface); stroke: var(--primary-dim); stroke-width: 1.25; }
@@ -710,10 +712,7 @@
   .topo-type { fill: var(--muted); font-size: 9px; }
   .topo-mark-bg { fill: color-mix(in srgb, var(--primary) 12%, var(--raised)); stroke: color-mix(in srgb, var(--primary) 35%, var(--line)); stroke-width: .7; }
   .topo-mark { fill: var(--fg); font-size: 8.5px; }
-  .topo-edge-label-pill .topo-edge-label-bg { fill: color-mix(in srgb, color-mix(in srgb, var(--primary) 72%, var(--fg)) 82%, var(--surface)); stroke: none; }
-  .topo-edge-label-pill[data-color-index="1"] .topo-edge-label-bg { fill: color-mix(in srgb, var(--highlight) 82%, var(--surface)); }
-  .topo-edge-label-pill[data-color-index="2"] .topo-edge-label-bg { fill: color-mix(in srgb, var(--anno-event) 82%, var(--surface)); }
-  .topo-edge-label-pill[data-color-index="3"] .topo-edge-label-bg { fill: color-mix(in srgb, var(--anno-threshold) 82%, var(--surface)); }
+  .topo-edge-label-pill .topo-edge-label-bg { fill: var(--topo-link-color); stroke: none; }
   .topo-edge-label { fill: var(--fg); font-size: 9.5px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
   .topo-edge-label-pill .topo-edge-label { fill: var(--on-accent); font-weight: 700; paint-order: normal; stroke: none; }
   .topo-port-label { fill: var(--muted); font-size: 8.5px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
@@ -3492,7 +3491,7 @@
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-      if (kind === "topology") { slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "topology") { slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name); return; }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -4551,7 +4550,7 @@
       : "";
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
-    const wide = !!state.tileWide[t.name];
+    const wide = state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
     const widenBtn = kind === "table" || kind === "timeline" || kind === "incident" || kind === "topology"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
@@ -4742,7 +4741,7 @@
     if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name); return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
     // the space around (and, for a doughnut, inside) the circle.
@@ -4867,7 +4866,51 @@
     svg.querySelectorAll(`[data-topo-edge="${id}"]`).forEach((el) => el.classList.toggle("is-hovered", event === "pointerover"));
   });
 
-  function topologyHtml(cols, rows, spec, db, table) {
+  const topologyViews = new Map();
+  function topologyLayoutKey(db, table, tileKey) { return JSON.stringify([location.pathname, db, table, tileKey]); }
+  function topologyLayoutMode(db, table, tileKey) {
+    let mode;
+    try { mode = localStorage.getItem(`topology-layout:${topologyLayoutKey(db, table, tileKey)}`); } catch (_) {}
+    return ["one", "two", "wide"].includes(mode) ? mode : "wide";
+  }
+  document.addEventListener("click", (event) => {
+    const button = event.target.closest?.("[data-topo-layout]");
+    if (!button) return;
+    const host = button.closest("[data-topo-view]");
+    const view = topologyViews.get(host.dataset.topoView);
+    if (!view) return;
+    try { localStorage.setItem(`topology-layout:${host.dataset.topoView}`, button.dataset.topoLayout); } catch (_) {}
+    const panel = host.closest(".panel"), wide = button.dataset.topoLayout === "wide";
+    if (panel) {
+      state.tileWide[panel.dataset.tile] = wide;
+      panel.classList.toggle("full-bleed", wide);
+      const widen = panel.querySelector("[data-widen]");
+      if (widen) { widen.classList.toggle("active", wide); widen.title = wide ? "Fit to column width" : "Expand to full width"; }
+    }
+    host.outerHTML = topologyHtml(...view, button.dataset.topoLayout);
+  });
+  function topologyHtml(cols, rows, spec, db, table, tileKey = "", selectedMode) {
+    const key = topologyLayoutKey(db, table, tileKey);
+    topologyViews.set(key, [cols, rows, spec, db, table, tileKey]);
+    const mode = selectedMode || topologyLayoutMode(db, table, tileKey);
+    // Pack independent top-level areas as complete diagrams. Connected areas
+    // stay in one routing space, so packing cannot cut a wire or its enclosure.
+    const batches = [];
+    if (mode === "wide" && spec.from_within?.length && spec.to_within?.length) {
+      const fi = cols.indexOf(spec.from_within[0]), ti = cols.indexOf(spec.to_within[0]);
+      const parent = new Map();
+      const root = (id) => { if (!parent.has(id)) parent.set(id, id); while (parent.get(id) !== id) id = parent.get(id); return id; };
+      const area = (row, i) => String(row[i] ?? "");
+      rows.forEach((row) => parent.set(root(area(row, ti)), root(area(row, fi))));
+      const components = new Map();
+      rows.forEach((row) => { const id = root(area(row, fi)); if (!components.has(id)) components.set(id, []); components.get(id).push(row); });
+      batches.push(...components.values());
+    } else batches.push(rows);
+    const controls = [["one", "1 column"], ["two", "2 columns"], ["wide", "Wide"]]
+      .map(([value, label]) => `<button class="panel-act" data-topo-layout="${value}" aria-pressed="${mode === value}">${label}</button>`).join("");
+    return `<div data-topo-view="${attr(key)}"><div class="topo-layout-controls" role="group" aria-label="Topology layout">${controls}</div><div class="${mode === "wide" ? "topo-grid" : ""}">${batches.map((batch) => topologyDiagramHtml(cols, batch, { ...spec, topologyLayout: mode }, db, table)).join("")}</div></div>`;
+  }
+  function topologyDiagramHtml(cols, rows, spec, db, table) {
     const ci = (name) => name == null ? -1 : cols.indexOf(name);
     const fromI = ci(spec.from_participant), toI = ci(spec.to_participant);
     if (fromI < 0) return '<div class="note">topology needs --from (and usually --to).</div>';
@@ -4932,6 +4975,49 @@
     ids.filter((id) => !seen.has(id)).forEach((id, n) => rank.set(id, n ? rank.get(ids.find((x) => seen.has(x))) || 0 : 0));
 
     const compact = spec.spacing === "compact", vertical = spec.direction === "down";
+    const leafKey = (node) => node.path.join("\u001f");
+    const external = new Set();
+    edges.forEach((edge) => { if (leafKey(nodes.get(edge.from)) !== leafKey(nodes.get(edge.to))) { external.add(edge.from); external.add(edge.to); } });
+    const leafMembers = new Map();
+    nodes.forEach((node) => { const key = leafKey(node); if (!leafMembers.has(key)) leafMembers.set(key, []); leafMembers.get(key).push(node); });
+    // A chain of boundary-only areas is clearer as adjacent groups than one
+    // long stack. Detect it from connectivity, independently of group names.
+    const areaPeers = new Map([...leafMembers.keys()].map((key) => [key, new Set()]));
+    edges.forEach((edge) => {
+      const a = leafKey(nodes.get(edge.from)), b = leafKey(nodes.get(edge.to));
+      if (a !== b) { areaPeers.get(a).add(b); areaPeers.get(b).add(a); }
+    });
+    const areaOrder = [];
+    if (spec.topologyLayout === "wide" && !spec.direction && leafMembers.size >= 2
+      && [...nodes.values()].every((node) => external.has(node.id))
+      && [...areaPeers.values()].every((peers) => peers.size <= 2)) {
+      // Put the internally wired end first, so its mesh can live on the
+      // outside left while its external connections leave on the right.
+      const internalCount = (key) => edges.filter((edge) => leafKey(nodes.get(edge.from)) === key && leafKey(nodes.get(edge.to)) === key).length;
+      let key = [...areaPeers.keys()].filter((key) => areaPeers.get(key).size === 1)
+        .sort((a, b) => internalCount(b) - internalCount(a) || leafMembers.get(b).length - leafMembers.get(a).length)[0];
+      while (key != null && !areaOrder.includes(key)) {
+        areaOrder.push(key);
+        key = [...areaPeers.get(key)].find((peer) => !areaOrder.includes(peer));
+      }
+    }
+    // Nested enclosures must remain contiguous in the horizontal ordering.
+    const contiguousAreas = [...nodes.values()].every((node) => node.path.every((_, depth) => {
+      const prefix = node.path.slice(0, depth + 1).join("\u001f");
+      const indexes = areaOrder.flatMap((key, index) => key === prefix || key.startsWith(prefix + "\u001f") ? [index] : []);
+      return !indexes.length || indexes.at(-1) - indexes[0] + 1 === indexes.length;
+    }));
+    const horizontalAreas = areaOrder.length === leafMembers.size && contiguousAreas;
+    const areaRank = new Map(areaOrder.map((key, index) => [key, index]));
+    leafMembers.forEach((members) => {
+      const mixed = members.some((node) => external.has(node.id)) && members.some((node) => !external.has(node.id));
+      const firstRank = Math.min(...members.map((node) => rank.get(node.id)));
+      members.forEach((node, index) => {
+        node.localRank = spec.topologyLayout === "one" ? 0 : spec.direction ? rank.get(node.id) - firstRank :
+          mixed ? Number(external.has(node.id)) : members.every((member) => external.has(member.id)) ? 0 :
+            Math.floor(index / Math.ceil(members.length / 2));
+      });
+    });
     const nodeW = compact ? 126 : 148, nodeH = compact ? 60 : 72;
     const portPitch = compact ? 22 : 24, trackPitch = compact ? 12 : 14;
     const degree = new Map(ids.map((id) => [id, { incoming: 0, outgoing: 0 }]));
@@ -4946,8 +5032,9 @@
     edges.forEach((edge) => {
       const a = nodes.get(edge.from), b = nodes.get(edge.to);
       const cross = a.path.length && b.path.length && a.path.join("\u001f") !== b.path.join("\u001f");
-      const forward = rank.get(b.id) >= rank.get(a.id);
-      const sides = a === b ? ["top", "right"] : !vertical && (!spec.direction || cross || isLateral(edge)) ? ["right", "right"] :
+      const forward = b.localRank >= a.localRank;
+      const areaForward = areaRank.get(leafKey(b)) > areaRank.get(leafKey(a));
+      const sides = a === b ? ["top", "right"] : horizontalAreas ? (cross ? (areaForward ? ["right", "left"] : ["left", "right"]) : ["left", "left"]) : !vertical && (a.localRank === b.localRank || cross) ? ["right", "right"] :
         vertical ? (forward ? ["bottom", "top"] : ["top", "bottom"]) : (forward ? ["right", "left"] : ["left", "right"]);
       [a, b].forEach((node, endpoint) => {
         const ports = sidePorts.get(node.id), side = sides[endpoint];
@@ -4968,13 +5055,6 @@
     });
     const leafKeys = [...new Set(ids.map((id) => nodes.get(id).path.join("\u001f")))].sort();
     const maxDepth = Math.max(0, ...[...nodes.values()].map((node) => node.path.length));
-    leafKeys.forEach((leaf) => {
-      const members = ids.filter((id) => nodes.get(id).path.join("\u001f") === leaf);
-      const firstRank = Math.min(...members.map((id) => rank.get(id)));
-      // Containment peers stack vertically by default. Only an explicit flow
-      // direction spreads a service chain across ranks inside its enclosure.
-      members.forEach((id) => { nodes.get(id).localRank = spec.direction ? rank.get(id) - firstRank : 0; });
-    });
     const maxLocalRank = Math.max(0, ...[...nodes.values()].map((node) => node.localRank));
     const rankWidths = Array.from({ length: maxLocalRank + 1 }, (_, r) => Math.max(vertical ? nodeH : nodeW, ...[...nodes.values()].filter((node) => node.localRank === r).map((node) => vertical ? node.h : node.w)));
     // A connection gutter has three independent text channels: source port,
@@ -4985,9 +5065,28 @@
     const labelWidth = (value, factor) => value ? String(value).length * factor : 0;
     edges.forEach((edge) => {
       const from = nodes.get(edge.from), to = nodes.get(edge.to);
-      if (from.path.join("\u001f") !== to.path.join("\u001f") || to.localRank !== from.localRank + 1) return;
+      if (from.path.join("\u001f") !== to.path.join("\u001f") || Math.abs(to.localRank - from.localRank) !== 1) return;
       const required = labelWidth(edge.fromPort, 5.1) + labelWidth(edge.label, 5.8) + labelWidth(edge.toPort, 5.1) + (compact ? 42 : 56);
-      rankGaps[from.localRank] = Math.max(rankGaps[from.localRank], required);
+      const gap = Math.min(from.localRank, to.localRank);
+      rankGaps[gap] = Math.max(rankGaps[gap], required);
+    });
+    // Same-column loops need a gutter of their own before the next column.
+    // Reserve the label runway and all possible lanes before placing nodes.
+    const portRunway = Math.max(24, ...edges.flatMap((e) => [labelWidth(e.fromPort, 5.5), labelWidth(e.toPort, 5.5)])) + 12;
+    const linkRunway = Math.max(24, ...edges.map((e) => labelWidth(e.label, 6))) + 12;
+    // Include the cross-column trunk AND its arrival labels before the next
+    // service column, rather than budgeting only for the internal loops.
+    const loopRunway = portRunway + linkRunway + portRunway + 24;
+    rankGaps.forEach((gap, r) => {
+      const loops = edges.filter((edge) => {
+        const a = nodes.get(edge.from), b = nodes.get(edge.to);
+        return leafKey(a) === leafKey(b) && a.localRank === r && b.localRank === r;
+      }).length;
+      const crossings = edges.filter((edge) => {
+        const a = nodes.get(edge.from), b = nodes.get(edge.to);
+        return leafKey(a) === leafKey(b) && Math.min(a.localRank, b.localRank) <= r && Math.max(a.localRank, b.localRank) > r;
+      }).length;
+      if (loops || crossings) rankGaps[r] = Math.max(gap, loopRunway + (loops + crossings) * trackPitch);
     });
     const rankX = [100];
     for (let r = 1; r <= maxLocalRank; r++) rankX[r] = rankX[r - 1] + rankWidths[r - 1] + rankGaps[r - 1];
@@ -5026,12 +5125,31 @@
       }
     });
 
+    if (horizontalAreas) {
+      const rowPitch = Math.max(...[...nodes.values()].map((node) => node.h)) + (compact ? 18 : 24);
+      const maxRows = Math.max(...[...leafMembers.values()].map((members) => members.length));
+      let x = 100;
+      areaOrder.forEach((key) => {
+        const members = leafMembers.get(key);
+        const internal = edges.filter((edge) => leafKey(nodes.get(edge.from)) === key && leafKey(nodes.get(edge.to)) === key).length;
+        if (internal) x += portRunway + linkRunway + internal * trackPitch;
+        members.forEach((node, index) => {
+          node.x = x;
+          node.y = 100 + ((maxRows - members.length) / 2 + index) * rowPitch + (rowPitch - node.h) / 2;
+        });
+        x += Math.max(...members.map((node) => node.w)) + 2 * portRunway + linkRunway + 48 + maxDepth * 16;
+      });
+    }
+
     // Allocate ports in geometric order, not SQL row order. Same-side trunks
     // nest: distant destinations take the outside ports of each fan-out.
     sidePorts.forEach((sides, id) => sides.forEach((ports, side) => {
       ports.sort((a, b) => {
         const other = (p) => nodes.get(p.endpoint ? p.edge.from : p.edge.to);
         const aa = other(a), bb = other(b);
+        if (horizontalAreas && leafKey(aa) !== leafKey(nodes.get(id)) && leafKey(bb) !== leafKey(nodes.get(id))) {
+          return aa.y - bb.y || a.edge.order - b.edge.order;
+        }
         // Arrivals from above precede departures below. Within either half,
         // the farther span takes the outer port so nested U-routes do not
         // cross merely because they share a service.
@@ -5044,6 +5162,30 @@
         edge[endpoint ? "toOffset" : "fromOffset"] = (index - (ports.length - 1) / 2) * portPitch;
       });
     }));
+
+    // Peers in different columns can have identical centre lines. A local
+    // loop and a cross-column connection would then share a horizontal run,
+    // visually joining unrelated links. Reserve distinct endpoint rows before
+    // routing; keep opposite sides of the same card independent.
+    if (!vertical && maxLocalRank > 0) {
+      const reserved = [];
+      [...nodes.values()].sort((a, b) => a.x - b.x || a.y - b.y).forEach((node) => {
+        sidePorts.get(node.id).forEach((ports, side) => {
+          if (side !== "left" && side !== "right") return;
+          ports.forEach(({ edge, endpoint }) => {
+            const field = endpoint ? "toOffset" : "fromOffset";
+            const original = node.y + node.h / 2 + edge[field];
+            const candidates = [original];
+            for (let distance = 8; distance < node.h; distance += 8) candidates.push(original + distance, original - distance);
+            const y = candidates.find((candidate) => candidate >= node.y + 12 && candidate <= node.y + node.h - 12
+              && !reserved.some((other) => other.edge !== edge && !(other.node === node && other.side !== side)
+                && Math.abs(other.y - candidate) < 8)) ?? original;
+            edge[field] = y - node.y - node.h / 2;
+            reserved.push({ y, edge, node, side });
+          });
+        });
+      });
+    }
 
     // Every prefix becomes a nested enclosure. Full ancestry is the key, so
     // identical names beneath different regions never collapse together.
@@ -5082,7 +5224,7 @@
       siblingSets.get(parent).push(g);
     });
     siblingSets.forEach((siblings) => {
-      if (siblings.length < 2) return;
+      if (siblings.length < 2 || horizontalAreas) return;
       const axis = vertical ? "y" : "x", size = vertical ? "h" : "w";
       const first = Math.min(...siblings.map((g) => g[axis]));
       const last = Math.max(...siblings.map((g) => g[axis] + g[size]));
@@ -5090,15 +5232,13 @@
     });
     // Leave a real label runway before the first bend. Otherwise a local
     // mesh trunk starts immediately beside the card and strands port labels.
-    const portRunway = Math.max(24, ...edges.flatMap((e) => [labelWidth(e.fromPort, 5.5), labelWidth(e.toPort, 5.5)])) + 12;
-    const linkRunway = Math.max(24, ...edges.map((e) => labelWidth(e.label, 6))) + 12;
     const routeReserve = 40;
     const minX = Math.min(...[...nodes.values()].map((n) => n.x), ...[...groups.values()].map((g) => g.x)) - 12;
     const minY = Math.min(...[...nodes.values()].map((n) => n.y), ...[...groups.values()].map((g) => g.y)) - 12;
     const maxX = Math.max(...[...nodes.values()].map((n) => n.x + n.w), ...[...groups.values()].map((g) => g.x + g.w)) + routeReserve;
     const maxY = Math.max(...[...nodes.values()].map((n) => n.y + n.h), ...[...groups.values()].map((g) => g.y + g.h)) + 12;
     const width = Math.max(640, maxX - minX), height = Math.max(180, maxY - minY);
-    const defs = `<defs><marker id="topo-arrow" viewBox="0 0 8 8" refX="7.5" refY="4" markerWidth="4" markerHeight="4" orient="auto"><path d="M1 1L7 4L1 7z" fill="context-stroke"/></marker></defs>`;
+    const defs = "";
     const colors = [...new Set(edges.map((e) => e.color).filter(Boolean))];
     const pairN = new Map();
     const scopeTrackN = new Map();
@@ -5108,9 +5248,12 @@
     const localRoutes = new Map();
     if (!vertical) edges.forEach((e) => {
       const a = nodes.get(e.from), b = nodes.get(e.to), leaf = a.path.join("\u001f");
-      if (a === b || leaf !== b.path.join("\u001f") || !(isLateral(e) || a.x === b.x)) return;
-      if (!localRoutes.has(leaf)) localRoutes.set(leaf, []);
-      localRoutes.get(leaf).push(e);
+      if (a === b || leaf !== b.path.join("\u001f") || a.x !== b.x) return;
+      // Columns have separate gutters. Sharing their lane allocator lets
+      // right-column loops inflate left-column trunks past the reserved gap.
+      const gutter = JSON.stringify([leaf, a.localRank]);
+      if (!localRoutes.has(gutter)) localRoutes.set(gutter, []);
+      localRoutes.get(gutter).push(e);
     });
     localRoutes.forEach((routes) => {
       const span = (e) => {
@@ -5166,6 +5309,31 @@
         assigned.push(index);
       });
     });
+    // Cross-column connections also need independent trunks. Reuse a lane
+    // only when its vertical spans are disjoint; longer spans wrap outside
+    // shorter ones so a fanout does not collapse into one shared wire.
+    const crossRoutes = new Map();
+    if (!vertical) edges.forEach((edge) => {
+      const a = nodes.get(edge.from), b = nodes.get(edge.to);
+      if (leafKey(a) !== leafKey(b) || a.localRank === b.localRank) return;
+      const key = JSON.stringify([leafKey(a), Math.min(a.localRank, b.localRank), Math.max(a.localRank, b.localRank)]);
+      if (!crossRoutes.has(key)) crossRoutes.set(key, []);
+      const ys = [a.y + a.h / 2 + edge.fromOffset, b.y + b.h / 2 + edge.toOffset];
+      crossRoutes.get(key).push({ edge, start: Math.min(...ys), end: Math.max(...ys) });
+    });
+    crossRoutes.forEach((routes) => {
+      routes.sort((a, b) => (a.end - a.start) - (b.end - b.start) || a.edge.order - b.edge.order);
+      const assigned = [];
+      routes.forEach((route) => {
+        route.edge.crossLane = 0;
+        assigned.forEach((prior) => {
+          if (route.start <= prior.end + 8 && route.end >= prior.start - 8) {
+            route.edge.crossLane = Math.max(route.edge.crossLane, prior.edge.crossLane + 1);
+          }
+        });
+        assigned.push(route);
+      });
+    });
     const roundedRoute = (points, radius = 9) => {
       points = points.filter((point, index) => index === 0 || point[0] !== points[index - 1][0] || point[1] !== points[index - 1][1]);
       if (points.length < 3) return `M${points.map((p) => p.join(" ")).join(" L")}`;
@@ -5208,12 +5376,21 @@
       if (a === b) {
         sx = a.x + a.w * .7 + fromOff; sy = a.y; tx = a.x + a.w; ty = a.y + a.h * .45 + toOff;
         d = `M${sx} ${sy} C${sx} ${sy - 35 - off} ${tx + 38 + off} ${sy - 35 - off} ${tx} ${ty}`; lx = tx + 25; ly = sy - 27 - off;
-      } else if (!vertical && (isLateral(e) || (!crossesZone && a.x === b.x))) {
-        sx = a.x + a.w; sy = a.y + a.h / 2 + fromOff;
-        tx = b.x + b.w; ty = b.y + b.h / 2 + toOff;
-        const trunkX = Math.max(...[...nodes.values()].map((n) => n.x + n.w)) + portRunway + linkRunway + (e.localLane || 0) * trackPitch;
+      } else if (!vertical && !crossesZone && a.x === b.x) {
+        sx = a.x + (horizontalAreas ? 0 : a.w); sy = a.y + a.h / 2 + fromOff;
+        tx = b.x + (horizontalAreas ? 0 : b.w); ty = b.y + b.h / 2 + toOff;
+        const trunkX = horizontalAreas ? a.x - portRunway - linkRunway - (e.localLane || 0) * trackPitch : Math.max(...[...nodes.values()].filter((n) => n.x === a.x).map((n) => n.x + n.w)) + portRunway + linkRunway + (e.localLane || 0) * trackPitch;
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
-        lx = sx + portRunway; ly = sy - 9; edgeLabelAnchor = "start";
+        lx = sx + (horizontalAreas ? -portRunway : portRunway); ly = sy - 9; edgeLabelAnchor = horizontalAreas ? "end" : "start";
+      } else if (horizontalAreas && crossesZone) {
+        const forward = b.x > a.x;
+        sx = a.x + (forward ? a.w : 0); sy = a.y + a.h / 2 + fromOff;
+        tx = b.x + (forward ? 0 : b.w); ty = b.y + b.h / 2 + toOff;
+        const key = JSON.stringify([Math.min(a.x, b.x), Math.max(a.x, b.x)]);
+        const lane = scopeTrackN.get(key) || 0; scopeTrackN.set(key, lane + 1);
+        const mx = (sx + tx) / 2 + lane * trackPitch;
+        d = roundedRoute([[sx, sy], [mx, sy], [mx, ty], [tx, ty]]);
+        lx = mx; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical && crossesZone) {
         // Boundary-crossing traffic uses a trunk outside the right edge of
         // the containers it crosses, then enters the destination from its
@@ -5236,16 +5413,30 @@
         lx = trunkX; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical) {
         const forward = b.x >= a.x; sx = a.x + (forward ? a.w : 0); sy = a.y + a.h / 2 + fromOff + off; tx = b.x + (forward ? 0 : b.w); ty = b.y + b.h / 2 + toOff + off;
-        if (forward) {
-          const mx = (sx + tx) / 2;
-          d = roundedRoute(spec.routing === "metro" ? [[sx, sy], [mx - 10, sy], [mx + 10, ty], [tx, ty]] : [[sx, sy], [mx, sy], [mx, ty], [tx, ty]]);
+        if (forward || !spec.direction) {
+          // Cross-column links go outside the left column's local loops.
+          // A midpoint (especially a long metro diagonal) can cut through
+          // those loops even though both endpoint stubs are collision-free.
+          const left = a.x < b.x ? a : b;
+          const innerLoops = edges.filter((edge) => {
+            const from = nodes.get(edge.from), to = nodes.get(edge.to);
+            return from !== to && leafKey(from) === leafKey(left) && leafKey(to) === leafKey(left)
+              && from.x === left.x && to.x === left.x;
+          });
+          const innerRight = Math.max(...[...nodes.values()].filter((node) => node.x === left.x).map((node) => node.x + node.w))
+            + portRunway + linkRunway + Math.max(0, ...innerLoops.map((edge) => edge.localLane || 0)) * trackPitch;
+          const mx = (innerLoops.length ? innerRight + trackPitch : left.x + left.w + portRunway + linkRunway)
+            + (e.crossLane || 0) * trackPitch;
+          // Keep occupied gutters orthogonal: long diagonals can sweep across
+          // neighbouring lanes even when their centre lines are separated.
+          d = roundedRoute([[sx, sy], [mx, sy], [mx, ty], [tx, ty]]);
           // Follow the less-congested endpoint: fan-outs use their distinct
           // destination rows; fan-ins use their distinct source rows. Keep the
           // link text on that endpoint's long horizontal segment.
           const useDestination = degree.get(a.id).outgoing > degree.get(b.id).incoming;
           const fromBandEnd = sx + 10 + labelWidth(e.fromPort, 5.1);
           const toBandStart = tx - 10 - labelWidth(e.toPort, 5.1);
-          lx = useDestination ? (mx + 10 + toBandStart) / 2 : (fromBandEnd + mx - 10) / 2;
+          lx = !forward ? mx : useDestination ? (mx + 10 + toBandStart) / 2 : (fromBandEnd + mx - 10) / 2;
           ly = (useDestination ? ty : sy) - 9;
         }
         else {
@@ -5258,7 +5449,7 @@
         else { const rx = Math.min(sx, tx) - 34 - off; d = roundedRoute([[sx, sy], [sx, sy - 18], [rx, sy - 18], [rx, ty + 18], [tx, ty + 18], [tx, ty]]); lx = rx; ly = (sy + ty) / 2; }
       }
       const colorIndex = e.color ? Math.max(0, colors.indexOf(e.color)) % 4 : 0;
-      const tip = `${a.label} → ${b.label}${e.label ? ` · ${e.label}` : ""}${e.color ? ` · ${e.color}` : ""}`;
+      const tip = `${a.label} ↔ ${b.label}${e.label ? ` · ${e.label}` : ""}${e.color ? ` · ${e.color}` : ""}`;
       const fromRight = vertical || sx >= a.x + a.w / 2;
       const toRight = vertical || tx >= b.x + b.w / 2;
       const fromLabelY = sy - 9;
@@ -5268,26 +5459,29 @@
       const geometry = document.createElementNS("http://www.w3.org/2000/svg", "path");
       geometry.setAttribute("d", d);
       const length = geometry.getTotalLength();
-      let routeRight = -Infinity, routeBottom = -Infinity;
+      let routeRight = -Infinity, routeBottom = -Infinity, routeLeft = Infinity;
       for (let distance = 0; distance <= length; distance += 4) {
         const p = geometry.getPointAtLength(distance);
         trackObstacles.push({ x: p.x - 4, y: p.y - 4, w: 8, h: 8 });
         routeRight = Math.max(routeRight, p.x); routeBottom = Math.max(routeBottom, p.y);
+        routeLeft = Math.min(routeLeft, p.x);
       }
       let common = 0;
       while (common < a.path.length && common < b.path.length && a.path[common] === b.path[common]) common++;
       for (let depth = common - 1; depth >= 0; depth--) {
         const g = groups.get(a.path.slice(0, depth + 1).join("\u001f"));
         const padding = 16 + (common - depth - 1) * 8;
+        if (horizontalAreas && routeLeft - padding < g.x) { const right = g.x + g.w; g.x = routeLeft - padding; g.w = right - g.x; }
         g.w = Math.max(g.w, routeRight - g.x + padding);
         g.h = Math.max(g.h, routeBottom - g.y + padding);
       }
       if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone,
-        attachment: crossesZone && !vertical ? { x: lx, minY: Math.min(sy, ty) + 10, maxY: Math.max(sy, ty) - 10,
-          sourceX: sx + portRunway + 7, sourceY: sy } : null });
+        attachment: crossesZone && !vertical ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
+          sourceX: sx + portRunway + 7, sourceY: sy,
+          centerX: horizontalAreas && Math.abs(sy - ty) < .01 ? (sx + tx) / 2 : null } : null });
       if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1 });
       if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1 });
-      renderedEdges.set(e, `<g data-topo-edge="${e.order}"><title>${esc(tip)}</title><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}" marker-end="url(#topo-arrow)"/></g>`);
+      renderedEdges.set(e, `<g data-topo-edge="${e.order}"><title>${esc(tip)}</title><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}"/></g>`);
     });
     const edgeSvg = edges.map((e) => renderedEdges.get(e)).join("");
     const occupied = [...nodes.values()].map((n) => ({ x: n.x - 3, y: n.y - 3, w: n.w + 6, h: n.h + 6 }));
@@ -5304,6 +5498,7 @@
       const candidates = [0, 24, -24, 48, -48, w + 16, -w - 16].flatMap((dx) => shifts.map((shift) => ({ dx, shift })));
       const attach = label.attachment;
       if (attach) {
+        if (attach.centerX != null) candidates.push({ dx: attach.centerX - w / 2 - label.x, shift: attach.sourceY - 9 - label.y, horizontal: true, centered: true });
         candidates.push({ dx: attach.sourceX - label.x, shift: attach.sourceY - 9 - label.y, horizontal: true });
         // Try both sides along the owning trunk before sending its label past
         // neighboring tracks. Favor a short attachment over the old midpoint.
@@ -5314,7 +5509,8 @@
           candidates.push({ dx: x - label.x, shift: y - label.y });
         }
       }
-      const candidateScore = ({ dx, shift, horizontal }) => {
+      const candidateScore = ({ dx, shift, horizontal, centered }) => {
+        if (centered) return -1;
         if (!attach) return Math.abs(dx) + 2 * Math.abs(shift);
         if (horizontal) return 100 * (9 - descent - padY) + Math.abs(shift) + 40;
         const x = label.x + dx - padX, right = x + w + 2 * padX;
@@ -8821,8 +9017,8 @@
     const wdn = ev.target.closest("[data-widen]");
     if (wdn) {
       const n = wdn.dataset.widen;
-      const on = !state.tileWide[n]; state.tileWide[n] = on;
       const panel = wdn.closest(".panel");
+      const on = !panel?.classList.contains("full-bleed"); state.tileWide[n] = on;
       if (panel) panel.classList.toggle("full-bleed", on);
       wdn.classList.toggle("active", on);
       wdn.title = on ? "Fit to column width" : "Expand to full width";
