@@ -5,6 +5,91 @@ import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 test.describe('topology tile', () => {
+  test('two peers converge on the next column without crossing their arrivals', async ({ page, e2eState }) => {
+    const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
+    const db = join(e2eState.tmpDir, 'ordered-arrivals.duckdb');
+    const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
+    run([db, '-c', `CREATE TABLE links AS SELECT * FROM (VALUES
+      ('root','upper','flow'), ('root','lower','flow'), ('upper','lower','mesh'),
+      ('upper','sink','flow'), ('lower','sink','flow')) t(src,dst,kind);`]);
+    for (const routing of ['orthogonal', 'metro']) {
+      run(['session', 'tile', SESSION_ID, '--name', 'ordered-arrivals', '--db', db, '--view', 'links',
+        '--chart', 'topology', '--from', 'src', '--to', 'dst', '--color', 'kind', '--label', 'src',
+        '--direction', 'right', '--routing', routing, '--caption', 'Two connected peers converge on a third service without an avoidable crossing.']);
+      await page.goto(`/session/${SESSION_ID}/`);
+      const panel = page.locator('.panel[data-tile="ordered-arrivals"]');
+      await panel.getByRole('button', { name: 'Wide', exact: true }).click();
+      const result = await panel.locator('.topo-svg').evaluate((svg) => {
+        const box = (id: string) => svg.querySelector<SVGRectElement>(`[data-node="${id}"] .topo-node`)!.getBBox();
+        const upper = box('upper'), lower = box('lower'), sink = box('sink');
+        const paths = [3, 4, 2].map((id) => svg.querySelector<SVGPathElement>(`.topo-track[data-topo-edge="${id}"]`)!);
+        const arrivals = paths.slice(0, 2).map((path) => path.getPointAtLength(path.getTotalLength()).y);
+        const points = paths.map((path) => {
+          const points = [];
+          for (let d = 0; d < path.getTotalLength(); d += 2) points.push(path.getPointAtLength(d));
+          points.push(path.getPointAtLength(path.getTotalLength()));
+          return points;
+        });
+        const orient = (a: DOMPoint, b: DOMPoint, c: DOMPoint) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+        let crossings = 0;
+        for (let first = 0; first < points.length; first++) for (let second = first + 1; second < points.length; second++) {
+          for (let i = 1; i < points[first].length; i++) for (let j = 1; j < points[second].length; j++) {
+            const [a, b, c, d] = [points[first][i - 1], points[first][i], points[second][j - 1], points[second][j]];
+            if (orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0) crossings++;
+          }
+        }
+        return { sameColumn: upper.x === lower.x, nextColumn: sink.x > upper.x, ordered: (arrivals[0] - arrivals[1]) * (upper.y - lower.y) > 0, crossings };
+      });
+      expect(result).toEqual({ sameColumn: true, nextColumn: true, ordered: true, crossings: 0 });
+      await panel.screenshot({ path: test.info().outputPath(`ordered-arrivals-${routing}.png`) });
+    }
+  });
+
+  test('long chains respect two columns and skip-rank links clear every card', async ({ page, e2eState }) => {
+    const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
+    const db = join(e2eState.tmpDir, 'skip-ranks.duckdb');
+    const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
+    run([db, '-c', `CREATE TABLE links AS SELECT * FROM (VALUES
+      ('a','b','A','A'), ('b','c','A','A'), ('c','d','A','A'), ('d','e','A','A'),
+      ('a','e','A','A'), ('b','remote','A','B'), ('c','remote','A','B')) t(src,dst,src_zone,dst_zone);`]);
+    run(['session', 'tile', SESSION_ID, '--name', 'skip-ranks', '--db', db, '--view', 'links',
+      '--chart', 'topology', '--from', 'src', '--to', 'dst', '--from-within', 'src_zone', '--to-within', 'dst_zone',
+      '--direction', 'right', '--label', 'src', '--caption', 'Long and cross-zone connections clear intermediate columns.']);
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="skip-ranks"]');
+    for (const mode of ['2 columns', 'Wide']) {
+      await panel.getByRole('button', { name: mode, exact: true }).click();
+      const result = await panel.locator('.topo-svg').evaluate((svg) => {
+        const nodes = [...svg.querySelectorAll<SVGRectElement>('.topo-node')].map((node) => node.getBBox());
+        const collisions: string[] = [];
+        for (const path of svg.querySelectorAll<SVGPathElement>('.topo-track')) {
+          for (let d = 1; d < path.getTotalLength(); d += 1) {
+            const p = path.getPointAtLength(d);
+            if (nodes.some((b) => p.x > b.x + .5 && p.x < b.x + b.width - .5 && p.y > b.y + .5 && p.y < b.y + b.height - .5)) {
+              collisions.push(path.dataset.topoEdge!); break;
+            }
+          }
+        }
+        for (const label of svg.querySelectorAll<SVGTextElement>('.topo-edge-label, .topo-port-label')) {
+          const group = label.parentElement!;
+          const path = svg.querySelector<SVGPathElement>(`.topo-track[data-topo-edge="${group.dataset.topoEdge}"]`)!;
+          const box = label.getBBox();
+          let distance = Infinity;
+          for (let d = 0; d <= path.getTotalLength(); d += 2) {
+            const p = path.getPointAtLength(d);
+            distance = Math.min(distance, Math.hypot(Math.max(box.x - p.x, 0, p.x - box.x - box.width), Math.max(box.y - p.y, 0, p.y - box.y - box.height)));
+          }
+          if (distance > 16 && !group.querySelector('.topo-label-leader')) collisions.push('detached label without leader');
+        }
+        return { columns: new Set(nodes.map((node) => node.x)).size, collisions };
+      });
+      expect(result.collisions).toEqual([]);
+      if (mode === '2 columns') expect(result.columns).toBe(2);
+      else expect(result.columns).toBeGreaterThan(2);
+    }
+    await panel.screenshot({ path: '/tmp/muckdb-topology-columns.png' });
+  });
+
   test('core fanout reserves a clear gutter before the second service column', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'core-fanout.duckdb');

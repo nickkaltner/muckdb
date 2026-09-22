@@ -4974,7 +4974,7 @@
     }
     ids.filter((id) => !seen.has(id)).forEach((id, n) => rank.set(id, n ? rank.get(ids.find((x) => seen.has(x))) || 0 : 0));
 
-    const compact = spec.spacing === "compact", vertical = spec.direction === "down";
+    const compact = spec.spacing === "compact", vertical = spec.direction === "down" && !["one", "two"].includes(spec.topologyLayout);
     const leafKey = (node) => node.path.join("\u001f");
     const external = new Set();
     edges.forEach((edge) => { if (leafKey(nodes.get(edge.from)) !== leafKey(nodes.get(edge.to))) { external.add(edge.from); external.add(edge.to); } });
@@ -5015,7 +5015,9 @@
       members.forEach((node, index) => {
         node.localRank = spec.topologyLayout === "one" ? 0 : spec.direction ? rank.get(node.id) - firstRank :
           mixed ? Number(external.has(node.id)) : members.every((member) => external.has(member.id)) ? 0 :
-            Math.floor(index / Math.ceil(members.length / 2));
+            spec.topologyLayout === "wide" && Math.max(...members.map((member) => rank.get(member.id))) - firstRank > 1 ? rank.get(node.id) - firstRank :
+              Math.floor(index / Math.ceil(members.length / 2));
+        if (spec.topologyLayout === "two" && !vertical) node.localRank = Math.min(1, node.localRank);
       });
     });
     const nodeW = compact ? 126 : 148, nodeH = compact ? 60 : 72;
@@ -5110,6 +5112,25 @@
         maxStackExtent = Math.max(maxStackExtent, extent);
         stackOffsets.set(r, extent + (compact ? 18 : 24));
       });
+      // Empty spacing cells let earlier columns carry links through later
+      // ones. Reserve the whole port band so subsequent port ordering cannot
+      // move a connection back into a card. Compact unaffected rows normally.
+      if (!vertical) {
+        const placed = [];
+        members.map((id) => nodes.get(id)).sort((a, b) => a.x - b.x || a.y - b.y).forEach((node) => {
+          const blockers = placed.filter((other) => other.x === node.x || edges.some((edge) => {
+            const peer = edge.from === other.id ? nodes.get(edge.to) : edge.to === other.id ? nodes.get(edge.from) : null;
+            return peer && peer !== node && (leafKey(peer) !== leaf || peer.x > node.x);
+          }));
+          let y = node.y;
+          for (const other of blockers.sort((a, b) => a.y - b.y)) {
+            if (y < other.y + other.h + 16 && y + node.h > other.y - 16) y = other.y + other.h + 24;
+          }
+          node.y = y;
+          placed.push(node);
+          maxStackExtent = Math.max(maxStackExtent, node.y + node.h - bandStart);
+        });
+      }
       const nextLeaf = leafKeys[leafIndex + 1];
       if (nextLeaf) {
         const here = leaf.split("\u001f"), next = nextLeaf.split("\u001f");
@@ -5150,6 +5171,22 @@
         if (horizontalAreas && leafKey(aa) !== leafKey(nodes.get(id)) && leafKey(bb) !== leafKey(nodes.get(id))) {
           return aa.y - bb.y || a.edge.order - b.edge.order;
         }
+        const owner = nodes.get(id);
+        const facesPeer = (peer) => side === "left" ? peer.x + peer.w <= owner.x :
+          side === "right" ? peer.x >= owner.x + owner.w : false;
+        // Through-links preserve the vertical order of their opposite cards.
+        // The reversed order below is only for nested, same-side U-routes;
+        // applying it to arrivals from another column creates a needless X.
+        if ((side === "left" || side === "right") && facesPeer(aa) !== facesPeer(bb)) {
+          // Keep a loop above/below the through-links according to the side
+          // on which its other card lies. Otherwise its vertical trunk cuts
+          // the neighbouring card's departure before reaching the next column.
+          const band = (peer) => facesPeer(peer) ? 0 : peer.y + peer.h / 2 < owner.y + owner.h / 2 ? -1 : 1;
+          return band(aa) - band(bb);
+        }
+        if (facesPeer(aa) && facesPeer(bb)) {
+          return aa.y + aa.h / 2 - bb.y - bb.h / 2 || a.edge.order - b.edge.order;
+        }
         // Arrivals from above precede departures below. Within either half,
         // the farther span takes the outer port so nested U-routes do not
         // cross merely because they share a service.
@@ -5177,7 +5214,8 @@
             const original = node.y + node.h / 2 + edge[field];
             const candidates = [original];
             for (let distance = 8; distance < node.h; distance += 8) candidates.push(original + distance, original - distance);
-            const y = candidates.find((candidate) => candidate >= node.y + 12 && candidate <= node.y + node.h - 12
+            const y = candidates.find((candidate) => candidate >= Math.max(node.y + 12, original - portPitch / 2 + 4)
+              && candidate <= Math.min(node.y + node.h - 12, original + portPitch / 2 - 4)
               && !reserved.some((other) => other.edge !== edge && !(other.node === node && other.side !== side)
                 && Math.abs(other.y - candidate) < 8)) ?? original;
             edge[field] = y - node.y - node.h / 2;
@@ -5327,7 +5365,8 @@
       routes.forEach((route) => {
         route.edge.crossLane = 0;
         assigned.forEach((prior) => {
-          if (route.start <= prior.end + 8 && route.end >= prior.start - 8) {
+          const sharedEndpoint = [route.edge.from, route.edge.to].some((id) => id === prior.edge.from || id === prior.edge.to);
+          if (sharedEndpoint || route.start <= prior.end + 8 && route.end >= prior.start - 8) {
             route.edge.crossLane = Math.max(route.edge.crossLane, prior.edge.crossLane + 1);
           }
         });
@@ -5349,6 +5388,55 @@
       }
       const last = points[points.length - 1];
       return `${path} L${last[0]} ${last[1]}`;
+    };
+    // A visibility grid is the final safety net for skipped ranks, reverse
+    // links and cross-enclosure traffic. Existing routes keep their dedicated
+    // lanes unless they actually intersect a card.
+    const clearRoute = (d, a, b, sx, sy, tx, ty) => {
+      const geometry = document.createElementNS("http://www.w3.org/2000/svg", "path");
+      geometry.setAttribute("d", d);
+      const boxes = [...nodes.values()].map((node) => {
+        const pad = node === a || node === b ? 0 : 12;
+        return { x1: node.x - pad, x2: node.x + node.w + pad, y1: node.y - pad, y2: node.y + node.h + pad };
+      });
+      const inside = (x, y, box) => x > box.x1 + .01 && x < box.x2 - .01 && y > box.y1 + .01 && y < box.y2 - .01;
+      let blocked = false;
+      for (let at = 1, length = geometry.getTotalLength(); at < length; at += 2) {
+        const p = geometry.getPointAtLength(at);
+        if (boxes.some((box) => inside(p.x, p.y, box))) { blocked = true; break; }
+      }
+      if (!blocked) return d;
+      const xs = [...new Set([sx, tx, ...boxes.flatMap((box) => [box.x1 - 12, box.x2 + 12])])].sort((a, b) => a - b);
+      const ys = [...new Set([sy, ty, ...boxes.flatMap((box) => [box.y1 - 12, box.y2 + 12])])].sort((a, b) => a - b);
+      const nx = xs.length, start = ys.indexOf(sy) * nx + xs.indexOf(sx), end = ys.indexOf(ty) * nx + xs.indexOf(tx);
+      const distances = new Map([[start, 0]]), previous = new Map(), open = [{ id: start, cost: 0, score: 0 }];
+      const point = (id) => [xs[id % nx], ys[Math.floor(id / nx)]];
+      while (open.length) {
+        open.sort((a, b) => b.score - a.score);
+        const current = open.pop();
+        if (current.cost !== distances.get(current.id)) continue;
+        if (current.id === end) {
+          const points = [];
+          for (let id = end; id != null; id = previous.get(id)) points.push(point(id));
+          // Keep safety routes orthogonal: rounding a corner toward a card
+          // would undo the exact clearance established by the grid.
+          return `M${points.reverse().map((p) => p.join(" ")).join(" L")}`;
+        }
+        const [x, y] = point(current.id), col = current.id % nx, row = Math.floor(current.id / nx);
+        const neighbors = [col > 0 ? current.id - 1 : -1, col + 1 < nx ? current.id + 1 : -1,
+          row > 0 ? current.id - nx : -1, row + 1 < ys.length ? current.id + nx : -1];
+        for (const id of neighbors) {
+          if (id < 0) continue;
+          const [xx, yy] = point(id);
+          if (boxes.some((box) => x === xx ? x > box.x1 + .01 && x < box.x2 - .01 && Math.max(y, yy) > box.y1 + .01 && Math.min(y, yy) < box.y2 - .01 :
+            y > box.y1 + .01 && y < box.y2 - .01 && Math.max(x, xx) > box.x1 + .01 && Math.min(x, xx) < box.x2 - .01)) continue;
+          const cost = current.cost + Math.abs(x - xx) + Math.abs(y - yy);
+          if (cost >= (distances.get(id) ?? Infinity)) continue;
+          distances.set(id, cost); previous.set(id, current.id);
+          open.push({ id, cost, score: cost + Math.abs(xx - tx) + Math.abs(yy - ty) });
+        }
+      }
+      throw new Error("Unable to route topology link around overlapping nodes");
     };
     const labelCandidates = [], trackObstacles = [];
     // Short spans take inner trunks; long spans wrap around them. Preserve
@@ -5448,6 +5536,9 @@
         if (forward) { const my = (sy + ty) / 2; d = roundedRoute(spec.routing === "metro" ? [[sx, sy], [sx, my - 10], [tx, my + 10], [tx, ty]] : [[sx, sy], [sx, my], [tx, my], [tx, ty]]); lx = (sx + tx) / 2; ly = my - 5; }
         else { const rx = Math.min(sx, tx) - 34 - off; d = roundedRoute([[sx, sy], [sx, sy - 18], [rx, sy - 18], [rx, ty + 18], [tx, ty + 18], [tx, ty]]); lx = rx; ly = (sy + ty) / 2; }
       }
+      const originalRoute = d;
+      d = clearRoute(d, a, b, sx, sy, tx, ty);
+      e.rerouted = d !== originalRoute;
       const colorIndex = e.color ? Math.max(0, colors.indexOf(e.color)) % 4 : 0;
       const tip = `${a.label} ↔ ${b.label}${e.label ? ` · ${e.label}` : ""}${e.color ? ` · ${e.color}` : ""}`;
       const fromRight = vertical || sx >= a.x + a.w / 2;
@@ -5475,8 +5566,9 @@
         g.w = Math.max(g.w, routeRight - g.x + padding);
         g.h = Math.max(g.h, routeBottom - g.y + padding);
       }
-      if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone,
-        attachment: crossesZone && !vertical ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
+      e.geometry = geometry;
+      if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone && !e.rerouted,
+        attachment: crossesZone && !vertical && !e.rerouted ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
           sourceX: sx + portRunway + 7, sourceY: sy,
           centerX: horizontalAreas && Math.abs(sy - ty) < .01 ? (sx + tx) / 2 : null } : null });
       if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1 });
@@ -5535,6 +5627,22 @@
         while (occupied.some((other) => intersects(rect, other)));
         placed = { x: x + (label.anchor === "middle" ? w / 2 : label.anchor === "end" ? w : 0), y: y - h - 4, rect };
       }
+      const moved = Math.hypot(placed.x - label.x, placed.y - label.y) > 12;
+      let displacedLeader = "";
+      if (!attach) {
+        const geometry = edges.find((edge) => edge.order === label.edge).geometry;
+        const rect = placed.rect, cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+        let nearest, best = Infinity;
+        for (let d = 0, length = geometry.getTotalLength(); d <= length; d += 2) {
+          const point = geometry.getPointAtLength(d), distance = Math.hypot(point.x - cx, point.y - cy);
+          if (distance < best) { best = distance; nearest = point; }
+        }
+        if (nearest) {
+          const ex = Math.max(rect.x, Math.min(rect.x + rect.w, nearest.x));
+          const ey = Math.max(rect.y, Math.min(rect.y + rect.h, nearest.y));
+          if (moved || Math.hypot(nearest.x - ex, nearest.y - ey) > 12) displacedLeader = `<path class="topo-label-leader" d="M${nearest.x} ${nearest.y}L${ex} ${ey}"/><circle class="topo-label-anchor" cx="${nearest.x}" cy="${nearest.y}" r="2"/>`;
+        }
+      }
       label.x = placed.x;
       occupied.push(placed.rect);
       if (label.pill) {
@@ -5545,10 +5653,10 @@
         const ax = placed.horizontal ? px + pw / 2 : attach?.x;
         const anchorY = placed.horizontal ? attach.sourceY : ay;
         const endX = placed.horizontal ? ax : labelEdge, endY = placed.horizontal ? py + ph : cy;
-        const leader = attach ? `<path class="topo-label-leader" d="M${ax} ${anchorY}L${endX} ${endY}"/><circle class="topo-label-anchor" cx="${ax}" cy="${anchorY}" r="2"/>` : "";
+        const leader = attach ? `<path class="topo-label-leader" d="M${ax} ${anchorY}L${endX} ${endY}"/><circle class="topo-label-anchor" cx="${ax}" cy="${anchorY}" r="2"/>` : displacedLeader;
         return `<g class="topo-edge-label-pill" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex}"><title>${esc(label.tip)}</title>${leader}<path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
       }
-      return `<g data-topo-edge="${label.edge}"><title>${esc(label.tip)}</title><text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
+      return `<g data-topo-edge="${label.edge}"><title>${esc(label.tip)}</title>${displacedLeader}<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
     }).join("");
     const nodeSvg = [...nodes.values()].map((n) => {
       const types = [...n.types], marks = [...n.marks.values()].slice(0, 3);
