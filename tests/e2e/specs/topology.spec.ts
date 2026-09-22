@@ -5,6 +5,95 @@ import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
 
 test.describe('topology tile', () => {
+  test('fanout labels align, endpoint labels stay by their ports, and long text fits', async ({ page, e2eState }) => {
+    const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
+    const db = join(e2eState.tmpDir, 'label-examples.duckdb');
+    const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
+    run([db, '-c', readFileSync(resolve(__dirname, '../fixtures/topology-labels.sql'), 'utf8')]);
+    for (const view of ['label_fanout', 'long_label_fanout', 'long_label_triangle', 'long_label_regions']) {
+      run(['session', 'tile', SESSION_ID, '--name', view, '--db', db, '--view', view,
+        '--chart', 'topology', '--from', 'src', '--to', 'dst', '--color', 'link_class', '--label', 'link_label',
+        '--from-port', 'src_port', '--to-port', 'dst_port', '--routing', 'metro',
+        ...(view === 'long_label_regions' ? ['--from-within', 'src_zone', '--to-within', 'dst_zone'] : ['--direction', 'right']),
+        '--caption', 'Synthetic layout fixture with endpoint names and link descriptions.']);
+      await page.goto(`/session/${SESSION_ID}/`);
+      const panel = page.locator(`.panel[data-tile="${view}"]`);
+      await panel.getByRole('button', { name: 'Wide', exact: true }).click();
+      const issues = await panel.locator('.topo-svg').evaluate((svg) => {
+        const issues: string[] = [];
+        for (const node of svg.querySelectorAll('.topo-node-wrap')) {
+          const box = node.querySelector<SVGRectElement>('.topo-node')!.getBBox();
+          const name = node.querySelector<SVGTextElement>('.topo-node-name')!.getBBox();
+          if (name.x + name.width > box.x + box.width - 5) issues.push('node name overflows');
+        }
+        for (const text of svg.querySelectorAll<SVGTextElement>('.topo-port-label')) {
+          const id = text.parentElement!.dataset.topoEdge;
+          const path = svg.querySelector<SVGPathElement>(`.topo-track[data-topo-edge="${id}"]`)!;
+          const box = text.getBBox();
+          const endpoints = [path.getPointAtLength(0), path.getPointAtLength(path.getTotalLength())];
+          if (!endpoints.some((p) => Math.abs(p.y - box.y - box.height) <= 12 && Math.min(Math.abs(box.x - p.x), Math.abs(box.x + box.width - p.x)) <= 14)) {
+            issues.push(`endpoint label moved away from its port: ${text.textContent}`);
+          }
+        }
+        for (const text of svg.querySelectorAll<SVGTextElement>('.topo-edge-label')) {
+          const group = text.parentElement!, id = group.dataset.topoEdge;
+          const path = svg.querySelector<SVGPathElement>(`.topo-track[data-topo-edge="${id}"]`)!;
+          const box = text.getBBox();
+          let gap = Infinity;
+          for (let d = 0; d < path.getTotalLength(); d += 2) {
+            const p = path.getPointAtLength(d);
+            gap = Math.min(gap, Math.hypot(Math.max(box.x - p.x, 0, p.x - box.x - box.width), Math.max(box.y - p.y, 0, p.y - box.y - box.height)));
+          }
+          if (!group.querySelector('.topo-label-anchor')) issues.push('middle label missing its attachment dot');
+          if (gap > 16 && !group.querySelector('.topo-label-leader')) issues.push('detached description without leader');
+        }
+        for (const leader of svg.querySelectorAll<SVGPathElement>('.topo-label-leader')) {
+          const otherLabels = [...svg.querySelectorAll<SVGTextElement>('.topo-edge-label, .topo-port-label')]
+            .filter((text) => text.parentElement !== leader.parentElement).map((text) => text.getBBox());
+          for (let d = 1; d < leader.getTotalLength(); d += 2) {
+            const p = leader.getPointAtLength(d);
+            if (otherLabels.some((r) => p.x > r.x && p.x < r.x + r.width && p.y > r.y && p.y < r.y + r.height)) {
+              issues.push('caption connector crosses another label'); break;
+            }
+          }
+        }
+        const leaders = [...svg.querySelectorAll<SVGPathElement>('.topo-label-layer .topo-label-leader')].map((path) => {
+          const a = path.getPointAtLength(0), b = path.getPointAtLength(path.getTotalLength());
+          return { x: a.x, ex: b.x, y: Math.min(a.y, b.y), end: Math.max(a.y, b.y) };
+        }).filter((line) => Math.abs(line.x - line.ex) < 3 && line.end - line.y > 12);
+        for (let i = 0; i < leaders.length; i++) for (let j = i + 1; j < leaders.length; j++) {
+          const a = leaders[i], b = leaders[j];
+          if (Math.abs(a.x - b.x) < 10 && Math.min(a.end, b.end) > Math.max(a.y, b.y)) issues.push('overlapping caption connectors');
+        }
+        const labels = [...svg.querySelectorAll<SVGTextElement>('.topo-edge-label')];
+        if (labels.some((label) => label.textContent === '100G')) {
+          const routes = [...svg.querySelectorAll<SVGPathElement>('.topo-track')].map((path) => {
+            const points = [];
+            for (let d = 0; d < path.getTotalLength(); d += 2) points.push(path.getPointAtLength(d));
+            points.push(path.getPointAtLength(path.getTotalLength()));
+            return points;
+          });
+          const orient = (a: DOMPoint, b: DOMPoint, c: DOMPoint) => (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+          for (let first = 0; first < routes.length; first++) for (let second = first + 1; second < routes.length; second++) {
+            let crosses = false;
+            for (let i = 1; i < routes[first].length && !crosses; i++) for (let j = 1; j < routes[second].length && !crosses; j++) {
+              const [a, b, c, d] = [routes[first][i - 1], routes[first][i], routes[second][j - 1], routes[second][j]];
+              crosses = orient(a, b, c) * orient(a, b, d) < 0 && orient(c, d, a) * orient(c, d, b) < 0;
+            }
+            if (crosses) issues.push(`avoidable fan-out crossing: ${first}/${second}`);
+          }
+        }
+        for (const value of ['100G', '10G']) {
+          const xs = labels.filter((label) => label.textContent === value).map((label) => label.getBBox().x);
+          if (xs.length && Math.max(...xs) - Math.min(...xs) > 1) issues.push(`${value} labels are not aligned`);
+        }
+        return issues;
+      });
+      expect(issues).toEqual([]);
+      await panel.screenshot({ path: test.info().outputPath(`${view}.png`) });
+    }
+  });
+
   test('two peers converge on the next column without crossing their arrivals', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'ordered-arrivals.duckdb');

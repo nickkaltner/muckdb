@@ -5047,12 +5047,14 @@
     const badgeMeasure = document.createElement("canvas").getContext("2d");
     badgeMeasure.font = `8.5px ${getComputedStyle(document.body).fontFamily}`;
     const badgeWidth = (label) => Math.ceil(badgeMeasure.measureText(label).width) + 12;
+    const nameMeasure = document.createElement("canvas").getContext("2d");
+    nameMeasure.font = `650 11.5px ${getComputedStyle(document.body).fontFamily}`;
     nodes.forEach((node) => {
       const busiestSide = Math.max(1, ...[...sidePorts.get(node.id).values()].map((ports) => ports.length));
       node.h = Math.max(nodeH, 48 + (busiestSide - 1) * portPitch);
       const markText = [...node.marks.values()].map(([key, value]) => `${key}: ${value}`);
       const contentChars = Math.max(node.label.length, [...node.types].join(" · ").length, ...markText.map((value) => value.length), 0);
-      node.w = Math.max(nodeW, Math.min(300, 34 + contentChars * 6.2), ...markText.map((label) => 30 + badgeWidth(label)));
+      node.w = Math.max(nodeW, 34 + nameMeasure.measureText(node.label).width, 34 + contentChars * 6.2, ...markText.map((label) => 30 + badgeWidth(label)));
       if (vertical) node.w = Math.max(node.w, 48 + (busiestSide - 1) * portPitch);
     });
     const leafKeys = [...new Set(ids.map((id) => nodes.get(id).path.join("\u001f")))].sort();
@@ -5101,6 +5103,27 @@
     leafKeys.forEach((leaf, leafIndex) => {
       const members = ids.filter((id) => nodes.get(id).path.join("\u001f") === leaf)
         .sort((a, b) => spec.direction ? rank.get(a) - rank.get(b) || a.localeCompare(b) : appearance.get(a) - appearance.get(b));
+      // Group services by their downstream neighbours before assigning rows.
+      // A shared upstream switch can reorder its ports, so interleaving two
+      // ports per gateway only creates crossings that serve no purpose.
+      if (!vertical && maxLocalRank > 1) {
+        for (let r = maxLocalRank - 1; r >= 0; r--) {
+          const positions = new Map(members.map((id, index) => [id, index]));
+          const downstream = (id) => edges.flatMap((edge) => {
+            const peer = edge.from === id ? edge.to : edge.to === id ? edge.from : null;
+            return peer && positions.has(peer) && nodes.get(peer).localRank > r ? [positions.get(peer)] : [];
+          });
+          const slots = members.flatMap((id, index) => nodes.get(id).localRank === r ? [index] : []);
+          const ranked = slots.map((index) => ({ id: members[index], peers: downstream(members[index]) }));
+          // Preserve placement for isolated services instead of interspersing
+          // them using a meaningless zero barycentre.
+          const connected = ranked.filter((item) => item.peers.length);
+          connected.sort((a, b) => a.peers.reduce((sum, n) => sum + n, 0) / a.peers.length
+            - b.peers.reduce((sum, n) => sum + n, 0) / b.peers.length);
+          let next = 0;
+          slots.forEach((slot, index) => { if (ranked[index].peers.length) members[slot] = connected[next++].id; });
+        }
+      }
       const stackOffsets = new Map(); let maxStackExtent = 0;
       members.forEach((id) => {
         // Ranks are local to a leaf zone: peer metros/DCs align as containers,
@@ -5348,8 +5371,8 @@
       });
     });
     // Cross-column connections also need independent trunks. Reuse a lane
-    // only when its vertical spans are disjoint; longer spans wrap outside
-    // shorter ones so a fanout does not collapse into one shared wire.
+    // only when its vertical spans are disjoint. Lane order is chosen from
+    // actual crossing costs: fan-outs and fan-ins need opposite nesting.
     const crossRoutes = new Map();
     if (!vertical) edges.forEach((edge) => {
       const a = nodes.get(edge.from), b = nodes.get(edge.to);
@@ -5357,12 +5380,44 @@
       const key = JSON.stringify([leafKey(a), Math.min(a.localRank, b.localRank), Math.max(a.localRank, b.localRank)]);
       if (!crossRoutes.has(key)) crossRoutes.set(key, []);
       const ys = [a.y + a.h / 2 + edge.fromOffset, b.y + b.h / 2 + edge.toOffset];
-      crossRoutes.get(key).push({ edge, start: Math.min(...ys), end: Math.max(...ys) });
+      crossRoutes.get(key).push({ edge, start: Math.min(...ys), end: Math.max(...ys),
+        leftY: a.x < b.x ? ys[0] : ys[1], rightY: a.x < b.x ? ys[1] : ys[0] });
     });
     crossRoutes.forEach((routes) => {
       routes.sort((a, b) => (a.end - a.start) - (b.end - b.start) || a.edge.order - b.edge.order);
+      // For trunks i left of j, only i's right stub and j's left stub
+      // can cross the other trunk. Optimize that pair cost, not span length.
+      const inside = (y, route) => y > route.start + .01 && y < route.end - .01;
+      const cost = (i, j) => Number(inside(routes[i].rightY, routes[j])) + Number(inside(routes[j].leftY, routes[i]));
+      const n = routes.length;
+      let order = routes.map((_, i) => i);
+      if (n <= 12) {
+        const size = 1 << n, best = new Float64Array(size).fill(Infinity), last = new Int16Array(size);
+        best[0] = 0;
+        for (let mask = 1; mask < size; mask++) for (let j = 0; j < n; j++) {
+          if (!(mask & (1 << j))) continue;
+          const prev = mask ^ (1 << j);
+          let score = best[prev];
+          for (let i = 0; i < n; i++) if (prev & (1 << i)) score += cost(i, j);
+          if (score < best[mask]) { best[mask] = score; last[mask] = j; }
+        }
+        const baseline = order.reduce((total, j, at) => total + order.slice(0, at).reduce((sum, i) => sum + cost(i, j), 0), 0);
+        if (best[size - 1] < baseline) {
+          order = [];
+          for (let mask = size - 1; mask; mask ^= 1 << last[mask]) order.unshift(last[mask]);
+        }
+      } else {
+        for (let pass = 0; pass < Math.min(n, 64); pass++) {
+          let changed = false;
+          for (let at = 1; at < n; at++) {
+            const a = order[at - 1], b = order[at];
+            if (cost(b, a) < cost(a, b)) { [order[at - 1], order[at]] = [b, a]; changed = true; }
+          }
+          if (!changed) break;
+        }
+      }
       const assigned = [];
-      routes.forEach((route) => {
+      order.map((index) => routes[index]).forEach((route) => {
         route.edge.crossLane = 0;
         assigned.forEach((prior) => {
           const sharedEndpoint = [route.edge.from, route.edge.to].some((id) => id === prior.edge.from || id === prior.edge.to);
@@ -5496,7 +5551,7 @@
         scopeTrackN.set(scopeKey, scopeLane + 1);
         // The enclosure already includes its internal tracks. Only reserve
         // the next external lane here, rather than charging that space twice.
-        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w) + 24 + scopeLane * trackPitch + off;
+        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w, sx + portRunway, tx + portRunway) + 24 + scopeLane * trackPitch + off;
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
         lx = trunkX; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical) {
@@ -5522,9 +5577,9 @@
           // destination rows; fan-ins use their distinct source rows. Keep the
           // link text on that endpoint's long horizontal segment.
           const useDestination = degree.get(a.id).outgoing > degree.get(b.id).incoming;
-          const fromBandEnd = sx + 10 + labelWidth(e.fromPort, 5.1);
-          const toBandStart = tx - 10 - labelWidth(e.toPort, 5.1);
-          lx = !forward ? mx : useDestination ? (mx + 10 + toBandStart) / 2 : (fromBandEnd + mx - 10) / 2;
+          // Align capacities in one text column beside the chosen endpoint.
+          // Basing this on each trunk's midpoint scattered identical labels.
+          lx = !forward ? mx : useDestination ? tx - portRunway - linkRunway / 2 : sx + portRunway + linkRunway / 2;
           ly = (useDestination ? ty : sy) - 9;
         }
         else {
@@ -5571,15 +5626,45 @@
         attachment: crossesZone && !vertical && !e.rerouted ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
           sourceX: sx + portRunway + 7, sourceY: sy,
           centerX: horizontalAreas && Math.abs(sy - ty) < .01 ? (sx + tx) / 2 : null } : null });
-      if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1 });
-      if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1 });
+      if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1, colorIndex });
+      if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1, colorIndex });
       renderedEdges.set(e, `<g data-topo-edge="${e.order}"><title>${esc(tip)}</title><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}"/></g>`);
     });
     const edgeSvg = edges.map((e) => renderedEdges.get(e)).join("");
     const occupied = [...nodes.values()].map((n) => ({ x: n.x - 3, y: n.y - 3, w: n.w + 6, h: n.h + 6 }));
     groups.forEach((g) => occupied.push({ x: g.x + 5, y: g.y + 2, w: g.label.length * 7 + 12, h: 18 }));
     const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-    const labelSvg = labelCandidates.sort((a, b) => a.priority - b.priority).map((label) => {
+    const labelLeaders = [], displacedLabelCounts = new Map();
+    const labelAttachment = (rect, geometry) => {
+      const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
+      let nearest, best = Infinity;
+      for (let d = 0, length = geometry.getTotalLength(); d <= length; d += 2) {
+        const point = geometry.getPointAtLength(d), distance = Math.hypot(point.x - cx, point.y - cy);
+        if (distance < best) { best = distance; nearest = point; }
+      }
+      const ex = Math.max(rect.x, Math.min(rect.x + rect.w, nearest.x));
+      const ey = Math.max(rect.y, Math.min(rect.y + rect.h, nearest.y));
+      return { x: nearest.x, y: nearest.y, ex, ey, distance: Math.hypot(nearest.x - ex, nearest.y - ey) };
+    };
+    const leaderHitsRect = (line, rect) => {
+      let low = 0, high = 1;
+      for (const [start, end, min, max] of [[line.x, line.ex, rect.x - 2, rect.x + rect.w + 2], [line.y, line.ey, rect.y - 2, rect.y + rect.h + 2]]) {
+        const delta = end - start;
+        if (Math.abs(delta) < .001) { if (start < min || start > max) return false; }
+        else {
+          const a = (min - start) / delta, b = (max - start) / delta;
+          low = Math.max(low, Math.min(a, b)); high = Math.min(high, Math.max(a, b));
+          if (low > high) return false;
+        }
+      }
+      return true;
+    };
+    const overlapsLeader = (a, b) => Math.abs(a.x - a.ex) < 3 && Math.abs(b.x - b.ex) < 3
+      && Math.abs(a.x - b.x) < 12
+      && Math.min(Math.max(a.y, a.ey), Math.max(b.y, b.ey)) > Math.max(Math.min(a.y, a.ey), Math.min(b.y, b.ey));
+    // Endpoint labels own the space nearest the wire. Place them before
+    // central descriptions, which can move away and use a leader if needed.
+    const labelSvg = labelCandidates.sort((a, b) => b.priority - a.priority).map((label) => {
       // Reserve the bold hover width too, so highlighting cannot clip text.
       badgeMeasure.font = `700 ${label.priority ? 8.5 : 9.5}px ${getComputedStyle(document.body).fontFamily}`;
       const metrics = badgeMeasure.measureText(label.text);
@@ -5616,7 +5701,7 @@
         const y = label.y + shift, labelX = label.x + dx;
         const x = label.anchor === "middle" ? labelX - w / 2 : label.anchor === "end" ? labelX - w : labelX;
         const rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h };
-        if (!occupied.some((other) => intersects(rect, other)) && !trackObstacles.some((other) => intersects(rect, other))) { placed = { x: labelX, y, rect, horizontal }; break; }
+        if (!occupied.some((other) => intersects(rect, other)) && !trackObstacles.some((other) => intersects(rect, other)) && !labelLeaders.some((line) => leaderHitsRect(line, rect))) { placed = { x: labelX, y, rect, horizontal }; break; }
       }
       // A crowded diagram must never silently fall back to covering a link.
       // Its clear right margin is an always-available final label column.
@@ -5627,21 +5712,34 @@
         while (occupied.some((other) => intersects(rect, other)));
         placed = { x: x + (label.anchor === "middle" ? w / 2 : label.anchor === "end" ? w : 0), y: y - h - 4, rect };
       }
-      const moved = Math.hypot(placed.x - label.x, placed.y - label.y) > 12;
       let displacedLeader = "";
       if (!attach) {
         const geometry = edges.find((edge) => edge.order === label.edge).geometry;
-        const rect = placed.rect, cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
-        let nearest, best = Infinity;
-        for (let d = 0, length = geometry.getTotalLength(); d <= length; d += 2) {
-          const point = geometry.getPointAtLength(d), distance = Math.hypot(point.x - cx, point.y - cy);
-          if (distance < best) { best = distance; nearest = point; }
+        let attachment = labelAttachment(placed.rect, geometry);
+        if (!label.priority && attachment.distance > 12) {
+          // Repeated displaced captions must not share a leader: that makes
+          // several different wires look like one connection. Alternate the
+          // caption position, then spread farther if earlier leaders overlap.
+          const key = `${label.text}\u001f${label.x}`;
+          const index = displacedLabelCounts.get(key) || 0;
+          displacedLabelCounts.set(key, index + 1);
+          const preferred = index % 2 ? 32 : 0;
+          const offsets = [preferred, preferred + 32, preferred - 32, preferred + 64, preferred - 64, 96, -96, 128, -128, w / 2 + 24, -w / 2 - 24, w + 24, -w - 24];
+          for (const dx of offsets) {
+            const rect = { ...placed.rect, x: placed.rect.x + dx };
+            if (occupied.some((other) => intersects(rect, other)) || trackObstacles.some((other) => intersects(rect, other))) continue;
+            const candidate = labelAttachment(rect, geometry);
+            if (labelLeaders.some((other) => overlapsLeader(candidate, other) || leaderHitsRect(other, rect))
+              || occupied.some((other) => leaderHitsRect(candidate, other))) continue;
+            placed = { ...placed, x: placed.x + dx, rect };
+            attachment = candidate;
+            break;
+          }
+          labelLeaders.push(attachment);
         }
-        if (nearest) {
-          const ex = Math.max(rect.x, Math.min(rect.x + rect.w, nearest.x));
-          const ey = Math.max(rect.y, Math.min(rect.y + rect.h, nearest.y));
-          if (moved || Math.hypot(nearest.x - ex, nearest.y - ey) > 12) displacedLeader = `<path class="topo-label-leader" d="M${nearest.x} ${nearest.y}L${ex} ${ey}"/><circle class="topo-label-anchor" cx="${nearest.x}" cy="${nearest.y}" r="2"/>`;
-        }
+        const { x, y, ex, ey, distance } = attachment;
+        if (distance > 12) displacedLeader = `<path class="topo-label-leader" d="M${x} ${y}L${ex} ${ey}"/>`;
+        if (!label.priority || distance > 12) displacedLeader += `<circle class="topo-label-anchor" cx="${x}" cy="${y}" r="2.5"/>`;
       }
       label.x = placed.x;
       occupied.push(placed.rect);
@@ -5656,7 +5754,7 @@
         const leader = attach ? `<path class="topo-label-leader" d="M${ax} ${anchorY}L${endX} ${endY}"/><circle class="topo-label-anchor" cx="${ax}" cy="${anchorY}" r="2"/>` : displacedLeader;
         return `<g class="topo-edge-label-pill" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex}"><title>${esc(label.tip)}</title>${leader}<path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
       }
-      return `<g data-topo-edge="${label.edge}"><title>${esc(label.tip)}</title>${displacedLeader}<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
+      return `<g data-topo-edge="${label.edge}" data-color-index="${label.colorIndex ?? 0}"><title>${esc(label.tip)}</title>${displacedLeader}<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
     }).join("");
     const nodeSvg = [...nodes.values()].map((n) => {
       const types = [...n.types], marks = [...n.marks.values()].slice(0, 3);
