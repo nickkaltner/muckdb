@@ -700,7 +700,7 @@
   .topo-label-leader { fill: none; stroke: var(--topo-link-color); stroke-width: 1; stroke-dasharray: 2 3; opacity: .65; pointer-events: stroke; }
   .topo-label-anchor { fill: var(--topo-link-color); }
   .topo-label-layer .is-hovered .topo-label-leader { stroke-width: 2; stroke-dasharray: none; opacity: 1; }
-  .topo-layout-controls { display: flex; gap: 6px; margin-bottom: 12px; }
+  .topo-layout-controls { display: flex; gap: 6px; }
   .topo-layout-controls [aria-pressed="true"] { background: var(--raised); color: var(--fg); border-color: var(--primary); }
   .topo-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 400px), 1fr)); gap: 20px; align-items: start; }
   .topo-label-layer .is-hovered .topo-edge-label,
@@ -3491,7 +3491,11 @@
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-      if (kind === "topology") { slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name); return; }
+      if (kind === "topology") {
+        layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name)));
+        slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name);
+        return;
+      }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
     } catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; }
   }
@@ -4551,9 +4555,10 @@
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
     const wide = state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
-    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident" || kind === "topology"
+    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
+    const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name)) : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
@@ -4567,7 +4572,7 @@
     const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "todo" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
-        <span class="panel-actions no-screenshot">${mapToggle}${sqlBtn}${mermaidBtn}${presentBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
+        <span class="panel-actions no-screenshot">${topologyControls}${mapToggle}${sqlBtn}${mermaidBtn}${presentBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
       <div class="panel-body"><div class="panel-chart"></div>${cap}</div>${grip}</div>`;
   }
   // ---- per-tile height (drag the bottom-right grip; per-browser) ---------
@@ -4873,21 +4878,32 @@
     try { mode = localStorage.getItem(`topology-layout:${topologyLayoutKey(db, table, tileKey)}`); } catch (_) {}
     return ["one", "two", "wide"].includes(mode) ? mode : "wide";
   }
+  function topologyLayoutControls(mode) {
+    const buttons = [["one", "1 column"], ["two", "2 columns"], ["wide", "Wide"]]
+      .map(([value, label]) => `<button class="panel-act" data-topo-layout="${value}" aria-pressed="${mode === value}">${label}</button>`).join("");
+    return `<span class="topo-layout-controls no-screenshot" role="group" aria-label="Topology layout">${buttons}</span>`;
+  }
   document.addEventListener("click", (event) => {
     const button = event.target.closest?.("[data-topo-layout]");
     if (!button) return;
-    const host = button.closest("[data-topo-view]");
+    const host = button.closest(".panel, .zoom-box")?.querySelector("[data-topo-view]");
+    if (!host) return;
     const view = topologyViews.get(host.dataset.topoView);
     if (!view) return;
     try { localStorage.setItem(`topology-layout:${host.dataset.topoView}`, button.dataset.topoLayout); } catch (_) {}
-    const panel = host.closest(".panel"), wide = button.dataset.topoLayout === "wide";
-    if (panel) {
-      state.tileWide[panel.dataset.tile] = wide;
-      panel.classList.toggle("full-bleed", wide);
-      const widen = panel.querySelector("[data-widen]");
-      if (widen) { widen.classList.toggle("active", wide); widen.title = wide ? "Fit to column width" : "Expand to full width"; }
-    }
-    host.outerHTML = topologyHtml(...view, button.dataset.topoLayout);
+    const mode = button.dataset.topoLayout;
+    document.querySelectorAll("[data-topo-view]").forEach((current) => {
+      if (current.dataset.topoView !== host.dataset.topoView) return;
+      const panel = current.closest(".panel"), wide = mode === "wide";
+      if (panel) {
+        state.tileWide[panel.dataset.tile] = wide;
+        panel.classList.toggle("full-bleed", wide);
+      }
+      current.closest(".panel, .zoom-box")?.querySelectorAll("[data-topo-layout]").forEach((control) => {
+        control.setAttribute("aria-pressed", String(control.dataset.topoLayout === mode));
+      });
+      current.outerHTML = topologyHtml(...view, mode);
+    });
   });
   function topologyHtml(cols, rows, spec, db, table, tileKey = "", selectedMode) {
     const key = topologyLayoutKey(db, table, tileKey);
@@ -4906,9 +4922,7 @@
       rows.forEach((row) => { const id = root(area(row, fi)); if (!components.has(id)) components.set(id, []); components.get(id).push(row); });
       batches.push(...components.values());
     } else batches.push(rows);
-    const controls = [["one", "1 column"], ["two", "2 columns"], ["wide", "Wide"]]
-      .map(([value, label]) => `<button class="panel-act" data-topo-layout="${value}" aria-pressed="${mode === value}">${label}</button>`).join("");
-    return `<div data-topo-view="${attr(key)}"><div class="topo-layout-controls" role="group" aria-label="Topology layout">${controls}</div><div class="${mode === "wide" ? "topo-grid" : ""}">${batches.map((batch) => topologyDiagramHtml(cols, batch, { ...spec, topologyLayout: mode }, db, table)).join("")}</div></div>`;
+    return `<div data-topo-view="${attr(key)}"><div class="${mode === "wide" ? "topo-grid" : ""}">${batches.map((batch) => topologyDiagramHtml(cols, batch, { ...spec, topologyLayout: mode }, db, table)).join("")}</div></div>`;
   }
   function topologyDiagramHtml(cols, rows, spec, db, table) {
     const ci = (name) => name == null ? -1 : cols.indexOf(name);

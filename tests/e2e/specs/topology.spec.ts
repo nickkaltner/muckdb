@@ -277,6 +277,8 @@ test.describe('topology tile', () => {
       '--caption', 'Local services on the left; independent areas side by side.']);
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="wide-layout"]');
+    await expect(panel.locator('.panel-bar .topo-layout-controls')).toBeVisible();
+    await expect(panel.locator('.panel-body .topo-layout-controls')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(panel.locator('.topo-svg')).toHaveCount(2);
     const boxes = await panel.locator('.topo-svg').evaluateAll((svgs) => svgs.map((svg) => {
@@ -302,6 +304,9 @@ test.describe('topology tile', () => {
     await page.addStyleTag({ content: '.statusline { visibility: hidden; }' });
     await panel.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await panel.screenshot({ path: '/tmp/muckdb-topology-wide.png' });
+    await page.goto(`/session/${SESSION_ID}/?shot=1&tile=wide-layout`);
+    await expect(panel.locator('.topo-svg')).toBeVisible();
+    await expect(panel.locator('.topo-layout-controls')).toBeHidden();
   });
 
   test('disjoint direct-service loops stack with the same right edge', async ({ page, e2eState }) => {
@@ -458,6 +463,7 @@ test.describe('topology tile', () => {
     // Wide mode packs the connected areas horizontally, retaining one stack
     // within each area and a separate gutter for the internal MCR mesh.
     await expect(panel.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.locator('.topo-node')).toHaveCount(9);
     const wideXs = await panel.locator('.topo-node').evaluateAll((nodes) => nodes.map((n) => +(n as SVGRectElement).getAttribute('x')!));
     expect(new Set(wideXs).size).toBe(3);
     const wideHeight = await panel.locator('.topo-svg').evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.height);
@@ -623,9 +629,10 @@ test.describe('topology tile', () => {
     });
     expect(Math.abs(sharedSideYs[0] - sharedSideYs[1])).toBeGreaterThanOrEqual(18);
 
-    // Topologies can break out to the full viewport and use intrinsic SVG
-    // height, so they deliberately have no drag-resize grip.
-    await expect(panel.locator('[data-widen]')).toHaveCount(1);
+    // Wide mode fills the viewport and uses intrinsic SVG height, so there is
+    // no separate width toggle or drag-resize grip.
+    await expect(panel.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true');
+    await expect(panel.locator('[data-widen]')).toHaveCount(0);
     await expect(panel.locator('.panel-grip')).toHaveCount(0);
   });
 });
