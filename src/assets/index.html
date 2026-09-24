@@ -8636,13 +8636,18 @@
     }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.tooltip.filter = (ctx) => !ctx.dataset._muckBand;
-    // Compare line series at the hovered x position, highest value first.
+    // Compare line series at the hovered x position by their plotted height.
+    // Raw values run in the opposite direction on a reversed y axis.
     // Keep declaration order for ties and for chart kinds where row order
     // carries a different meaning (such as stacked bars).
     o.plugins.tooltip.itemSort = stacked
       ? (a, b) => b.datasetIndex - a.datasetIndex
       : kind === "line"
-        ? (a, b) => b.parsed.y - a.parsed.y || a.datasetIndex - b.datasetIndex
+        ? (a, b) => {
+          const ay = a.chart.getDatasetMeta(a.datasetIndex).yScale.getPixelForValue(a.parsed.y);
+          const by = b.chart.getDatasetMeta(b.datasetIndex).yScale.getPixelForValue(b.parsed.y);
+          return ay - by || a.datasetIndex - b.datasetIndex;
+        }
       : (a, b) => a.datasetIndex - b.datasetIndex;
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };

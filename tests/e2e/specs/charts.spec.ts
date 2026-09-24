@@ -333,6 +333,29 @@ test('multi-series line tooltip orders hovered values from highest to lowest', a
   }
 });
 
+test('time-series line tooltip follows plotted top-to-bottom order', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  const { point, xScaleType } = await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    chart.data.datasets[0].data[10].y = 3;
+    chart.data.datasets[1].data[10].y = 9;
+    chart.options.scales.y.reverse = true;
+    chart.update('none');
+    const p = chart.getDatasetMeta(0).data[10].getCenterPoint(true);
+    const rect = el.getBoundingClientRect();
+    return { xScaleType: chart.scales.x.type,
+      point: { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height } };
+  });
+  expect(xScaleType).toBe('time');
+  await page.mouse.move(point.x, point.y);
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return chart.tooltip.dataPoints.map((item: any) => item.datasetIndex);
+  })).toEqual([0, 1]);
+});
+
 test('multi-series line hover ignores a series after its final point', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
