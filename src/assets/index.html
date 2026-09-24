@@ -8636,11 +8636,13 @@
     }
     if (timeX && !minUnit) addZoneTitle(o, axisTz); // day/month axes need no clock
     o.plugins.tooltip.filter = (ctx) => !ctx.dataset._muckBand;
-    // Dataset draw order puts the trend underneath the source (`order: -1`),
-    // but tooltip rows should retain semantic declaration order: source first,
-    // fitted value second, just like multiple y columns.
+    // Compare line series at the hovered x position, highest value first.
+    // Keep declaration order for ties and for chart kinds where row order
+    // carries a different meaning (such as stacked bars).
     o.plugins.tooltip.itemSort = stacked
       ? (a, b) => b.datasetIndex - a.datasetIndex
+      : kind === "line"
+        ? (a, b) => b.parsed.y - a.parsed.y || a.datasetIndex - b.datasetIndex
       : (a, b) => a.datasetIndex - b.datasetIndex;
     o.plugins.legend.display = !single; // a lone series needs no legend — the title says it
     return { type, data, options: o };

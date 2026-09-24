@@ -306,6 +306,33 @@ test('multi-series line snapping follows late x positions under console zoom', a
   }
 });
 
+test('multi-series line tooltip orders hovered values from highest to lowest', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/`);
+  const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  await canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    for (const [index, first, second] of [[10, 3, 9], [11, 12, 4], [12, 7, 7]]) {
+      chart.data.datasets[0].data[index].y = first;
+      chart.data.datasets[1].data[index].y = second;
+    }
+    chart.update('none');
+  });
+  for (const [index, expected] of [[10, [1, 0]], [11, [0, 1]], [12, [0, 1]]] as const) {
+    const point = await canvas.evaluate((el, index) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const p = chart.getDatasetMeta(0).data[index].getCenterPoint(true);
+      const rect = el.getBoundingClientRect();
+      return { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height };
+    }, index);
+    await page.mouse.move(point.x, point.y);
+    await expect.poll(() => canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return chart.tooltip.dataPoints.map((item: any) => item.datasetIndex);
+    })).toEqual([...expected]);
+  }
+});
+
 test('multi-series line hover ignores a series after its final point', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
