@@ -376,15 +376,18 @@ muckdb session rm <name> [--tile TILE]
   Updates replace the complete specification: read `ls session` first and
   resend all settings to retain, including captions, markers, limits, and `--db`.
   Keep the full posting command for repeatable refreshes.
-- **Use authored Mermaid for naturally structured information.** When a
-  flowchart, tree, state machine, architecture sketch, or hand-authored sequence
-  is the source itself, keep its Mermaid text in the session with `session
-  mermaid`; do not flatten it into artificial DuckDB rows. Pass a `.mmd` file to
-  `--source`, use `--source -` for stdin, or `--mmd` for short inline source.
-  The tile's **edit** button opens a validated source + live-preview workspace
-  and saves back into the session JSON. Mermaid renders locally in strict mode.
-  Keep generated/relational interactions in a DuckDB-backed `--chart sequence`
-  tile so they refresh from data and remain explorable.
+- **Use the built-in sequence chart for sequence diagrams.** Put one message per
+  row in a table or view and post it with `--chart sequence`, whether the
+  messages come from data or are authored for the dashboard. Use `session
+  mermaid` for a sequence diagram only when the user specifically asks for
+  Mermaid. Sequence tiles can still export Mermaid from their toolbar.
+- **Use authored Mermaid for other naturally structured information.** When a
+  flowchart, tree, state machine, or architecture sketch is the source itself,
+  keep its Mermaid text in the session with `session mermaid`; do not flatten it
+  into artificial DuckDB rows. Pass a `.mmd` file to `--source`, use `--source
+  -` for stdin, or `--mmd` for short inline source. The tile's **edit** button
+  opens a validated source + live-preview workspace and saves back into the
+  session JSON. Mermaid renders locally in strict mode.
 - **Todos are a shared checklist with the human.** Check todo tiles regularly:
   read them before starting work, after the human may have changed a status,
   and before reporting completion. The human and agent can both update the same
@@ -693,7 +696,9 @@ response, async fan-out, retries, fallbacks — as a classic UML sequence
 diagram: one vertical **lifeline** per participant, one horizontal **arrow**
 per message. **One row = one message.** Shape the view so each row is a
 message in the flow it sends/receives; message order follows the row order,
-so control it with `ORDER BY`.
+so control it with `ORDER BY`. Prefer this built-in chart for sequence diagrams,
+including authored flows; use a Mermaid tile only when the user specifically
+requests Mermaid.
 
 **Flags:**
 

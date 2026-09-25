@@ -406,13 +406,17 @@ breaks the tile out of the centred column so every column is visible.
   satisfied. Hovering an item exposes all four status controls and records or
   clears its completion time. Its top-right toggle omits the todo tile from
   presentation mode while keeping it on the working dashboard.
-- **Use Mermaid tiles for authored structure.** Flowcharts, trees, state
-  machines, architecture sketches, and hand-authored sequences can live in the
-  session JSON without being flattened into artificial DuckDB rows. Post a file
-  with `session mermaid ... --source diagram.mmd`, pipe stdin with `--source -`,
-  or pass short source with `--mmd`. The dashboard's edit button provides a
-  validated live preview and saves changes back to the session. Keep
-  data-generated interactions as DuckDB-backed `--chart sequence` tiles.
+- **Use the built-in sequence chart for sequence diagrams.** Put each message
+  in a table or view row and post it with `--chart sequence`, including when
+  the flow is authored for the dashboard. Use `session mermaid` for a sequence
+  only when the user specifically asks for Mermaid. Sequence tiles can export
+  Mermaid from their toolbar.
+- **Use Mermaid tiles for other authored structure.** Flowcharts, trees, state
+  machines, and architecture sketches can live in the session JSON without
+  being flattened into artificial DuckDB rows. Post a file with `session
+  mermaid ... --source diagram.mmd`, pipe stdin with `--source -`, or pass short
+  source with `--mmd`. The dashboard's edit button provides a validated live
+  preview and saves changes back to the session.
 - **Look at what you built.** `muckdb session screenshot <id> [--tile T]` gives
   you a PNG of the rendered dashboard — read it and check the charts say what
   you think they say before telling the human it's done.
