@@ -5904,6 +5904,43 @@
     const colors = [...new Set(edges.map((e) => e.color).filter(Boolean))];
     const pairN = new Map();
     const scopeTrackN = new Map();
+    // In a short, single-column cross-zone diagram, non-overlapping links
+    // can use the same outer trunk. Size each shared lane for its widest
+    // enclosure before drawing, so the links really do meet at one x.
+    const sharedCrossTrunks = new Map();
+    if (!vertical && !horizontalAreas && spec.topologyLayout === "one") {
+      const crossEdges = edges.filter((edge) => leafKey(nodes.get(edge.from)) !== leafKey(nodes.get(edge.to)));
+      if (crossEdges.length >= 2 && crossEdges.length <= 3) {
+        const plans = crossEdges.map((edge) => {
+          const a = nodes.get(edge.from), b = nodes.get(edge.to);
+          const off = edges.filter((prior) => prior.order < edge.order && prior.from === edge.from && prior.to === edge.to).length * 6;
+          const sy = a.y + a.h / 2 + edge.fromOffset + off, ty = b.y + b.h / 2 + edge.toOffset + off;
+          let common = 0;
+          while (common < a.path.length && common < b.path.length && a.path[common] === b.path[common]) common++;
+          const aLeaf = groups.get(a.path.join("\u001f")), bLeaf = groups.get(b.path.join("\u001f"));
+          const aScope = groups.get(a.path.slice(0, common + 1).join("\u001f")) || aLeaf;
+          const bScope = groups.get(b.path.slice(0, common + 1).join("\u001f")) || bLeaf;
+          return { edge, key: `${common}:${a.path.slice(0, common).join("\u001f")}`,
+            start: Math.min(sy, ty), end: Math.max(sy, ty),
+            minimum: Math.max(aScope.x + aScope.w, bScope.x + bScope.w, a.x + a.w + portRunway, b.x + b.w + portRunway) + 24 + off };
+        });
+        const byScope = new Map();
+        plans.forEach((plan) => { if (!byScope.has(plan.key)) byScope.set(plan.key, []); byScope.get(plan.key).push(plan); });
+        byScope.forEach((scopePlans) => {
+          const lanes = [];
+          scopePlans.sort((a, b) => (a.end - a.start) - (b.end - b.start) || a.start - b.start).forEach((plan) => {
+            let lane = lanes.find((item) => item.plans.every((prior) => prior.end + 8 < plan.start || plan.end + 8 < prior.start));
+            if (!lane) { lane = { minimum: -Infinity, plans: [] }; lanes.push(lane); }
+            lane.minimum = Math.max(lane.minimum, plan.minimum); lane.plans.push(plan);
+          });
+          let right = -Infinity;
+          lanes.forEach((lane) => {
+            right = Math.max(lane.minimum, right + trackPitch);
+            lane.plans.forEach((plan) => sharedCrossTrunks.set(plan.edge, right));
+          });
+        });
+      }
+    }
     // Optimize the lane order of each leaf's internal U-routes independently.
     // The pair cost is the number of an outer route's horizontal endpoints
     // lying inside an inner route's vertical span: exactly their crossings.
@@ -6110,6 +6147,7 @@
       return scope(a) - scope(b) || span(a) - span(b) || a.from.localeCompare(b.from) || a.to.localeCompare(b.to) || a.label.localeCompare(b.label);
     });
     const renderedEdges = new Map();
+    const crossTrunks = [];
     routeOrder.forEach((e) => {
       const a = nodes.get(e.from), b = nodes.get(e.to), key = `${e.from}\u001f${e.to}`, parallel = pairN.get(key) || 0; pairN.set(key, parallel + 1);
       const off = parallel * 6;
@@ -6131,28 +6169,35 @@
         sx = a.x + (forward ? a.w : 0); sy = a.y + a.h / 2 + fromOff;
         tx = b.x + (forward ? 0 : b.w); ty = b.y + b.h / 2 + toOff;
         const key = JSON.stringify([Math.min(a.x, b.x), Math.max(a.x, b.x)]);
-        const lane = scopeTrackN.get(key) || 0; scopeTrackN.set(key, lane + 1);
+        const occupied = scopeTrackN.get(key) || [];
+        const start = Math.min(sy, ty), end = Math.max(sy, ty);
+        let lane = 0;
+        while (occupied.some((prior) => prior.lane === lane && Math.min(prior.end, end) + 8 > Math.max(prior.start, start))) lane++;
+        occupied.push({ lane, start, end }); scopeTrackN.set(key, occupied);
         const mx = (sx + tx) / 2 + lane * trackPitch;
         d = roundedRoute([[sx, sy], [mx, sy], [mx, ty], [tx, ty]]);
         lx = mx; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical && crossesZone) {
-        // Boundary-crossing traffic uses a trunk outside the right edge of
-        // the containers it crosses, then enters the destination from its
-        // right. Wider-scope crossings are successively farther right:
-        // DC < metro < region < country.
+        // Find the leftmost clear corridor beside the endpoint leaf zones.
+        // A route may leave an ancestor enclosure at its bottom edge; forcing
+        // every trunk past that enclosure's right edge wastes an entire lane.
         sx = a.x + a.w; sy = a.y + a.h / 2 + fromOff + off;
         tx = b.x + b.w; ty = b.y + b.h / 2 + toOff + off;
-        const aParts = a.path, bParts = b.path;
-        let common = 0;
-        while (common < aParts.length && common < bParts.length && aParts[common] === bParts[common]) common++;
-        const aScope = groups.get(aParts.slice(0, common + 1).join("\u001f")) || aLeaf;
-        const bScope = groups.get(bParts.slice(0, common + 1).join("\u001f")) || bLeaf;
-        const scopeKey = `${common}:${aParts.slice(0, common).join("\u001f")}`;
-        const scopeLane = scopeTrackN.get(scopeKey) || 0;
-        scopeTrackN.set(scopeKey, scopeLane + 1);
-        // The enclosure already includes its internal tracks. Only reserve
-        // the next external lane here, rather than charging that space twice.
-        const trunkX = Math.max(aScope.x + aScope.w, bScope.x + bScope.w, sx + portRunway, tx + portRunway) + 24 + scopeLane * trackPitch + off;
+        const start = Math.min(sy, ty), end = Math.max(sy, ty);
+        let trunkX = sharedCrossTrunks.get(e) ?? Math.max(aLeaf.x + aLeaf.w, bLeaf.x + bLeaf.w, sx + portRunway, tx + portRunway) + 10 + off;
+        if (!sharedCrossTrunks.has(e)) {
+          const endpointAncestor = (group, path) => path.slice(0, group.depth + 1).join("\u001f") === group.key;
+          const blocked = (x) => {
+            if (crossTrunks.some((prior) => Math.abs(prior.x - x) < trackPitch - 1
+              && Math.min(prior.end, end) + 8 > Math.max(prior.start, start))) return true;
+            if ([...groups.values()].some((group) => !endpointAncestor(group, a.path) && !endpointAncestor(group, b.path)
+              && x > group.x - 8 && x < group.x + group.w + 8 && end > group.y - 8 && start < group.y + group.h + 8)) return true;
+            const candidate = roundedRoute([[sx, sy], [x, sy], [x, ty], [tx, ty]]);
+            return clearRoute(candidate, a, b, sx, sy, tx, ty) !== candidate;
+          };
+          while (blocked(trunkX)) trunkX += trackPitch;
+        }
+        crossTrunks.push({ x: trunkX, start, end });
         d = roundedRoute([[sx, sy], [trunkX, sy], [trunkX, ty], [tx, ty]]);
         lx = trunkX; ly = (sy + ty) / 2; edgeLabelAnchor = "start";
       } else if (!vertical) {
@@ -6208,6 +6253,10 @@
       const geometry = document.createElementNS("http://www.w3.org/2000/svg", "path");
       geometry.setAttribute("d", d);
       const length = geometry.getTotalLength();
+      if (e.rerouted && e.label) {
+        const middle = geometry.getPointAtLength(length / 2);
+        lx = middle.x; ly = middle.y - 9;
+      }
       let routeRight = -Infinity, routeBottom = -Infinity, routeLeft = Infinity;
       for (let distance = 0; distance <= length; distance += 4) {
         const p = geometry.getPointAtLength(distance);
@@ -6215,6 +6264,7 @@
         routeRight = Math.max(routeRight, p.x); routeBottom = Math.max(routeBottom, p.y);
         routeLeft = Math.min(routeLeft, p.x);
       }
+      routeRight = Math.max(routeRight, geometry.getPointAtLength(length).x);
       let common = 0;
       while (common < a.path.length && common < b.path.length && a.path[common] === b.path[common]) common++;
       for (let depth = common - 1; depth >= 0; depth--) {
@@ -6225,6 +6275,7 @@
         g.h = Math.max(g.h, routeBottom - g.y + padding);
       }
       e.geometry = geometry;
+      e.routeRight = routeRight;
       if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.displayLabel, fullText: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone && !e.rerouted,
         attachment: crossesZone && !vertical && !e.rerouted ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
           sourceX: sx + portRunway + 7, sourceY: sy,
@@ -6237,13 +6288,40 @@
     const occupied = [...nodes.values()].map((n) => ({ x: n.x - 3, y: n.y - 3, w: n.w + 6, h: n.h + 6 }));
     groups.forEach((g) => occupied.push({ x: g.x + 5, y: g.y + 2, w: g.label.length * 7 + 12, h: 18 }));
     const labelBounds = trackObstacles.reduce((bounds, r) => ({ left: Math.min(bounds.left, r.x), right: Math.max(bounds.right, r.x + r.w) }), { left: minX, right: maxX });
+    const crossZoneLabels = labelCandidates.filter((label) => {
+      if (label.cls !== "topo-edge-label") return false;
+      const edge = edges.find((item) => item.order === label.edge);
+      return leafKey(nodes.get(edge.from)) !== leafKey(nodes.get(edge.to));
+    });
+    const byDestination = new Map();
+    crossZoneLabels.forEach((label) => {
+      const edge = edges.find((item) => item.order === label.edge);
+      if (!byDestination.has(edge.to)) byDestination.set(edge.to, []);
+      byDestination.get(edge.to).push(label);
+    });
+    const alignedLabels = crossZoneLabels.length >= 2 && crossZoneLabels.length <= 3 ? crossZoneLabels :
+      [...byDestination.values()].filter((labels) => labels.length >= 3).flat();
+    if (!horizontalAreas && alignedLabels.length >= 2 && (spec.topologyLayout === "one" || crossZoneLabels.length > 3)) {
+      const columnX = Math.max(...alignedLabels.map((label) => {
+        const edge = edges.find((item) => item.order === label.edge);
+        return edge.routeRight;
+      })) + 18;
+      alignedLabels.forEach((label) => { label.x = columnX; label.anchor = "start"; label.text = label.fullText; label.rightColumn = true; });
+    }
     const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     const labelLeaders = [], displacedLabelCounts = new Map();
+    const geometrySamples = new WeakMap();
     const labelAttachment = (rect, geometry) => {
       const cx = rect.x + rect.w / 2, cy = rect.y + rect.h / 2;
       let nearest, best = Infinity;
-      for (let d = 0, length = geometry.getTotalLength(); d <= length; d += 2) {
-        const point = geometry.getPointAtLength(d), distance = Math.hypot(point.x - cx, point.y - cy);
+      if (!geometrySamples.has(geometry)) {
+        const points = [], length = geometry.getTotalLength();
+        for (let d = 0; d < length; d += 2) points.push(geometry.getPointAtLength(d));
+        points.push(geometry.getPointAtLength(length));
+        geometrySamples.set(geometry, points);
+      }
+      for (const point of geometrySamples.get(geometry)) {
+        const distance = Math.hypot(point.x - cx, point.y - cy);
         if (distance < best) { best = distance; nearest = point; }
       }
       const ex = Math.max(rect.x, Math.min(rect.x + rect.w, nearest.x));
@@ -6277,9 +6355,10 @@
       const padX = label.pill ? 3 : 2, padY = 2, h = ascent + descent + 2 * padY;
       const shifts = [0, -16, 16, -32, 32, -48, 48, -64, 64, -80, 80, -112, 112];
       let placed;
-      const candidates = [0, 24, -24, 48, -48, w + 16, -w - 16].flatMap((dx) => shifts.map((shift) => ({ dx, shift })));
+      const candidates = label.rightColumn ? shifts.map((shift) => ({ dx: 0, shift })) :
+        [0, 24, -24, 48, -48, w + 16, -w - 16].flatMap((dx) => shifts.map((shift) => ({ dx, shift })));
       const attach = label.attachment;
-      if (attach) {
+      if (attach && !label.rightColumn) {
         if (attach.centerX != null) candidates.push({ dx: attach.centerX - w / 2 - label.x, shift: attach.sourceY - 9 - label.y, horizontal: true, centered: true });
         candidates.push({ dx: attach.sourceX - label.x, shift: attach.sourceY - 9 - label.y, horizontal: true });
         // Try both sides along the owning trunk before sending its label past
@@ -6292,6 +6371,7 @@
         }
       }
       const candidateScore = ({ dx, shift, horizontal, centered }) => {
+        if (label.rightColumn) return Math.abs(shift);
         if (centered) return -1;
         if (!attach) return Math.abs(dx) + 2 * Math.abs(shift);
         if (horizontal) return 100 * (9 - descent - padY) + Math.abs(shift) + 40;
@@ -6306,6 +6386,13 @@
         const y = label.y + shift, labelX = label.x + dx;
         const x = label.anchor === "middle" ? labelX - w / 2 : label.anchor === "end" ? labelX - w : labelX;
         const rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h };
+        if (attach && !label.rightColumn) {
+          const cy = rect.y + rect.h / 2;
+          const leader = horizontal ? { x: rect.x + rect.w / 2, y: attach.sourceY, ex: rect.x + rect.w / 2, ey: rect.y + rect.h } :
+            { x: attach.x, y: Math.max(attach.minY, Math.min(attach.maxY, cy)),
+              ex: attach.x > rect.x + rect.w / 2 ? rect.x + rect.w : rect.x, ey: cy };
+          if (occupied.some((other) => leaderHitsRect(leader, other))) continue;
+        }
         if (!occupied.some((other) => intersects(rect, other)) && !trackObstacles.some((other) => intersects(rect, other)) && !labelLeaders.some((line) => leaderHitsRect(line, rect))) { placed = { x: labelX, y, rect, horizontal }; break; }
       }
       // Layout uses compact labels to reserve a predictable gutter. Once the
@@ -6338,7 +6425,7 @@
       if (!attach) {
         const geometry = edges.find((edge) => edge.order === label.edge).geometry;
         let attachment = labelAttachment(placed.rect, geometry);
-        if (!label.priority && attachment.distance > 12) {
+        if (!label.priority && attachment.distance > 12 && !label.rightColumn) {
           // Repeated displaced captions must not share a leader: that makes
           // several different wires look like one connection. Alternate the
           // caption position, then spread farther if earlier leaders overlap.
@@ -6347,15 +6434,21 @@
           displacedLabelCounts.set(key, index + 1);
           const preferred = index % 2 ? 32 : 0;
           const offsets = [preferred, preferred + 32, preferred - 32, preferred + 64, preferred - 64, 96, -96, 128, -128, w / 2 + 24, -w / 2 - 24, w + 24, -w - 24];
-          for (const dx of offsets) {
-            const rect = { ...placed.rect, x: placed.rect.x + dx };
+          const shifts = [0];
+          for (let step = 16; step <= 256; step += 16) shifts.push(-step, step);
+          let best;
+          for (const dy of shifts) for (const dx of offsets) {
+            const rect = { ...placed.rect, x: placed.rect.x + dx, y: placed.rect.y + dy };
             if (occupied.some((other) => intersects(rect, other)) || trackObstacles.some((other) => intersects(rect, other))) continue;
             const candidate = labelAttachment(rect, geometry);
-            if (labelLeaders.some((other) => overlapsLeader(candidate, other) || leaderHitsRect(other, rect))
-              || occupied.some((other) => leaderHitsRect(candidate, other))) continue;
-            placed = { ...placed, x: placed.x + dx, rect };
-            attachment = candidate;
-            break;
+            if (candidate.distance > 12 && (labelLeaders.some((other) => overlapsLeader(candidate, other) || leaderHitsRect(other, rect))
+              || occupied.some((other) => leaderHitsRect(candidate, other)))) continue;
+            const score = candidate.distance * 4 + Math.abs(dx) + Math.abs(dy);
+            if (!best || score < best.score) best = { dx, dy, rect, candidate, score };
+          }
+          if (best) {
+            placed = { ...placed, x: placed.x + best.dx, y: placed.y + best.dy, rect: best.rect };
+            attachment = best.candidate;
           }
           labelLeaders.push(attachment);
         }
