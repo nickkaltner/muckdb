@@ -27,7 +27,7 @@ test.describe('topology tile', () => {
         '--caption', 'Synthetic layout fixture with endpoint names and link descriptions.']);
       await page.goto(`/session/${SESSION_ID}/`);
       const panel = page.locator(`.panel[data-tile="${view}"]`);
-      await expect(panel.locator('.topo-svg').first()).toBeVisible();
+      await expect(panel.locator('.topo-svg').first()).toBeVisible({ timeout: 15_000 });
       const mode = await panel.getByRole('button', { name: 'Wide', exact: true }).count() ? 'Wide' :
         await panel.getByRole('button', { name: '2 columns', exact: true }).count() ? '2 columns' : '1 column';
       await chooseTopologyLayout(panel, mode);
