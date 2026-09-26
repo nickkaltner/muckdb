@@ -660,6 +660,7 @@
   .wm-ascii-overlay .wm-conn-labels .wm-arc-label { stroke-width: 2; }
   /* Floating rich tooltip for a hovered marker (built in wmTooltip()). */
   .wm-tip { position: fixed; z-index: 200; pointer-events: none; display: none; box-sizing: border-box; max-width: min(280px, calc(100vw - 12px)); max-height: calc(100vh - 12px); overflow: hidden; overflow-wrap: anywhere; background: var(--raised); color: var(--fg); border: 1px solid var(--line); border-radius: 7px; padding: 7px 9px; font-size: 11.5px; line-height: 1.4; box-shadow: 0 8px 24px rgba(0,0,0,0.35); }
+  .wm-tip.topo-tip { max-width: min(380px, calc(100vw - 12px)); font-size: 12px; }
   .wm-tip.show { display: block; }
   /* Canvas ticks cannot use a native title attribute. Keep their timestamp
      tooltip visually consistent with the rich SVG hover card. */
@@ -802,6 +803,7 @@
   /* ---- topology / transit schematic ----------------------------------- */
   .topo-wrap { overflow: auto; padding: 6px 0 2px; }
   .topo-svg { display: block; width: min(100%, var(--topo-natural-width)); height: auto; margin-inline: auto; font-family: inherit; }
+  [data-topo-mode="wide"] .topo-svg { min-width: var(--topo-readable-width); }
   .topo-zone { fill: color-mix(in srgb, var(--raised) 54%, transparent); stroke: color-mix(in srgb, var(--line) 82%, transparent); stroke-width: 1; }
   .topo-zone.depth-0 { fill: color-mix(in srgb, var(--raised) 78%, transparent); stroke: var(--line); }
   /* A whisper of colour separates adjacent containment groups while keeping
@@ -831,14 +833,14 @@
   .topo-node { fill: var(--surface); stroke: var(--primary-dim); stroke-width: 1.25; }
   .topo-node:hover { stroke: var(--highlight); stroke-width: 1.8; }
   .topo-station { fill: var(--primary); stroke: var(--surface); stroke-width: 2; }
-  .topo-node-name { fill: var(--fg); font-size: 11.5px; font-weight: 650; }
+  .topo-node-name { fill: var(--fg); font-size: 12.5px; font-weight: 650; }
   .topo-type { fill: var(--muted); font-size: 9px; }
   .topo-mark-bg { fill: color-mix(in srgb, var(--primary) 12%, var(--raised)); stroke: color-mix(in srgb, var(--primary) 35%, var(--line)); stroke-width: .7; }
   .topo-mark { fill: var(--fg); font-size: 8.5px; }
   .topo-edge-label-pill .topo-edge-label-bg { fill: var(--topo-link-color); stroke: none; }
-  .topo-edge-label { fill: var(--fg); font-size: 9.5px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+  .topo-edge-label { fill: var(--fg); font-size: 11px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
   .topo-edge-label-pill .topo-edge-label { fill: var(--on-accent); font-weight: 700; paint-order: normal; stroke: none; }
-  .topo-port-label { fill: var(--muted); font-size: 8.5px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
+  .topo-port-label { fill: var(--muted); font-size: 10px; paint-order: stroke; stroke: var(--surface); stroke-width: 4px; stroke-linejoin: round; }
   .topo-legend { display: flex; flex-wrap: wrap; gap: 5px 13px; margin: 7px 8px 0; color: var(--muted); font-size: 10px; }
   .topo-key { display: inline-flex; align-items: center; gap: 5px; }
   .topo-key::before { content: ""; width: 15px; height: 3px; border-radius: 2px; background: var(--primary); }
@@ -3928,8 +3930,10 @@
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "topology") {
-        layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name)));
-        slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name);
+        layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)));
+        const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];
+        slot.innerHTML = topologyHtml(...view);
+        fitTopologyLayout(slot,view,topologyAutomaticLayout(t.db,t.view || null,t.name));
         return;
       }
       zoomChart = new Chart(slot.querySelector("canvas"), chartConfig(kind, t.chart || {}, cols, rows, t.db, t.view || null));
@@ -5010,11 +5014,12 @@
       : "";
     // Table tiles can break out of the centred column to full width, to see all
     // the columns at once.
-    const wide = state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
+    const wide = kind === "topology" && topologyAutomaticLayout(t.db, t.view || null, t.name) ? true :
+      state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
     const widenBtn = kind === "table" || kind === "timeline" || kind === "incident"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
-    const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name)) : "";
+    const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)) : "";
     const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
@@ -5202,7 +5207,7 @@
     if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
-    if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = topologyHtml(cols, rows, t.chart || {}, t.db, t.view || null, t.name); return; }
+    if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];slot.innerHTML = topologyHtml(...view);fitTopologyLayout(slot,view,topologyAutomaticLayout(t.db,t.view || null,t.name));return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
     // the space around (and, for a doughnut, inside) the circle.
@@ -5316,6 +5321,15 @@
     return `<div class="hm"><div class="pd-matrix" style="grid-template-columns: minmax(90px, max-content) repeat(${xs.length}, minmax(34px, 1fr))">${head}${body}</div>${legend}</div>`;
   }
   // ---- topology / transit schematic -------------------------------------
+  // Keep the diagram scannable; hover reveals the full values.
+  const TOPO_LABEL_LIMITS = { link: 28, port: 22 };
+  function topoShort(value, limit) {
+    const text = String(value || ""), chars = [...text];
+    if (chars.length <= limit) return text;
+    const prefix = chars.slice(0, limit - 1).join("");
+    const breakAt = prefix.lastIndexOf(" ");
+    return (breakAt >= limit * .6 ? prefix.slice(0, breakAt) : prefix).trimEnd() + "…";
+  }
   // Delegation also covers live replacements, zoom views and screenshot SVGs.
   for (const event of ["pointerover", "pointerout"]) document.addEventListener(event, (e) => {
     const target = e.target.closest?.("[data-topo-edge]");
@@ -5329,14 +5343,21 @@
 
   const topologyViews = new Map();
   function topologyLayoutKey(db, table, tileKey) { return JSON.stringify([location.pathname, db, table, tileKey]); }
+  function topologyStorageKey(key) { return `topology-layout:v2:${key}`; }
   function topologyLayoutMode(db, table, tileKey) {
     let mode;
-    try { mode = localStorage.getItem(`topology-layout:${topologyLayoutKey(db, table, tileKey)}`); } catch (_) {}
+    try { mode = localStorage.getItem(topologyStorageKey(topologyLayoutKey(db, table, tileKey))); } catch (_) {}
     return ["one", "two", "wide"].includes(mode) ? mode : "wide";
   }
-  function topologyLayoutControls(mode) {
-    const buttons = [["one", "1 column"], ["two", "2 columns"], ["wide", "Wide"]]
-      .map(([value, label]) => `<button class="panel-act" data-topo-layout="${value}" aria-pressed="${mode === value}">${label}</button>`).join("");
+  function topologyAutomaticLayout(db, table, tileKey) {
+    try { return !["one", "two", "wide"].includes(localStorage.getItem(topologyStorageKey(topologyLayoutKey(db, table, tileKey)))); }
+    catch (_) { return true; }
+  }
+  function topologyLayoutControls(mode, available = ["one", "two", "wide"], automatic = false) {
+    const modes = [["one", "1 column"], ["two", "2 columns"], ["wide", "Wide"]].filter(([value]) => available.includes(value));
+    const showAuto = modes.length > 1;
+    if (showAuto) modes.unshift(["auto", automatic ? `Auto · ${mode === "one" ? "1 column" : mode === "two" ? "2 columns" : "Wide"}` : "Auto"]);
+    const buttons = modes.map(([value, label]) => `<button class="panel-act" data-topo-layout="${value}" aria-pressed="${showAuto && automatic ? value === "auto" : mode === value}">${label}</button>`).join("");
     return `<span class="topo-layout-controls no-screenshot" role="group" aria-label="Topology layout">${buttons}</span>`;
   }
   document.addEventListener("click", (event) => {
@@ -5346,8 +5367,12 @@
     if (!host) return;
     const view = topologyViews.get(host.dataset.topoView);
     if (!view) return;
-    try { localStorage.setItem(`topology-layout:${host.dataset.topoView}`, button.dataset.topoLayout); } catch (_) {}
-    const mode = button.dataset.topoLayout;
+    const automatic = button.dataset.topoLayout === "auto";
+    try {
+      if (automatic) localStorage.removeItem(topologyStorageKey(host.dataset.topoView));
+      else localStorage.setItem(topologyStorageKey(host.dataset.topoView), button.dataset.topoLayout);
+    } catch (_) {}
+    const mode = automatic ? "wide" : button.dataset.topoLayout;
     document.querySelectorAll("[data-topo-view]").forEach((current) => {
       if (current.dataset.topoView !== host.dataset.topoView) return;
       const panel = current.closest(".panel"), wide = mode === "wide";
@@ -5358,7 +5383,9 @@
       current.closest(".panel, .zoom-box")?.querySelectorAll("[data-topo-layout]").forEach((control) => {
         control.setAttribute("aria-pressed", String(control.dataset.topoLayout === mode));
       });
+      const slot = current.closest(".panel-chart, .zoom-chart");
       current.outerHTML = topologyHtml(...view, mode);
+      if (slot) fitTopologyLayout(slot, view, automatic);
     });
   });
   function topologyHtml(cols, rows, spec, db, table, tileKey = "", selectedMode) {
@@ -5378,8 +5405,63 @@
       rows.forEach((row) => { const id = root(area(row, fi)); if (!components.has(id)) components.set(id, []); components.get(id).push(row); });
       batches.push(...components.values());
     } else batches.push(rows);
-    return `<div data-topo-view="${attr(key)}"><div class="${mode === "wide" ? "topo-grid" : ""}">${batches.map((batch) => topologyDiagramHtml(cols, batch, { ...spec, topologyLayout: mode }, db, table)).join("")}</div></div>`;
+    return `<div data-topo-view="${attr(key)}" data-topo-mode="${mode}"><div class="${mode === "wide" ? "topo-grid" : ""}">${batches.map((batch) => topologyDiagramHtml(cols, batch, { ...spec, topologyLayout: mode }, db, table)).join("")}</div></div>`;
   }
+  function fitTopologyLayout(slot, view, automatic) {
+    const panel=slot.closest(".panel"), container=slot.closest(".panel, .zoom-box");
+    let host=slot.querySelector("[data-topo-view]");
+    if(!host)return;
+    const requestedMode=host.dataset.topoMode;
+    const paint=(mode)=>{
+      if(panel){panel.classList.toggle("full-bleed",mode==="wide");state.tileWide[panel.dataset.tile]=mode==="wide";}
+      slot.innerHTML=topologyHtml(...view,mode);
+      host=slot.querySelector("[data-topo-view]");
+    };
+    const singleColumn=()=>{
+      const diagrams=[...slot.querySelectorAll("[data-topo-natural-columns]")];
+      return diagrams.length===1&&Number(diagrams[0].dataset.topoNaturalColumns)===1;
+    };
+    const scale=()=>{
+      const diagrams=[...slot.querySelectorAll(".topo-svg")];
+      return diagrams.length?Math.min(...diagrams.map((svg)=>{
+        const natural=parseFloat(svg.style.getPropertyValue("--topo-natural-width"));
+        return natural?Math.min(1,svg.parentElement.clientWidth/natural):1;
+      })):1;
+    };
+    let available=["one", "two", "wide"];
+    paint("wide");
+    if(singleColumn()){
+      available=["one"];
+      paint("one");
+    }else{
+      const wideFits=scale()>=.9;
+      const diagram=slot.querySelectorAll("[data-topo-natural-columns]");
+      const compare=diagram.length===1&&Number(diagram[0].dataset.topoNaturalColumns)===2;
+      const wideDiagram=compare?slot.querySelector(".topo-wrap")?.outerHTML:null;
+      paint("two");
+      const twoFits=scale()>=.9;
+      const duplicateWide=compare&&wideDiagram===slot.querySelector(".topo-wrap")?.outerHTML;
+      if(duplicateWide)available=["one", "two"];
+      const mode=automatic ? (wideFits&&!duplicateWide?"wide":twoFits?"two":"one") :
+        duplicateWide&&requestedMode==="wide"?"two":requestedMode;
+      if(host.dataset.topoMode!==mode)paint(mode);
+    }
+    const mode=host.dataset.topoMode;
+    container?.querySelectorAll(".topo-layout-controls").forEach((controls)=>{
+      controls.outerHTML=topologyLayoutControls(mode,available,automatic);
+    });
+  }
+  let topologyResizeTimer;
+  window.addEventListener("resize",()=>{
+    clearTimeout(topologyResizeTimer);
+    topologyResizeTimer=setTimeout(()=>{
+      document.querySelectorAll("[data-topo-view]").forEach((host)=>{
+        const view=topologyViews.get(host.dataset.topoView);
+        const slot=host.closest(".panel-chart, .zoom-chart");
+        if(view&&slot)fitTopologyLayout(slot,view,topologyAutomaticLayout(view[3],view[4],view[5]));
+      });
+    },150);
+  });
   function topologyDiagramHtml(cols, rows, spec, db, table) {
     const ci = (name) => name == null ? -1 : cols.indexOf(name);
     const fromI = ci(spec.from_participant), toI = ci(spec.to_participant);
@@ -5413,13 +5495,21 @@
         marks.forEach(([k, v]) => prior.marks.set(`${k}:${v}`, [k, v]));
         return prior;
       }
-      const node = { id, label: text(row, labelIndex) || id, path, types: new Set(types), marks: new Map(marks.map(([k, v]) => [`${k}:${v}`, [k, v]])) };
+      const label = text(row, labelIndex) || id;
+      const node = { id, label, path, types: new Set(types), marks: new Map(marks.map(([k, v]) => [`${k}:${v}`, [k, v]])) };
       nodes.set(id, node); return node;
     };
     rows.forEach((row, order) => {
       const from = addNode(row, fromI, idx.fromLabel, idx.fromType, fromPathI, fromMarkI, spec.from_marks || []);
       const to = toI < 0 ? null : addNode(row, toI, idx.toLabel, idx.toType, toPathI, toMarkI, spec.to_marks || []);
-      if (from && to) edges.push({ from: from.id, to: to.id, label: text(row, idx.label), fromPort: text(row, idx.fromPort), toPort: text(row, idx.toPort), color: text(row, idx.color), order });
+      if (from && to) {
+        const label = text(row, idx.label), fromPort = text(row, idx.fromPort), toPort = text(row, idx.toPort);
+        edges.push({ from: from.id, to: to.id, label, fromPort, toPort,
+          displayLabel: topoShort(label, TOPO_LABEL_LIMITS.link),
+          displayFromPort: topoShort(fromPort, TOPO_LABEL_LIMITS.port),
+          displayToPort: topoShort(toPort, TOPO_LABEL_LIMITS.port),
+          color: text(row, idx.color), order });
+      }
     });
     if (!nodes.size) return '<div class="note">no topology nodes.</div>';
 
@@ -5483,10 +5573,14 @@
       const mixed = members.some((node) => external.has(node.id)) && members.some((node) => !external.has(node.id));
       const firstRank = Math.min(...members.map((node) => rank.get(node.id)));
       members.forEach((node, index) => {
-        node.localRank = spec.topologyLayout === "one" ? 0 : spec.direction ? rank.get(node.id) - firstRank :
+        const wideRank = spec.direction ? rank.get(node.id) - firstRank :
           mixed ? Number(external.has(node.id)) : members.every((member) => external.has(member.id)) ? 0 :
-            spec.topologyLayout === "wide" && Math.max(...members.map((member) => rank.get(member.id))) - firstRank > 1 ? rank.get(node.id) - firstRank :
+            Math.max(...members.map((member) => rank.get(member.id))) - firstRank > 1 ? rank.get(node.id) - firstRank :
               Math.floor(index / Math.ceil(members.length / 2));
+        node.naturalRank = wideRank;
+        node.localRank = spec.topologyLayout === "one" ? 0 : spec.topologyLayout === "wide" ? wideRank :
+          spec.direction ? rank.get(node.id) - firstRank : mixed ? Number(external.has(node.id)) :
+            members.every((member) => external.has(member.id)) ? 0 : Math.floor(index / Math.ceil(members.length / 2));
         if (spec.topologyLayout === "two" && !vertical) node.localRank = Math.min(1, node.localRank);
       });
     });
@@ -5515,16 +5609,53 @@
       });
     });
     const badgeMeasure = document.createElement("canvas").getContext("2d");
-    badgeMeasure.font = `8.5px ${getComputedStyle(document.body).fontFamily}`;
-    const badgeWidth = (label) => Math.ceil(badgeMeasure.measureText(label).width) + 12;
+    const badgeFont = `8.5px ${getComputedStyle(document.body).fontFamily}`;
+    const badgeWidth = (label) => {
+      badgeMeasure.font = badgeFont;
+      return Math.ceil(badgeMeasure.measureText(label).width) + 12;
+    };
+    badgeMeasure.font = badgeFont;
     const nameMeasure = document.createElement("canvas").getContext("2d");
-    nameMeasure.font = `650 11.5px ${getComputedStyle(document.body).fontFamily}`;
+    nameMeasure.font = `650 12.5px ${getComputedStyle(document.body).fontFamily}`;
+    const fitText = (value, maxWidth, measure) => {
+      const source = String(value), chars = [...source];
+      if (measure.measureText(source).width <= maxWidth) return source;
+      let low = 0, high = chars.length;
+      while (low < high) {
+        const middle = Math.ceil((low + high) / 2);
+        if (measure.measureText(chars.slice(0, middle).join("") + "…").width <= maxWidth) low = middle;
+        else high = middle - 1;
+      }
+      return chars.slice(0, low).join("").trimEnd() + "…";
+    };
+    const wrapName = (label) => {
+      const lines=[];let line="";
+      String(label).split(/\s+/).forEach((word)=>{
+        const candidate=line?`${line} ${word}`:word;
+        if(line&&nameMeasure.measureText(candidate).width>190){lines.push(line);line=word;}
+        else line=candidate;
+        while(nameMeasure.measureText(line).width>190){
+          let cut=line.length-1;
+          while(cut>1&&nameMeasure.measureText(line.slice(0,cut)).width>190)cut--;
+          lines.push(line.slice(0,cut));line=line.slice(cut);
+        }
+      });
+      if(line)lines.push(line);
+      return lines.length?lines:[""];
+    };
     nodes.forEach((node) => {
       const busiestSide = Math.max(1, ...[...sidePorts.get(node.id).values()].map((ports) => ports.length));
-      node.h = Math.max(nodeH, 48 + (busiestSide - 1) * portPitch);
-      const markText = [...node.marks.values()].map(([key, value]) => `${key}: ${value}`);
-      const contentChars = Math.max(node.label.length, [...node.types].join(" · ").length, ...markText.map((value) => value.length), 0);
-      node.w = Math.max(nodeW, 34 + nameMeasure.measureText(node.label).width, 34 + contentChars * 6.2, ...markText.map((label) => 30 + badgeWidth(label)));
+      node.nameLines=wrapName(node.label);
+      if (node.nameLines.length > 3) {
+        node.nameLines = [...node.nameLines.slice(0, 2), fitText(node.nameLines.slice(2).join(" ") + "…", 190, nameMeasure)];
+      }
+      const extraName=(node.nameLines.length-1)*13;
+      node.h = Math.max(nodeH+extraName, 48 + extraName + (busiestSide - 1) * portPitch);
+      const markText = [...node.marks.values()].slice(0, 3).map(([key, value]) => `${key}: ${value}`);
+      node.displayType = fitText([...node.types].join(" · "), 190, nameMeasure);
+      node.displayMarks = markText.map((label) => fitText(label, 182, badgeMeasure));
+      node.h=Math.max(node.h,45+extraName+markText.length*12);
+      node.w = Math.min(224, Math.max(nodeW, ...node.nameLines.map((line)=>34+nameMeasure.measureText(line).width), 34 + nameMeasure.measureText(node.displayType).width, ...node.displayMarks.map((label) => 30 + badgeWidth(label))));
       if (vertical) node.w = Math.max(node.w, 48 + (busiestSide - 1) * portPitch);
     });
     const leafKeys = [...new Set(ids.map((id) => nodes.get(id).path.join("\u001f")))].sort();
@@ -5540,14 +5671,14 @@
     edges.forEach((edge) => {
       const from = nodes.get(edge.from), to = nodes.get(edge.to);
       if (from.path.join("\u001f") !== to.path.join("\u001f") || Math.abs(to.localRank - from.localRank) !== 1) return;
-      const required = labelWidth(edge.fromPort, 5.1) + labelWidth(edge.label, 5.8) + labelWidth(edge.toPort, 5.1) + (compact ? 42 : 56);
+      const required = labelWidth(edge.displayFromPort, 6) + labelWidth(edge.displayLabel, 6.7) + labelWidth(edge.displayToPort, 6) + (compact ? 42 : 56);
       const gap = Math.min(from.localRank, to.localRank);
       rankGaps[gap] = Math.max(rankGaps[gap], required);
     });
     // Same-column loops need a gutter of their own before the next column.
     // Reserve the label runway and all possible lanes before placing nodes.
-    const portRunway = Math.max(24, ...edges.flatMap((e) => [labelWidth(e.fromPort, 5.5), labelWidth(e.toPort, 5.5)])) + 12;
-    const linkRunway = Math.max(24, ...edges.map((e) => labelWidth(e.label, 6))) + 12;
+    const portRunway = Math.max(24, ...edges.flatMap((e) => [labelWidth(e.displayFromPort, 6.5), labelWidth(e.displayToPort, 6.5)])) + 12;
+    const linkRunway = Math.max(24, ...edges.map((e) => labelWidth(e.displayLabel, 7))) + 12;
     // Include the cross-column trunk AND its arrival labels before the next
     // service column, rather than budgeting only for the internal loops.
     const loopRunway = portRunway + linkRunway + portRunway + 24;
@@ -6065,7 +6196,9 @@
       d = clearRoute(d, a, b, sx, sy, tx, ty);
       e.rerouted = d !== originalRoute;
       const colorIndex = e.color ? Math.max(0, colors.indexOf(e.color)) % 4 : 0;
-      const tip = `${a.label} ↔ ${b.label}${e.label ? ` · ${e.label}` : ""}${e.color ? ` · ${e.color}` : ""}`;
+      const tipRows = [["From", a.label], ["From port", e.fromPort], ["To", b.label], ["To port", e.toPort], ["Class", e.color]]
+        .filter(([, value]) => value).map(([name, value]) => `<li><span class="wm-tip-c">${esc(name)}</span><span class="wm-tip-lb">${esc(value)}</span></li>`).join("");
+      const tip = `<div class="wm-tip-head">CONNECTION</div><b>${esc(e.label || "Link")}</b><div class="tl-tip-sep"></div><ul class="wm-tip-list">${tipRows}</ul>`;
       const fromRight = vertical || sx >= a.x + a.w / 2;
       const toRight = vertical || tx >= b.x + b.w / 2;
       const fromLabelY = sy - 9;
@@ -6092,17 +6225,18 @@
         g.h = Math.max(g.h, routeBottom - g.y + padding);
       }
       e.geometry = geometry;
-      if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone && !e.rerouted,
+      if (e.label) labelCandidates.push({ edge: e.order, tip, text: e.displayLabel, fullText: e.label, cls: "topo-edge-label", x: lx + (edgeLabelAnchor === "start" ? 7 : 0), y: ly, anchor: edgeLabelAnchor, priority: 0, colorIndex, pill: crossesZone && !e.rerouted,
         attachment: crossesZone && !vertical && !e.rerouted ? { x: lx, minY: Math.min(sy, ty) + Math.min(10, Math.abs(sy - ty) / 2), maxY: Math.max(sy, ty) - Math.min(10, Math.abs(sy - ty) / 2),
           sourceX: sx + portRunway + 7, sourceY: sy,
           centerX: horizontalAreas && Math.abs(sy - ty) < .01 ? (sx + tx) / 2 : null } : null });
-      if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1, colorIndex });
-      if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1, colorIndex });
-      renderedEdges.set(e, `<g data-topo-edge="${e.order}"><title>${esc(tip)}</title><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}"/></g>`);
+      if (e.fromPort) labelCandidates.push({ edge: e.order, tip, text: e.displayFromPort, fullText: e.fromPort, cls: "topo-port-label", x: sx + (fromRight ? 10 : -10), y: fromLabelY, anchor: fromRight ? "start" : "end", priority: 1, colorIndex });
+      if (e.toPort) labelCandidates.push({ edge: e.order, tip, text: e.displayToPort, fullText: e.toPort, cls: "topo-port-label", x: tx + (toRight ? 10 : -10), y: toLabelY, anchor: toRight ? "start" : "end", priority: 1, colorIndex });
+      renderedEdges.set(e, `<g class="wm-x" data-tip="${attr(tip)}" data-topo-edge="${e.order}"><path class="topo-track-hit" d="${d}"/><path class="topo-track" data-topo-edge="${e.order}" data-color-index="${colorIndex}" d="${d}"/></g>`);
     });
     const edgeSvg = edges.map((e) => renderedEdges.get(e)).join("");
     const occupied = [...nodes.values()].map((n) => ({ x: n.x - 3, y: n.y - 3, w: n.w + 6, h: n.h + 6 }));
     groups.forEach((g) => occupied.push({ x: g.x + 5, y: g.y + 2, w: g.label.length * 7 + 12, h: 18 }));
+    const labelBounds = trackObstacles.reduce((bounds, r) => ({ left: Math.min(bounds.left, r.x), right: Math.max(bounds.right, r.x + r.w) }), { left: minX, right: maxX });
     const intersects = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
     const labelLeaders = [], displacedLabelCounts = new Map();
     const labelAttachment = (rect, geometry) => {
@@ -6136,9 +6270,10 @@
     // central descriptions, which can move away and use a leader if needed.
     const labelSvg = labelCandidates.sort((a, b) => b.priority - a.priority).map((label) => {
       // Reserve the bold hover width too, so highlighting cannot clip text.
-      badgeMeasure.font = `700 ${label.priority ? 8.5 : 9.5}px ${getComputedStyle(document.body).fontFamily}`;
+      badgeMeasure.font = `700 ${label.priority ? 10 : 11}px ${getComputedStyle(document.body).fontFamily}`;
       const metrics = badgeMeasure.measureText(label.text);
-      const w = Math.max(12, metrics.width), ascent = Math.ceil(metrics.actualBoundingBoxAscent), descent = Math.max(2, Math.ceil(metrics.actualBoundingBoxDescent));
+      let w = Math.max(12, metrics.width);
+      const ascent = Math.ceil(metrics.actualBoundingBoxAscent), descent = Math.max(2, Math.ceil(metrics.actualBoundingBoxDescent));
       const padX = label.pill ? 3 : 2, padY = 2, h = ascent + descent + 2 * padY;
       const shifts = [0, -16, 16, -32, 32, -48, 48, -64, 64, -80, 80, -112, 112];
       let placed;
@@ -6173,10 +6308,27 @@
         const rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h };
         if (!occupied.some((other) => intersects(rect, other)) && !trackObstacles.some((other) => intersects(rect, other)) && !labelLeaders.some((line) => leaderHitsRect(line, rect))) { placed = { x: labelX, y, rect, horizontal }; break; }
       }
+      // Layout uses compact labels to reserve a predictable gutter. Once the
+      // routes are known, restore the full value wherever its actual rectangle
+      // fits beside the link without widening the diagram or covering a track.
+      if (placed && label.fullText !== label.text) {
+        const fullWidth = Math.max(12, badgeMeasure.measureText(label.fullText).width);
+        for (const dx of [0, -24, 24, -48, 48, -72, 72, -96, 96, -128, 128, -160, 160]) {
+          const labelX = placed.x + dx;
+          const x = label.anchor === "middle" ? labelX - fullWidth / 2 : label.anchor === "end" ? labelX - fullWidth : labelX;
+          const rect = { x: x - padX, y: placed.y - ascent - padY, w: fullWidth + 2 * padX, h };
+          if (rect.x < labelBounds.left || rect.x + rect.w > labelBounds.right || occupied.some((other) => intersects(rect, other))
+            || trackObstacles.some((other) => intersects(rect, other)) || labelLeaders.some((line) => leaderHitsRect(line, rect))) continue;
+          label.text = label.fullText;
+          w = fullWidth;
+          placed = { ...placed, x: labelX, rect };
+          break;
+        }
+      }
       // A crowded diagram must never silently fall back to covering a link.
       // Its clear right margin is an always-available final label column.
       if (!placed) {
-        const x = Math.max(maxX, ...trackObstacles.map((r) => r.x + r.w)) + 12;
+        const x = labelBounds.right + 12;
         let y = label.y, rect;
         do { rect = { x: x - padX, y: y - ascent - padY, w: w + 2 * padX, h }; y += h + 4; }
         while (occupied.some((other) => intersects(rect, other)));
@@ -6222,15 +6374,19 @@
         const anchorY = placed.horizontal ? attach.sourceY : ay;
         const endX = placed.horizontal ? ax : labelEdge, endY = placed.horizontal ? py + ph : cy;
         const leader = attach ? `<path class="topo-label-leader" d="M${ax} ${anchorY}L${endX} ${endY}"/><circle class="topo-label-anchor" cx="${ax}" cy="${anchorY}" r="2"/>` : displacedLeader;
-        return `<g class="topo-edge-label-pill" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex}"><title>${esc(label.tip)}</title>${leader}<path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
+        return `<g class="topo-edge-label-pill wm-x" data-tip="${attr(label.tip)}" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex}">${leader}<path class="topo-edge-label-bg" style="stroke:none;stroke-width:0" d="${pillPath}"/><text class="${label.cls}" style="stroke:none;stroke-width:0;paint-order:normal" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
       }
-      return `<g data-topo-edge="${label.edge}" data-color-index="${label.colorIndex ?? 0}"><title>${esc(label.tip)}</title>${displacedLeader}<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
+      return `<g class="wm-x" data-tip="${attr(label.tip)}" data-topo-edge="${label.edge}" data-color-index="${label.colorIndex ?? 0}">${displacedLeader}<text class="${label.cls}" x="${label.x}" y="${placed.y}" text-anchor="${label.anchor}">${esc(label.text)}</text></g>`;
     }).join("");
     const nodeSvg = [...nodes.values()].map((n) => {
-      const types = [...n.types], marks = [...n.marks.values()].slice(0, 3);
-      const badges = marks.map(([k, v], i) => { const label = `${k}: ${v}`, bw = badgeWidth(label), by = n.y + 38 + i * 12; return `<rect class="topo-mark-bg" x="${n.x + 20}" y="${by}" width="${bw}" height="11" rx="5"/><text class="topo-mark" x="${n.x + 26}" y="${by + 8}">${esc(label)}</text>`; }).join("");
-      const detail = [n.path.join(" / "), types.length ? `types: ${types.join(", ")}` : "", ...marks.map(([k, v]) => `${k}: ${v}`)].filter(Boolean).join("\n");
-      return `<g class="topo-node-wrap" data-node="${attr(n.id)}"><rect class="topo-node" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8"><title>${esc(n.label)}${detail ? `\n${esc(detail)}` : ""}</title></rect><circle class="topo-station" cx="${n.x + 11}" cy="${n.y + 15}" r="5"/><text class="topo-node-name" x="${n.x + 21}" y="${n.y + 18}">${esc(n.label)}</text>${types.length ? `<text class="topo-type" x="${n.x + 21}" y="${n.y + 31}">${esc(types.join(" · "))}</text>` : ""}${badges}</g>`;
+      const types = [...n.types], marks = [...n.marks.values()];
+      const extraName=(n.nameLines.length-1)*13;
+      const badges = n.displayMarks.map((label, i) => { const bw = badgeWidth(label), by = n.y + 38 + extraName + i * 12; return `<rect class="topo-mark-bg" x="${n.x + 20}" y="${by}" width="${bw}" height="11" rx="5"/><text class="topo-mark" x="${n.x + 26}" y="${by + 8}">${esc(label)}</text>`; }).join("");
+      const detail = [["ID", n.id], ["Within", n.path.join(" / ")], ["Type", types.join(", ")], ...marks.map(([k, v]) => [k, v])]
+        .filter(([, value]) => value).map(([key, value]) => `<li><span class="wm-tip-c">${esc(key)}</span><span class="wm-tip-lb">${esc(value)}</span></li>`).join("");
+      const tip = `<div class="wm-tip-head">NODE</div><b>${esc(n.label)}</b>${detail ? `<div class="tl-tip-sep"></div><ul class="wm-tip-list">${detail}</ul>` : ""}`;
+      const name=n.nameLines.map((line,i)=>`<tspan x="${n.x+21}" ${i?`dy="13"`:""}>${i?" ":""}${esc(line)}</tspan>`).join("");
+      return `<g class="topo-node-wrap wm-x" data-tip="${attr(tip)}" data-node="${attr(n.id)}"><rect class="topo-node" x="${n.x}" y="${n.y}" width="${n.w}" height="${n.h}" rx="8"/><circle class="topo-station" cx="${n.x + 11}" cy="${n.y + 15}" r="5"/><text class="topo-node-name" x="${n.x + 21}" y="${n.y + 18}">${name}</text>${types.length ? `<text class="topo-type" x="${n.x + 21}" y="${n.y + 31 + extraName}">${esc(n.displayType)}</text>` : ""}${badges}</g>`;
     }).join("");
     const legend = colors.length ? `<div class="topo-legend">${colors.slice(0, 4).map((c) => `<span class="topo-key">${esc(c)}</span>`).join("")}</div>` : "";
     const zoneSvg = [...groups.values()].sort((a, b) => a.depth - b.depth || a.key.localeCompare(b.key)).map((g) => {
@@ -6242,7 +6398,9 @@
       x2: Math.max(b.x2, r.x + r.w + 8), y2: Math.max(b.y2, r.y + r.h + 8),
     }), { x1: minX, y1: minY, x2: minX + width, y2: minY + height });
     const boundsX = bounds.x1, boundsY = bounds.y1, boundsW = bounds.x2 - boundsX, boundsH = bounds.y2 - boundsY;
-    return `<div class="topo-wrap"><svg class="topo-svg" style="--topo-natural-width:${boundsW}px" viewBox="${boundsX} ${boundsY} ${boundsW} ${boundsH}" role="img" aria-label="Network topology">${defs}${zoneSvg}${edgeSvg}${nodeSvg}<g class="topo-label-layer">${labelSvg}</g></svg>${legend}</div>`;
+    const naturalColumns = vertical ? (leafMembers.size > 1 ? 2 : 1) :
+      Math.max(horizontalAreas ? leafMembers.size : 1, ...[...nodes.values()].map((node) => node.naturalRank + 1));
+    return `<div class="topo-wrap" data-topo-natural-columns="${naturalColumns}"><svg class="topo-svg" style="--topo-natural-width:${boundsW}px;--topo-readable-width:${(boundsW * .9).toFixed(1)}px" viewBox="${boundsX} ${boundsY} ${boundsW} ${boundsH}" role="img" aria-label="Network topology">${defs}${zoneSvg}${edgeSvg}${nodeSvg}<g class="topo-label-layer">${labelSvg}</g></svg>${legend}</div>`;
   }
 
   // ---- timeline (Gantt-like) tile ---------------------------------------
@@ -9590,6 +9748,7 @@
       const el = ev.target.closest && ev.target.closest(".wm-x");
       if (!el || !el.dataset.tip) return;
       if (!tip) { tip = document.createElement("div"); tip.className = "wm-tip"; document.body.appendChild(tip); }
+      tip.classList.toggle("topo-tip", !!el.closest(".topo-svg"));
       tip.innerHTML = el.dataset.tip;
       tip.classList.add("show");
       place(ev.clientX, ev.clientY);

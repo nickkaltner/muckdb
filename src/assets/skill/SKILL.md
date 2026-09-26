@@ -756,6 +756,18 @@ nodes. `--from-label`/`--to-label` name the nodes, while `--label` names the
 connection and `--from-port`/`--to-port` label its two ends. Multiple node types
 may be comma-separated in `--from-type`/`--to-type` values.
 
+Keep labels short enough to scan: aim for at most **32 characters for node
+names**, **24 for connection labels**, and **18 for port labels**. The diagram
+wraps node names across up to three lines and shortens connection and port
+labels only when their full text cannot fit beside the link. Hovering a node,
+link, or label shows the full values in a structured tooltip. Put the
+distinguishing part first. For example, use
+`100 Gbps · backbone` on the link and `et-0/0/6` at its endpoint rather than
+repeating a long service description on every wire. Long labels consume routing
+space and make the whole topology harder to read, especially with fan-outs.
+Long type and badge text also ellipsizes inside service boxes; hover the box
+for the complete values.
+
 Containment and markup are deliberately separate. Pass successive
 outermost-to-innermost columns to `--from-within` and `--to-within` (for example
 `country,region,metro,dc`, or `zone,dmz`). Pass arbitrary annotation columns to
@@ -775,10 +787,15 @@ muckdb session tile infra --name network --db infra.duckdb --view links \
   --caption "Service paths across physical sites, availability zones and diversity domains."
 ```
 
-Topology tiles default to **Wide**: local-only services sit left of services
+Topology tiles choose a readable layout automatically; **Wide** keeps local-only services left of services
 that connect outside their area, and independent top-level areas can sit side
-by side. The tile's **1 column / 2 columns / Wide** controls remember the choice
-per tile in the browser; Wide also expands the tile to the viewport width.
+by side. The tile's **Auto / 1 column / 2 columns / Wide** controls remember an
+explicit choice per tile in the browser; **Auto** clears that choice and restores
+the readable default. Redundant choices are hidden. Wide expands the tile to
+the viewport width. A dense fan-out defaults to 1 column when its wider layouts
+would shrink the text too far, but 2 columns and Wide remain available when
+they produce distinct diagrams. An explicitly selected Wide layout may scroll
+horizontally to keep its labels readable.
 Chains of externally connected areas also sit side by side in Wide mode,
 keeping each area's services stacked and its internal mesh wiring separate
 from the links between areas. Areas remain in one routing diagram. Links have no
