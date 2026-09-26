@@ -4359,13 +4359,18 @@
       startOnLoad: false,
       securityLevel: "strict",
       theme: "base",
+      themeCSS: '[filter*="drop-shadow"] { filter: none !important; }',
       suppressErrorRendering: true,
       flowchart: { htmlLabels: false, useMaxWidth: true },
       themeVariables: {
+        dropShadow: "none",
+        nodeShadow: false,
         background: color("--surface", "#221e18"),
         primaryColor: color("--raised", "#2b261f"),
         primaryTextColor: color("--fg", "#ece4d8"),
         primaryBorderColor: color("--primary-dim", "#b85a1a"),
+        gradientStart: color("--primary-dim", "#b85a1a"),
+        gradientStop: mixColors("var(--primary-dim)", 45, "var(--line)"),
         secondaryColor: color("--surface", "#221e18"),
         secondaryTextColor: color("--fg", "#ece4d8"),
         secondaryBorderColor: color("--line", "#3b342b"),
@@ -4396,6 +4401,13 @@
     const message = String((error && (error.str || error.message)) || error || "Invalid Mermaid source");
     return message.replace(/^Error:\s*/, "").trim();
   }
+  function orientMermaidFlowchartGradient(svg) {
+    if (!svg.classList.contains("flowchart")) return;
+    svg.querySelectorAll('linearGradient[id$="-gradient"]').forEach((gradient) => {
+      gradient.setAttribute("x1", "0%"); gradient.setAttribute("y1", "0%");
+      gradient.setAttribute("x2", "100%"); gradient.setAttribute("y2", "100%");
+    });
+  }
   async function renderMermaidSource(source, host) {
     if (!host) return false;
     if (!window.mermaid) {
@@ -4412,6 +4424,7 @@
       host.innerHTML = result.svg;
       const svg = host.querySelector("svg");
       if (svg) {
+        orientMermaidFlowchartGradient(svg);
         svg.removeAttribute("height"); svg.style.maxWidth = "100%"; svg.setAttribute("role", "img");
         if (host.classList.contains("mermaid-host") && svg.viewBox && svg.viewBox.baseVal.width && svg.viewBox.baseVal.height) {
           const box = svg.viewBox.baseVal;
