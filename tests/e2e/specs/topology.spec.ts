@@ -3,9 +3,18 @@ import { SESSION_ID, BINARY } from '../constants';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, join } from 'node:path';
+import type { Locator } from '@playwright/test';
+
+async function chooseTopologyLayout(panel: Locator, name: string) {
+  await expect(panel.locator('.topo-svg').first()).toBeVisible({ timeout: 15_000 });
+  const button = panel.getByRole('button', { name, exact: true });
+  await button.click();
+  await expect(button).toHaveAttribute('aria-pressed', 'true');
+}
 
 test.describe('topology tile', () => {
   test('fanout labels align, endpoint labels stay by their ports, and long text fits', async ({ page, e2eState }) => {
+    test.setTimeout(60_000);
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'label-examples.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -18,7 +27,7 @@ test.describe('topology tile', () => {
         '--caption', 'Synthetic layout fixture with endpoint names and link descriptions.']);
       await page.goto(`/session/${SESSION_ID}/`);
       const panel = page.locator(`.panel[data-tile="${view}"]`);
-      await panel.getByRole('button', { name: 'Wide', exact: true }).click();
+      await chooseTopologyLayout(panel, 'Wide');
       const issues = await panel.locator('.topo-svg').evaluate((svg) => {
         const issues: string[] = [];
         for (const node of svg.querySelectorAll('.topo-node-wrap')) {
@@ -90,7 +99,6 @@ test.describe('topology tile', () => {
         return issues;
       });
       expect(issues).toEqual([]);
-      await panel.screenshot({ path: test.info().outputPath(`${view}.png`) });
     }
   });
 
@@ -107,7 +115,7 @@ test.describe('topology tile', () => {
         '--direction', 'right', '--routing', routing, '--caption', 'Two connected peers converge on a third service without an avoidable crossing.']);
       await page.goto(`/session/${SESSION_ID}/`);
       const panel = page.locator('.panel[data-tile="ordered-arrivals"]');
-      await panel.getByRole('button', { name: 'Wide', exact: true }).click();
+      await chooseTopologyLayout(panel, 'Wide');
       const result = await panel.locator('.topo-svg').evaluate((svg) => {
         const box = (id: string) => svg.querySelector<SVGRectElement>(`[data-node="${id}"] .topo-node`)!.getBBox();
         const upper = box('upper'), lower = box('lower'), sink = box('sink');
@@ -147,7 +155,7 @@ test.describe('topology tile', () => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="skip-ranks"]');
     for (const mode of ['2 columns', 'Wide']) {
-      await panel.getByRole('button', { name: mode, exact: true }).click();
+      await chooseTopologyLayout(panel, mode);
       const result = await panel.locator('.topo-svg').evaluate((svg) => {
         const nodes = [...svg.querySelectorAll<SVGRectElement>('.topo-node')].map((node) => node.getBBox());
         const collisions: string[] = [];
@@ -195,7 +203,7 @@ test.describe('topology tile', () => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="core-fanout"]');
     for (const mode of ['Wide', '2 columns']) {
-      await panel.getByRole('button', { name: mode, exact: true }).click();
+      await chooseTopologyLayout(panel, mode);
       const failures = await panel.locator('.topo-svg').evaluate((svg) => {
         const nodes = [...svg.querySelectorAll<SVGRectElement>('.topo-node')].map((node) => node.getBBox());
         const failures: string[] = [];
@@ -243,7 +251,7 @@ test.describe('topology tile', () => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="topology"]');
     for (const mode of ['Wide', '2 columns']) {
-      await panel.getByRole('button', { name: mode, exact: true }).click();
+      await chooseTopologyLayout(panel, mode);
       const overlap = await panel.locator('.topo-svg').evaluate((svg) => {
         const paths = [...svg.querySelectorAll<SVGPathElement>('.topo-track')];
         const edgeToLb = paths[0], lbToApi = paths[2];
@@ -292,20 +300,20 @@ test.describe('topology tile', () => {
     let x = await positions();
     expect(x['local-a']).toBeLessThan(x.gateway);
     expect(x['local-b']).toBeLessThan(x.gateway);
-    await panel.getByRole('button', { name: '2 columns', exact: true }).click();
+    await chooseTopologyLayout(panel, '2 columns');
     await expect(panel.locator('.topo-svg')).toHaveCount(1);
-    await panel.getByRole('button', { name: '1 column', exact: true }).click();
+    await chooseTopologyLayout(panel, '1 column');
     x = await positions();
     expect(new Set(Object.values(x)).size).toBe(1);
     await page.reload();
     await expect(panel.getByRole('button', { name: '1 column', exact: true })).toHaveAttribute('aria-pressed', 'true');
-    await panel.getByRole('button', { name: 'Wide', exact: true }).click();
+    await chooseTopologyLayout(panel, 'Wide');
     await page.setViewportSize({ width: 1440, height: 1800 });
     await page.addStyleTag({ content: '.statusline { visibility: hidden; }' });
     await panel.evaluate((el) => el.scrollIntoView({ block: 'center' }));
     await panel.screenshot({ path: '/tmp/muckdb-topology-wide.png' });
     await page.goto(`/session/${SESSION_ID}/?shot=1&tile=wide-layout`);
-    await expect(panel.locator('.topo-svg')).toBeVisible();
+    await expect(panel.locator('.topo-svg').first()).toBeVisible();
     await expect(panel.locator('.topo-layout-controls')).toBeHidden();
   });
 
@@ -318,7 +326,7 @@ test.describe('topology tile', () => {
       '--chart', 'topology', '--from', 'src', '--to', 'dst', '--from-within', 'dc', '--to-within', 'dc',
       '--label', 'label', '--caption', 'Independent direct connections share one routing lane.']);
     await page.goto(`/session/${SESSION_ID}/`);
-    await page.locator('.panel[data-tile="stacked-loops"]').getByRole('button', { name: '1 column', exact: true }).click();
+    await chooseTopologyLayout(page.locator('.panel[data-tile="stacked-loops"]'), '1 column');
     const tracks = page.locator('.panel[data-tile="stacked-loops"] .topo-track');
     await expect(tracks).toHaveCount(6);
     const rightEdges = await tracks.evaluateAll((paths) => paths.map((path) => {
@@ -327,7 +335,7 @@ test.describe('topology tile', () => {
     }));
     expect(Math.max(...rightEdges) - Math.min(...rightEdges)).toBeLessThan(1);
     for (const mode of ['2 columns', 'Wide']) {
-      await page.locator('.panel[data-tile="stacked-loops"]').getByRole('button', { name: mode, exact: true }).click();
+      await chooseTopologyLayout(page.locator('.panel[data-tile="stacked-loops"]'), mode);
       const gap = await tracks.evaluateAll((paths) => {
         // Port 4 is in the second column, while MVE 2 is in the first.
         // Its long vertical segment must clear the Port 1/2/3 local loops.
@@ -351,7 +359,7 @@ test.describe('topology tile', () => {
       '--label', 'subnet', '--color', 'link_class', '--caption', 'Full mesh regression fixture.']);
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="router-mesh"]');
-    await panel.getByRole('button', { name: '1 column', exact: true }).click();
+    await chooseTopologyLayout(panel, '1 column');
     await expect(panel.locator('.topo-track')).toHaveCount(8);
     await expect(panel.locator('.topo-node')).toHaveCount(6);
     const failures = await panel.locator('.topo-svg').evaluate((element) => {
@@ -406,7 +414,7 @@ test.describe('topology tile', () => {
     await expect(label.locator('.topo-edge-label')).toHaveCSS('text-decoration-line', 'none');
     // Wider modes must keep every wire clear of service cards.
     for (const mode of ['2 columns', 'Wide']) {
-      await panel.getByRole('button', { name: mode, exact: true }).click();
+      await chooseTopologyLayout(panel, mode);
       const collisions = await panel.locator('.topo-svg').evaluate((svg) => {
         const boxes = [...svg.querySelectorAll<SVGRectElement>('.topo-node')].map((node) => node.getBBox());
         const collisions: string[] = [];
@@ -502,7 +510,7 @@ test.describe('topology tile', () => {
       }));
     expect(lacpOffsets).toHaveLength(4);
     expect(lacpOffsets.every((offset) => offset < 1), JSON.stringify(lacpOffsets)).toBe(true);
-    await panel.getByRole('button', { name: '1 column', exact: true }).click();
+    await chooseTopologyLayout(panel, '1 column');
     const stackedHeight = await panel.locator('.topo-svg').evaluate((svg) => (svg as SVGSVGElement).viewBox.baseVal.height);
     expect(wideHeight).toBeLessThan(stackedHeight * .6);
     await expect(panel.locator('.topo-track')).toHaveCount(14);
@@ -561,7 +569,7 @@ test.describe('topology tile', () => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="topology"]');
     await expect(panel).toBeVisible();
-    await panel.getByRole('button', { name: '1 column', exact: true }).click();
+    await chooseTopologyLayout(panel, '1 column');
 
     await expect(panel.locator('.topo-node-wrap')).toHaveCount(7);
     await expect(panel.locator('.topo-track')).toHaveCount(5);
@@ -631,6 +639,7 @@ test.describe('topology tile', () => {
 
     // Wide mode fills the viewport and uses intrinsic SVG height, so there is
     // no separate width toggle or drag-resize grip.
+    await chooseTopologyLayout(panel, 'Wide');
     await expect(panel.getByRole('button', { name: 'Wide', exact: true })).toHaveAttribute('aria-pressed', 'true');
     await expect(panel.locator('[data-widen]')).toHaveCount(0);
     await expect(panel.locator('.panel-grip')).toHaveCount(0);

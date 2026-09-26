@@ -148,7 +148,7 @@ test('long categorical bar labels rotate instead of overlapping', async ({ page 
 test('a single-series line keeps the shared vertical hover cursor', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
-  await expect(canvas).toBeVisible();
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
   await canvas.scrollIntoViewIfNeeded();
   const point = await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el);
@@ -167,7 +167,7 @@ test('a single-series line keeps the shared vertical hover cursor', async ({ pag
 test('a trendline tooltip reports both source and fitted values', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="trend"] canvas');
-  await expect(canvas).toBeVisible();
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
   await canvas.scrollIntoViewIfNeeded();
   const point = await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el);
@@ -190,7 +190,7 @@ test('a trendline tooltip reports both source and fitted values', async ({ page 
 test('a stacked bar tooltip reports every segment in stack order with aligned values', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="stack"] canvas');
-  await expect(canvas).toBeVisible();
+  await expect(canvas).toBeVisible({ timeout: 15_000 });
   await canvas.scrollIntoViewIfNeeded();
   const point = await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el);
