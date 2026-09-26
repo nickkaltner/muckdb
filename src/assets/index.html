@@ -83,11 +83,15 @@
   .pick-row { display: flex; align-items: baseline; gap: 9px; padding: 6px 9px; border-left: 2px solid transparent; border-radius: 0 4px 4px 0; cursor: pointer; font-size: 13px; }
   .pick-row:hover { background: var(--raised); }
   .pick-row.sel { background: var(--raised); border-left-color: var(--primary); }
+  .pick-separator { margin:5px 8px 3px;padding:7px 2px 3px;border-top:1px solid var(--line);color:var(--faint);font-size:9px;letter-spacing:.13em;text-transform:uppercase;list-style:none; }
   .pick-hint { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--primary-dim); min-width: 44px; }
   .pick-label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick-sub { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
   .pick-empty { padding: 12px; color: var(--muted); font-size: 12px; }
   .pick-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
+  .pick-action { display:flex;align-items:center;gap:8px;width:100%;padding:9px 13px;border:0;border-top:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:11px;text-align:left;cursor:pointer; }
+  .pick-action:hover { color:var(--primary);background:var(--raised); }
+  .pick-action span { margin-left:auto;color:var(--faint);font-size:9px; }
   .pick-sw { display: inline-flex; gap: 3px; flex: none; padding: 3px; border-radius: 5px; box-shadow: inset 0 0 0 1px rgba(128,128,128,0.25); }
   .pick-sw i { width: 11px; height: 11px; border-radius: 3px; display: inline-block; }
 
@@ -122,6 +126,125 @@
   /* `display: flex` above would defeat the hidden attribute (author styles
      outrank the UA's [hidden] rule) — restate it explicitly. */
   .credits-overlay[hidden] { display: none; }
+  /* Theme workbench: laid out like a small color-grading console. */
+  .theme-workbench { position: fixed; inset: auto; top:-12.5vh; left:-12.5vw; width:125vw; height:125vh; zoom:.8; z-index: 190; display: grid; place-items: center; padding: 3vh 3vw; background: rgba(4,7,9,.78); backdrop-filter: blur(12px); }
+  .theme-workbench[hidden] { display: none; }
+  .tw-frame { width: min(1360px, 96vw); height: min(1000px, 98vh); display: grid; grid-template-rows: auto 1fr auto; overflow: hidden; border: 1px solid color-mix(in srgb,var(--primary) 42%,var(--line)); border-radius: 12px; background: var(--bg); box-shadow: 0 30px 100px #000a, 0 0 80px color-mix(in srgb,var(--primary) 10%,transparent); }
+  .tw-head,.tw-foot { display:flex; align-items:center; gap:14px; padding:13px 18px; border-bottom:1px solid var(--line); background:var(--surface); }
+  .tw-head .tw-title { font: 600 17px/1.2 var(--sans); letter-spacing:-.03em; }
+  .tw-eyebrow { color:var(--primary); font-size:9px; letter-spacing:.18em; text-transform:uppercase; }
+  .tw-head .tw-eyebrow { margin-right:3px; }
+  .beta-badge { display:inline-flex;align-items:center;gap:5px;flex:none;padding:3px 7px;border:1px solid color-mix(in srgb,var(--primary) 52%,var(--line));border-radius:999px;background:linear-gradient(115deg,color-mix(in srgb,var(--primary) 17%,var(--surface)),color-mix(in srgb,var(--highlight) 9%,var(--surface)));color:var(--primary);font:700 9px/1 var(--mono);letter-spacing:.11em;text-transform:uppercase;box-shadow:inset 0 1px 0 color-mix(in srgb,var(--fg) 11%,transparent),0 0 13px color-mix(in srgb,var(--primary) 14%,transparent); }
+  .beta-badge::before { content:"✦";font-size:9px;line-height:1; }
+  .pick-action .beta-badge { margin-left:0;color:var(--primary); }
+  .tw-close { margin-left:auto; }
+  .tw-body { min-height:0; display:grid; grid-template-columns:210px minmax(300px,1fr) 276px; }
+  .tw-slots { padding:18px 12px; border-right:1px solid var(--line); background:color-mix(in srgb,var(--surface) 65%,var(--bg)); }
+  .tw-section-label { margin:0 8px 12px; color:var(--faint); font-size:9px; letter-spacing:.16em; text-transform:uppercase; }
+  .tw-slot { width:100%; display:flex; align-items:center; gap:10px; padding:10px; margin:4px 0; text-align:left; color:var(--muted); background:transparent; border:1px solid transparent; border-radius:7px; font:inherit; cursor:pointer; }
+  .tw-slot:hover { background:var(--raised); color:var(--fg); }
+  .tw-slot.active { background:color-mix(in srgb,var(--primary) 9%,var(--surface)); color:var(--fg); border-color:color-mix(in srgb,var(--primary) 55%,var(--line)); }
+  .tw-swatch { width:34px;height:28px;flex:none;border-radius:4px;border:1px solid #ffffff35;box-shadow:inset 0 0 0 1px #0002; }
+  .tw-slot-name { display:block; font-size:11px; color:var(--fg); }
+  .tw-slot-sub { display:block; color:var(--faint); font-size:9px; }
+  .tw-preview { min-width:0; overflow:auto; padding:18px clamp(18px,4vw,48px); background-image:linear-gradient(var(--line-soft) 1px,transparent 1px),linear-gradient(90deg,var(--line-soft) 1px,transparent 1px); background-size:28px 28px; }
+  .tw-preview-label { display:flex; justify-content:space-between; align-items:center; margin:0 0 14px; color:var(--faint); font-size:9px; letter-spacing:.15em; text-transform:uppercase; }
+  .tw-live { border:1px solid var(--line); border-radius:9px; overflow:hidden; background:var(--bg); box-shadow:0 18px 40px #0003; }
+  .tw-live-head { display:flex;align-items:center;gap:8px;padding:10px 13px;border-bottom:1px solid var(--line);background:var(--surface);font-size:10px; }
+  .tw-live-dot { width:7px;height:7px;border-radius:50%;background:var(--ok);box-shadow:0 0 12px var(--ok); }
+  .tw-live-brand { color:var(--fg);font-weight:700; }.tw-live-brand i{color:var(--primary);font-style:normal}
+  .tw-live-chip { margin-left:auto;padding:3px 7px;border:1px solid var(--line);border-radius:4px;color:var(--muted);font-size:8px; }
+  .tw-live-action { padding:4px 8px;border:1px solid var(--primary-deep);border-radius:4px;background:var(--grad-accent);color:var(--on-accent);font-size:8px;font-weight:700;white-space:nowrap; }
+  .tw-live-content { padding:18px; }
+  .tw-live-kicker { color:var(--primary);font-size:8px;letter-spacing:.16em;text-transform:uppercase; }
+  .tw-live h3 { margin:4px 0 2px;color:var(--fg);font:600 21px/1.15 var(--sans);letter-spacing:-.04em; }
+  .tw-live-desc { margin:0 0 15px;color:var(--muted);font:11px var(--sans); }
+  .tw-metric-row { display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin-bottom:10px; }
+  .tw-metric,.tw-chart { padding:10px;border:1px solid var(--line);border-radius:6px;background:var(--surface); }
+  .tw-metric { background:var(--raised); }
+  .tw-metric span { display:block;color:var(--faint);font-size:8px;text-transform:uppercase;letter-spacing:.08em; }
+  .tw-metric strong { display:block;margin-top:4px;color:var(--fg);font:600 17px var(--sans); }.tw-metric em{color:var(--ok);font-size:9px;font-style:normal;}
+  .tw-chart-head {display:flex;justify-content:space-between;color:var(--muted);font-size:9px;}
+  .tw-chart svg { display:block;width:100%;height:88px;margin-top:6px;overflow:visible; }
+  .tw-series { display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:10px; }
+  .tw-series span { display:grid;place-items:center;height:18px;border-radius:3px;background:var(--series-color);border:1px solid color-mix(in srgb,var(--fg) 12%,transparent);color:var(--bg);font-size:9px;font-weight:700;text-shadow:0 1px 2px #0008; }
+  .tw-series span.warn { outline:2px solid var(--fail);outline-offset:2px; }
+  .tw-role-map { margin-top:8px;padding:10px 12px;border:1px solid var(--line);border-radius:7px;background:var(--surface); }
+  .tw-role-title { margin-bottom:8px;color:var(--fg);font-size:10px;font-weight:700; }
+  .tw-role-grid { display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px 10px; }
+  .tw-role { display:flex;align-items:center;gap:5px;min-width:0;color:var(--muted);font-size:9px;white-space:nowrap; }
+  .tw-role-swatch { width:12px;height:12px;flex:none;border:1px solid var(--line);border-radius:3px;background:var(--role-color); }
+  @media(max-width:1100px){.tw-role-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media(max-width:650px){.tw-role-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  .tw-health { margin-top:8px;padding:12px 14px;border:1px solid var(--line);border-radius:7px;background:var(--surface); }
+  .tw-health-head { display:flex;justify-content:space-between;gap:10px;margin-bottom:9px;color:var(--fg);font-size:10px; }
+  .tw-health-head span { color:var(--faint);font-size:9px; }
+  .tw-health-grid { display:grid;grid-template-columns:repeat(5,1fr);gap:7px; }
+  .tw-health-item { padding:7px 8px;border:1px solid var(--line);border-radius:4px;background:var(--bg); }
+  .tw-health-item span { display:block;color:var(--muted);font-size:9px;white-space:nowrap; }
+  .tw-health-item strong { display:block;margin-top:2px;font-size:11px;color:var(--ok); }
+  .tw-health-item.warn strong { color:var(--fail); }
+  .tw-health-issues { margin-top:9px;color:var(--fail);font-size:10px;line-height:1.4; }
+  .tw-health-issues:empty { display:none; }
+  .tw-examples { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px; }
+  .tw-example { min-width:0;padding:11px 13px;border:1px solid var(--line);border-radius:7px;background:var(--surface); }
+  .tw-example-head { display:flex;align-items:baseline;justify-content:space-between;gap:8px;margin-bottom:10px; }
+  .tw-example-head strong { color:var(--fg);font-size:10px; }.tw-example-head span{color:var(--faint);font-size:9px;}
+  .tw-stack-row { display:flex;align-items:center;gap:8px;margin:6px 0;color:var(--muted);font-size:9px; }
+  .tw-stack-row>span { width:42px;flex:none; }.tw-stack { display:flex;height:12px;flex:1;overflow:hidden;border-radius:3px;background:var(--raised); }
+  .tw-stack i { display:block;height:100%;background:var(--series-color); }
+  .tw-mini-table { width:100%;border-collapse:collapse;text-align:left;font-size:9px; }
+  .tw-mini-table th { padding:0 4px 5px;color:var(--faint);font-weight:400; }.tw-mini-table td{padding:5px 4px;border-top:1px solid var(--line-soft);color:var(--muted);}
+  .tw-mini-table .tw-link { color:var(--primary); }.tw-mini-table b{color:var(--fg);font-weight:500;}.tw-mini-table em{color:var(--ok);font-style:normal;}.tw-mini-table em.alert{color:var(--fail);}
+  @media(max-width:650px){.tw-health-grid{grid-template-columns:repeat(2,1fr)}}
+  @media(max-width:650px){.tw-examples{grid-template-columns:1fr}}
+  .tw-controls { overflow:auto;padding:18px 16px;border-left:1px solid var(--line);background:var(--surface); }
+  .tw-name { width:100%;margin-bottom:17px;padding:8px 9px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:5px;font:12px var(--sans); }
+  .tw-name-label { display:block;margin-bottom:5px;color:var(--fg);font-size:10px;font-weight:700; }
+  .tw-color {display:grid;grid-template-columns:1fr auto;align-items:center;gap:6px;padding:8px 0;border-bottom:1px solid var(--line-soft);}
+  .tw-color label {color:var(--fg);font-size:10px;}.tw-color small{display:block;color:var(--faint);font-size:8px;}
+  .tw-color input {width:38px;height:29px;padding:2px;border:1px solid var(--line);border-radius:5px;background:var(--bg);cursor:pointer;}
+  .tw-palette {display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin-top:8px;}
+  .tw-palette label{display:grid;gap:3px;color:var(--muted);font-size:9px;text-align:center;}
+  .tw-palette input{width:100%;height:28px;padding:2px;border:1px solid var(--line);border-radius:4px;background:var(--bg);cursor:pointer;}
+  .tw-palette label.warn{color:var(--fail);}
+  .tw-palette label.warn input{border:2px solid var(--fail);box-shadow:0 0 0 2px color-mix(in srgb,var(--fail) 25%,transparent);}
+  .tw-advanced { margin-top:20px;border-top:1px solid var(--line);padding-top:12px; }
+  .tw-advanced summary { color:var(--fg);font-size:11px;font-weight:700;cursor:pointer; }
+  .tw-advanced h4 { margin:18px 0 7px;color:var(--primary);font-size:9px;letter-spacing:.12em;text-transform:uppercase; }
+  .tw-setting { display:grid;grid-template-columns:1fr auto;align-items:center;gap:8px;padding:7px 0;border-bottom:1px solid var(--line-soft);color:var(--fg);font-size:10px; }
+  .tw-setting small { display:block;color:var(--faint);font-size:8px;line-height:1.4; }
+  .tw-setting input[type="range"] { width:90px;accent-color:var(--primary); }
+  .tw-setting input[type="checkbox"] { accent-color:var(--primary); }
+  .tw-setting select { max-width:104px;padding:4px;color:var(--fg);background:var(--bg);border:1px solid var(--line);border-radius:4px;font:9px var(--mono); }
+  .tw-setting-value { min-width:32px;text-align:right;color:var(--muted);font-size:9px; }
+  .tw-stop-row { display:grid;grid-template-columns:1fr 42px 20px;align-items:center;gap:5px;margin:5px 0;color:var(--muted);font-size:9px; }
+  .tw-stop-row input { width:42px;height:28px;padding:2px;border:1px solid var(--line);border-radius:4px;background:var(--bg); }
+  .tw-stop-row button { border:0;background:none;color:var(--muted);cursor:pointer; }
+  .tw-add-stop { width:100%;margin-top:5px;padding:5px;border:1px dashed var(--line);border-radius:4px;background:none;color:var(--primary);font:9px var(--mono);cursor:pointer; }
+  .tw-details-preview { display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:8px;padding:8px;border-radius:7px;background:var(--glow),var(--bg); }
+  .tw-detail-tile { min-width:0;padding:10px 13px;border:1px solid var(--line);border-radius:7px;background:var(--grad-panel),var(--surface);box-shadow:var(--hi); }
+  .tw-detail-tile strong { display:block;margin-bottom:8px;color:var(--fg);font-size:10px; }
+  .tw-marker-line { height:12px;margin:6px 0;border-top:2px dashed var(--marker-color);color:var(--muted);font-size:9px; }
+  .tw-detail-bars { display:flex;align-items:end;gap:6px;height:47px;margin:8px 0; }
+  .tw-detail-bars i { display:block;width:24px;height:var(--bar-height);border-radius:var(--bar-radius) var(--bar-radius) 0 0;background:var(--bar-gradient); }
+  .tw-grad-ramp { height:8px;border-radius:3px;background:var(--area-gradient); }
+  .tw-detail-caption { color:var(--faint);font-size:9px; }
+  .tw-map-demo { position:relative;height:58px;overflow:hidden;border-radius:5px;background:var(--bg); }
+  .tw-map-demo svg { width:100%;height:100%; }
+  .tw-map-demo .land { fill:var(--muted);stroke:none;opacity:var(--land-opacity); }
+  .tw-map-demo .sea { stroke:var(--muted);stroke-width:1;opacity:var(--sea-opacity); }
+  .tw-map-demo path { fill:none;stroke:var(--primary);stroke-width:2;opacity:var(--arc-opacity); }
+  .tw-map-demo circle { fill:var(--anno-event); }
+  .tw-map-label { position:absolute;left:45%;top:5px;padding:2px 5px;border-radius:4px;background:var(--label-fill);color:var(--fg);font-size:9px;opacity:var(--label-opacity); }
+  @media(max-width:650px){.tw-details-preview{grid-template-columns:1fr}}
+  .tw-foot { border-top:1px solid var(--line);border-bottom:0;justify-content:flex-end; }
+  .tw-status { margin-right:auto;color:var(--faint);font-size:9px; }
+  .tw-action {padding:7px 12px;border:1px solid var(--line);border-radius:5px;background:var(--raised);color:var(--fg);font:10px var(--mono);cursor:pointer;}
+  .tw-action:hover {border-color:var(--primary);color:var(--primary);}.tw-action.primary{background:var(--grad-accent);color:var(--on-accent);border-color:transparent;font-weight:700;}
+  .tw-action:disabled { opacity:.4;cursor:not-allowed;filter:grayscale(.7); }
+  @media(max-width:850px){.tw-body{grid-template-columns:145px 1fr;grid-template-rows:minmax(260px,1fr) auto}.tw-slots{grid-row:1/3}.tw-controls{grid-column:2;display:grid;grid-template-columns:1fr 1fr;gap:0 16px;border-left:0;border-top:1px solid var(--line)}.tw-controls .tw-section-label,.tw-controls .tw-name{grid-column:1/-1}.tw-preview{padding:18px}.tw-frame{height:96vh}}
+  @media(max-width:560px){.theme-workbench{padding:0}.tw-frame{width:100vw;height:100vh;border-radius:0}.tw-body{grid-template-columns:1fr;grid-template-rows:auto minmax(250px,1fr) auto}.tw-slots{grid-row:auto;display:flex;gap:4px;padding:8px;overflow:auto;border-right:0;border-bottom:1px solid var(--line)}.tw-section-label{display:none}.tw-slot{width:auto;min-width:104px;margin:0;padding:6px}.tw-swatch{width:25px;height:22px}.tw-preview{grid-row:2;padding:14px}.tw-controls{grid-column:1;grid-template-columns:1fr 1fr;padding:10px 16px}.tw-foot{padding:10px}.tw-status{display:none}}
   /* Authored Mermaid workspace: source is the instrument panel, preview is the
      output. The split collapses vertically on narrow screens. */
   .mermaid-editor-overlay { position: fixed; inset: 0; z-index: 180; padding: 4vh 3vw; background: rgba(0,0,0,.7); display: flex; align-items: stretch; justify-content: center; }
@@ -1597,12 +1720,66 @@
     "on-accent", "mist", "primary", "highlight", "primary-deep", "primary-dim", "ok", "fail", "glow", "grad-panel", "hi",
     "selection", "anno-target", "anno-threshold", "anno-event", "sequence-number", "seq-glyph", "seq-glyph-width",
     "tl-marker-color", "tl-marker-width", "tl-marker-dash", "tl-marker-opacity"];
+  const THEME_SLOT_KEY = "muckdb.theme-slots";
+  const THEME_SLOT_DEFAULTS = [
+    { label: "Tidal glass", vars: { bg:"#09161a",surface:"#102329",raised:"#173039",line:"#28505a","line-soft":"#1b3740",fg:"#e6f5f2",muted:"#9abbb9",faint:"#688d8e","on-accent":"#071316",primary:"#52dfc0",highlight:"#a0f4d9","primary-deep":"#168d83","primary-dim":"#297f78",ok:"#a6e77b",fail:"#ff7b76" }, chart:["#52dfc0","#9c8cff","#f5c969","#ff897c","#62b9ed","#c6e875","#ea91cb","#8ad2bc"] },
+    { label: "Afterglow", vars: { bg:"#171019",surface:"#211623",raised:"#2b1c2e",line:"#50354f","line-soft":"#36253a",fg:"#f8eaf4",muted:"#c3a9be",faint:"#8f718d","on-accent":"#1a1020",primary:"#ff8eae",highlight:"#ffc0cd","primary-deep":"#d15185","primary-dim":"#a84873",ok:"#a8e3a1",fail:"#ff7068" }, chart:["#ff8eae","#a98aff","#f8c66e","#6fdae0","#f17572","#c5e985","#f0a1d9","#87b6ff"] },
+    { label: "Field notes", light:true, vars: { bg:"#ebe5d5",surface:"#f5f0e4",raised:"#fffaf0",line:"#c7b99d","line-soft":"#ddd3be",fg:"#29352f",muted:"#5c6c60",faint:"#879181","on-accent":"#fffaf0",primary:"#b04a2f",highlight:"#b95335","primary-deep":"#78371f","primary-dim":"#905038",ok:"#4d844c",fail:"#b13e39" }, chart:["#b04a2f","#31786d","#a36f19","#665c9b","#aa4d50","#628b42","#3d7792","#8a526d"] },
+  ];
+  function themeSlotWithDefaults(slot,i) {
+    const base=THEME_SLOT_DEFAULTS[i], vars={...base.vars,...(slot.vars||{})};
+    const chart=Array.isArray(slot.chart)&&slot.chart.length>=8?slot.chart.slice(0,8):base.chart.slice();
+    const light=slot.light==null?!!base.light:!!slot.light;
+    Object.assign(vars,{
+      mist:vars.mist||vars.muted,
+      "anno-target":vars["anno-target"]||chart[1],
+      "anno-threshold":vars["anno-threshold"]||vars.fail,
+      "anno-event":vars["anno-event"]||chart[2],
+      "sequence-number":vars["sequence-number"]||vars.primary,
+      "seq-glyph":vars["seq-glyph"]||vars.muted,
+      "tl-marker-color":vars["tl-marker-color"]||vars["anno-event"],
+      "tl-marker-width":vars["tl-marker-width"]||"1.2",
+      "tl-marker-dash":vars["tl-marker-dash"]||"4 3",
+      "tl-marker-opacity":vars["tl-marker-opacity"]||"0.85",
+      glow:vars.glow||"radial-gradient(1000px 460px at 80% -14%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 70%)",
+      "grad-panel":vars["grad-panel"]||"linear-gradient(180deg, color-mix(in srgb, var(--highlight) 5%, transparent), transparent 58%)",
+      hi:vars.hi||"inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent)",
+      selection:vars.selection||"color-mix(in srgb, var(--primary) 26%, transparent)",
+    });
+    return {
+      ...base,...slot,vars,chart,light,
+      grad2:Array.isArray(slot.grad2)?slot.grad2.slice(0,2):chart.slice(0,2),
+      bargrad:Array.isArray(slot.bargrad)?slot.bargrad.slice():chart.slice(0,2),
+      barRadius:slot.barRadius??0,catN:Math.min(8,slot.catN??4),
+      arcOpacity:slot.arcOpacity??(light?.4:.22),arcGap:slot.arcGap??1,
+      roundLinks:slot.roundLinks!==false,labelBg:slot.labelBg||"var(--surface)",
+      labelBgAlpha:slot.labelBgAlpha??(light?.85:.55),depOpacity:slot.depOpacity??(light?.6:.5),
+      seaStatic:slot.seaStatic??(light?.1:.08),landOpacity:slot.landOpacity??(light?.22:.12),
+      ambientGlow:slot.ambientGlow??(slot.vars?.glow!=="none"),
+      panelSheen:slot.panelSheen??(slot.vars?.["grad-panel"]!=="none"),
+      edgeSheen:slot.edgeSheen??(slot.vars?.hi!=="none"),
+    };
+  }
+  function readThemeSlots() {
+    try { const saved = JSON.parse(localStorage.getItem(THEME_SLOT_KEY) || "null");
+      if (Array.isArray(saved) && saved.length === 3) return saved.map((s,i) => themeSlotWithDefaults(s,i));
+    } catch (_) {}
+    return THEME_SLOT_DEFAULTS.map((s,i) => themeSlotWithDefaults(structuredClone(s),i));
+  }
+  let themeSlots = readThemeSlots();
+  function installThemeSlots() {
+    themeSlots.forEach((t,i) => { const id = `custom-${i+1}`; THEMES[id] = { ...t, slot:i+1,cat:t.chart.slice() }; });
+  }
+  installThemeSlots();
   function applyTheme(name) {
     const t = THEMES[name] || THEMES.hearth;
     state.theme = THEMES[name] ? name : "hearth";
     const root = document.documentElement.style;
     THEME_VARS.forEach((k) => root.removeProperty("--" + k));
     for (const k in t.vars) root.setProperty("--" + k, t.vars[k]);
+    if(t.ambientGlow===false)root.setProperty("--glow","none");
+    if(t.panelSheen===false)root.setProperty("--grad-panel","none");
+    if(t.edgeSheen===false)root.setProperty("--hi","none");
     PAL = t.chart.slice();
     GRAD2 = (t.grad2 || [t.chart[0], t.chart[1]]).slice();
     BARGRAD = (t.bargrad || t.grad2 || [t.chart[0], t.chart[1]]).slice();
@@ -3328,7 +3505,7 @@
     const layer = document.createElement("div");
     layer.className = opts.anchor ? "pick-pop" : "pick-overlay";
     const foot = opts.foot ? `<div class="pick-foot">${esc(opts.foot)}</div>` : "";
-    layer.innerHTML = `<div class="pick-box"><div class="pick-search"><span class="pick-prompt">❯</span><input class="pick-input" type="text" placeholder="${attr(opts.placeholder || "filter…")}" /></div><ul class="pick-list"></ul>${foot}</div>`;
+    layer.innerHTML = `<div class="pick-box"><div class="pick-search"><span class="pick-prompt">❯</span><input class="pick-input" type="text" placeholder="${attr(opts.placeholder || "filter…")}" /></div><ul class="pick-list"></ul>${opts.action ? `<button class="pick-action" data-pick-action>${esc(opts.action.label)}${opts.action.beta?'<span class="beta-badge">beta</span>':""}<span>${esc(opts.action.hint || "")}</span></button>` : ""}${foot}</div>`;
     document.body.appendChild(layer);
     const box = layer.querySelector(".pick-box");
     if (opts.anchor) {
@@ -3348,25 +3525,33 @@
     const list = box.querySelector(".pick-list");
     let shown = opts.items.slice(), sel = Math.max(0, Math.min(opts.selectedIndex || 0, shown.length - 1));
     const draw = () => {
-      list.innerHTML = shown.length ? shown.map((it, i) =>
+      list.innerHTML = shown.length ? shown.map((it, i) => it.separator
+        ? `<li class="pick-separator">${esc(it.label)}</li>` :
         `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw"${it.swbg ? ` style="background:${esc(it.swbg)}"` : ""}>${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
         : '<li class="pick-empty">no matches</li>';
       const s = list.querySelector(".pick-row.sel"); if (s) s.scrollIntoView({ block: "nearest" });
     };
     const filter = () => {
       const q = input.value.trim().toLowerCase();
-      shown = q ? opts.items.filter((it) => (it.label + " " + (it.sub || "") + " " + (it.hint || "")).toLowerCase().includes(q)) : opts.items.slice();
+      shown = q ? opts.items.filter((it) => !it.separator && (it.label + " " + (it.sub || "") + " " + (it.hint || "")).toLowerCase().includes(q)) : opts.items.slice();
       sel = 0; draw();
     };
-    const choose = () => { const it = shown[sel]; if (it) { closePicker(); opts.onPick(it); } };
+    const choose = () => { const it = shown[sel]; if (it && !it.separator) { closePicker(); opts.onPick(it); } };
+    const moveSelection = (direction) => {
+      let next=sel;
+      do { next=Math.max(0,Math.min(next+direction,shown.length-1)); if(next===sel)break; } while(shown[next]?.separator);
+      sel=next;draw();
+    };
     input.addEventListener("input", filter);
     input.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowDown") { sel = Math.min(sel + 1, shown.length - 1); draw(); e.preventDefault(); }
-      else if (e.key === "ArrowUp") { sel = Math.max(sel - 1, 0); draw(); e.preventDefault(); }
+      if (e.key === "ArrowDown") { moveSelection(1); e.preventDefault(); }
+      else if (e.key === "ArrowUp") { moveSelection(-1); e.preventDefault(); }
       else if (e.key === "Enter") { choose(); e.preventDefault(); }
       else if (e.key === "Escape") { closePicker(); e.preventDefault(); }
     });
     list.addEventListener("mousedown", (e) => { const row = e.target.closest(".pick-row"); if (row) { sel = +row.dataset.i; choose(); } });
+    const actionButton = box.querySelector("[data-pick-action]");
+    if (actionButton) actionButton.addEventListener("click", () => { closePicker(); opts.action.go(); });
     layer.addEventListener("mousedown", (e) => { if (e.target === layer) closePicker(); });
     draw(); input.focus();
     currentPicker = layer;
@@ -3389,16 +3574,264 @@
       onPick: (it) => selectTable(it.name),
     });
   }
+  let themeEditor = null;
+  const THEME_EDIT_COLORS = [["bg","Canvas","Dashboard backdrop"],["surface","Panels","Charts and tables"],["raised","Metric cards","Small filled cards"],["fg","Text","Headings and values"],["muted","Secondary text","Descriptions and labels"],["primary","Signal accent","Links and first chart line"],["highlight","Button glow","Bright end of action gradient"],["line","Outlines","Tile edges and dividers"],["ok","Positive","Healthy readings"],["fail","Alert","Readings to review"]];
+  const THEME_EXTRA_COLORS = [["faint","Quiet text","Hints and metadata"],["line-soft","Fine dividers","Table row rules"],["mist","Soft text","Supporting chart labels"],["primary-deep","Deep accent","Button gradient end"],["primary-dim","Hover accent","Hover borders and hints"],["on-accent","Button text","Text over accent fills"],["anno-target","Target marker","Reference line"],["anno-threshold","Threshold marker","Warning line"],["anno-event","Event marker","Event on charts and maps"],["sequence-number","Sequence number","Message numbers"],["seq-glyph","Sequence glyph","Diagram symbols"],["tl-marker-color","Timeline marker","Time event line"]];
+  const THEME_HEX_KEYS=[...THEME_EDIT_COLORS,...THEME_EXTRA_COLORS].map(([key])=>key);
+  function themeColorControl([key,label,description],vars) {
+    return `<div class="tw-color"><label for="tw-${key}">${label}<small>${description}</small></label><input id="tw-${key}" data-tw-color="${key}" type="color" value="${/^#[0-9a-f]{6}$/i.test(vars[key]||"")?vars[key]:"#777777"}" aria-label="${label} color"></div>`;
+  }
+  function themeRange(key,label,description,value,min,max,step) {
+    return `<label class="tw-setting"><span>${label}<small>${description}</small></span><span><input data-tw-setting="${key}" type="range" min="${min}" max="${max}" step="${step}" value="${value}"><span class="tw-setting-value" data-tw-range-value="${key}">${value}</span></span></label>`;
+  }
+  function themeCheck(key,label,description,checked) {
+    return `<label class="tw-setting"><span>${label}<small>${description}</small></span><input data-tw-setting="${key}" type="checkbox" ${checked?"checked":""}></label>`;
+  }
+  function themeAdvancedControls(t) {
+    const stops=(key,colors)=>colors.map((color,i)=>`<div class="tw-stop-row"><span>${key==="grad2"?(i?"End":"Start"):`Stop ${i+1}`}</span><input data-tw-stop="${key}" data-tw-index="${i}" type="color" value="${color.split("@")[0]}" aria-label="${key} stop ${i+1}">${key==="bargrad"&&colors.length>2?`<button data-tw-remove-stop="${i}" title="Remove stop" aria-label="Remove gradient stop ${i+1}">×</button>`:"<span></span>"}</div>`).join("");
+    return `<details class="tw-advanced"><summary>Advanced settings</summary><h4>Supporting colors</h4>${THEME_EXTRA_COLORS.map((entry)=>themeColorControl(entry,t.vars)).join("")}
+      <h4>Chart fills &amp; shape</h4><div class="tw-detail-caption">Continuous fill · left to right</div>${stops("grad2",t.grad2)}<div class="tw-detail-caption">Bar fill · top to bottom</div>${stops("bargrad",t.bargrad)}<button class="tw-add-stop" data-tw="add-stop" ${t.bargrad.length>=5?"disabled":""}>+ Add bar color stop</button>
+      ${themeRange("barRadius","Bar corners","Top corner radius, px",t.barRadius,0,16,1)}${themeRange("catN","Curated categories","How many series use these exact colors",t.catN,1,8,1)}
+      <h4>Chart &amp; timeline markers</h4>${themeRange("tl-marker-width","Timeline width","Event marker stroke, px",t.vars["tl-marker-width"],0.5,4,0.1)}${themeRange("tl-marker-opacity","Timeline opacity","Event marker visibility",t.vars["tl-marker-opacity"],0.1,1,0.05)}<label class="tw-setting"><span>Timeline dash<small>Event marker pattern</small></span><select data-tw-setting="tl-marker-dash"><option value="4 3" ${t.vars["tl-marker-dash"]==="4 3"?"selected":""}>Dashed</option><option value="1 3" ${t.vars["tl-marker-dash"]==="1 3"?"selected":""}>Dotted</option><option value="8 4" ${t.vars["tl-marker-dash"]==="8 4"?"selected":""}>Long dash</option><option value="none" ${t.vars["tl-marker-dash"]==="none"?"selected":""}>Solid</option></select></label>
+      <h4>Map connections</h4>${themeCheck("roundLinks","Curved links","Use arcs instead of straight lines",t.roundLinks)}${themeRange("arcOpacity","Arc strength","Base opacity of map links",t.arcOpacity,0.05,0.9,0.01)}${themeRange("arcGap","Marker gap","Space between links and endpoints",t.arcGap,0.5,2,0.05)}<label class="tw-setting"><span>Label background<small>Fill behind connection names</small></span><select data-tw-setting="labelBg">${[["var(--surface)","Panel"],["var(--raised)","Metric card"],["var(--bg)","Canvas"]].map(([value,label])=>`<option value="${value}" ${t.labelBg===value?"selected":""}>${label}</option>`).join("")}</select></label>${themeRange("labelBgAlpha","Label opacity","Visibility of map label pills",t.labelBgAlpha,0.2,1,0.05)}${themeRange("depOpacity","Dependency opacity","Timeline connector visibility",t.depOpacity,0.1,1,0.05)}${themeRange("seaStatic","Sea texture","Map water texture strength",t.seaStatic,0,0.3,0.01)}${themeRange("landOpacity","Land contrast","Map coastline visibility",t.landOpacity,0,0.6,0.01)}
+      <h4>Surface effects</h4>${themeCheck("flat","Flat appearance","Remove ambient glow and button gradients",!!t.flat)}${themeCheck("ambientGlow","Ambient glow","Color halo when flat is off",t.ambientGlow)}${themeCheck("panelSheen","Panel sheen","Subtle gradient on panels",t.panelSheen)}${themeCheck("edgeSheen","Edge sheen","Fine highlight on raised surfaces",t.edgeSheen)}</details>`;
+  }
+  function themeRgb(hex) { return [1,3,5].map((i)=>parseInt(hex.slice(i,i+2),16)/255); }
+  function themeLinear(v) { return v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4; }
+  function themeGamma(v) { v=Math.max(0,Math.min(1,v));return v<=0.0031308?12.92*v:1.055*v**(1/2.4)-0.055; }
+  function themeLab(hex) {
+    const [r,g,b]=themeRgb(hex).map(themeLinear);
+    const l=Math.cbrt(.4122214708*r+.5363325363*g+.0514459929*b);
+    const m=Math.cbrt(.2119034982*r+.6806995451*g+.1073969566*b);
+    const s=Math.cbrt(.0883024619*r+.2817188376*g+.6299787005*b);
+    return [.2104542553*l+.793617785*m-.0040720468*s,1.9779984951*l-2.428592205*m+.4505937099*s,.0259040371*l+.7827717662*m-.808675766*s];
+  }
+  function themeHex(lab) {
+    const [L,a,b]=lab;
+    const l=(L+.3963377774*a+.2158037573*b)**3,m=(L-.1055613458*a-.0638541728*b)**3,s=(L-.0894841775*a-1.291485548*b)**3;
+    return "#"+[4.0767416621*l-3.3077115913*m+.2309699292*s,-1.2684380046*l+2.6097574011*m-.3413193965*s,-.0041960863*l-.7034186147*m+1.707614701*s]
+      .map((v)=>Math.round(themeGamma(v)*255).toString(16).padStart(2,"0")).join("");
+  }
+  function themeMix(a,b,amount) { const x=themeLab(a),y=themeLab(b);return themeHex(x.map((v,i)=>v*(1-amount)+y[i]*amount)); }
+  function themeLuminance(hex) { const [r,g,b]=themeRgb(hex).map(themeLinear);return .2126*r+.7152*g+.0722*b; }
+  function themeContrast(a,b) { const x=themeLuminance(a),y=themeLuminance(b);return (Math.max(x,y)+.05)/(Math.min(x,y)+.05); }
+  function themeTuneRelated(slot,key,oldValue) {
+    const v=slot.vars;
+    if(key==="bg")slot.light=themeLuminance(v.bg)>.5;
+    if(["bg","surface","raised","fg","muted"].includes(key)) {
+      v.line=themeMix(v.raised,v.fg,slot.light?.23:.16);
+      v["line-soft"]=themeMix(v.surface,v.fg,slot.light?.11:.08);
+      v.faint=themeMix(v.surface,v.muted,.58);
+      v.mist=themeMix(v.fg,v.muted,.5);
+    }
+    if(["bg","fg","primary"].includes(key)) {
+      v["on-accent"]=[v.bg,v.fg,"#080b10","#ffffff"].sort((a,b)=>themeContrast(b,v.primary)-themeContrast(a,v.primary))[0];
+    }
+    if(key==="primary") {
+      v.highlight=themeMix(v.primary,"#ffffff",slot.light?.17:.28);
+      v["primary-deep"]=themeMix(v.primary,"#000000",slot.light?.25:.32);
+      v["primary-dim"]=themeMix(v.primary,v.surface,.35);
+      v["sequence-number"]=v.primary;
+      v.selection="color-mix(in srgb, var(--primary) 26%, transparent)";
+      v.glow="radial-gradient(1000px 460px at 80% -14%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 70%)";
+      if(slot.chart[0]===oldValue)slot.chart[0]=v.primary;
+    }
+  }
+  function updateThemeHealth(layer,theme) {
+    const chartRatios=theme.chart.map((color)=>themeContrast(color,theme.vars.surface));
+    const weakSeries=chartRatios.flatMap((ratio,i)=>ratio<3?[{number:i+1,ratio}]:[]);
+    const checks=[
+      ["Body text",themeContrast(theme.vars.fg,theme.vars.surface),4.5],
+      ["Secondary",themeContrast(theme.vars.muted,theme.vars.surface),4.5],
+      ["Accent text",themeContrast(theme.vars.primary,theme.vars.surface),4.5],
+      ["Button text",Math.min(...["highlight","primary","primary-deep"].map((key)=>themeContrast(theme.vars["on-accent"],theme.vars[key]))),4.5],
+      [weakSeries.length?`Chart series ${weakSeries[0].number}`:"Chart marks",Math.min(...chartRatios),3],
+    ];
+    layer.querySelector("[data-tw-health]").innerHTML=checks.map(([label,ratio,minimum])=>`<div class="tw-health-item ${ratio<minimum?"warn":""}"><span>${label}</span><strong>${ratio.toFixed(1)}:1 ${ratio<minimum?"check":"good"}</strong></div>`).join("");
+    layer.querySelector("[data-tw-health-issues]").textContent=weakSeries.length?`Low contrast on chart series ${weakSeries.map(({number,ratio})=>`${number} (${ratio.toFixed(1)}:1)`).join(", ")}. Matching swatches are outlined in red.`:"";
+    layer.querySelectorAll("[data-tw-chart-preview], [data-tw-chart]").forEach((el)=>{
+      const number=Number(el.dataset.twChartPreview??el.dataset.twChart)+1;
+      const weak=chartRatios[number-1]<3;
+      (el.closest(".tw-palette label")||el).classList.toggle("warn",weak);
+      el.title=`Chart series ${number}: ${chartRatios[number-1].toFixed(1)}:1 contrast${weak?" — increase contrast":""}`;
+    });
+  }
+  function previewThemeSlot(layer,t) {
+    const root=document.documentElement.style;
+    THEME_VARS.forEach((key)=>root.removeProperty(`--${key}`));
+    Object.entries(t.vars).forEach(([key,value])=>root.setProperty(`--${key}`,value));
+    if(!t.ambientGlow)root.setProperty("--glow","none");
+    if(!t.panelSheen)root.setProperty("--grad-panel","none");
+    if(!t.edgeSheen)root.setProperty("--hi","none");
+    t.chart.forEach((color,i)=>root.setProperty(`--chart-${i+1}`,color));
+    root.setProperty("--wm-static-opacity","0");root.setProperty("--wm-land-opacity","0");
+    document.documentElement.classList.toggle("wm-light",!!t.light);
+    document.documentElement.classList.toggle("flat",!!t.flat);
+    layer.style.setProperty("--bar-gradient",`linear-gradient(180deg,${gradStops(t.bargrad).map(({col,pos})=>`${col} ${Math.round(pos*100)}%`).join(",")})`);
+    layer.style.setProperty("--area-gradient",`linear-gradient(90deg,${t.grad2.join(",")})`);
+    layer.style.setProperty("--bar-radius",`${t.barRadius}px`);
+    layer.style.setProperty("--arc-opacity",String(t.arcOpacity));
+    layer.style.setProperty("--label-fill",t.labelBg);
+    layer.style.setProperty("--label-opacity",String(t.labelBgAlpha));
+    layer.style.setProperty("--sea-opacity",String(t.seaStatic));
+    layer.style.setProperty("--land-opacity",String(t.landOpacity));
+    layer.querySelector("[data-tw-map-path]").setAttribute("d",t.roundLinks?`M${24+t.arcGap*7} 43 Q100 0 ${176-t.arcGap*7} 43`:`M${24+t.arcGap*7} 43 L${176-t.arcGap*7} 43`);
+    updateThemeHealth(layer,t);
+  }
+  function openThemeEditor() {
+    if (themeEditor) return;
+    const startTheme = state.theme, startSlots = JSON.stringify(themeSlots);
+    const requestedSlot=Number(new URLSearchParams(location.search).get("theme-slot"));
+    const activeSlot=Number(state.theme.match(/^custom-([1-3])$/)?.[1]);
+    let slotIndex = Number.isInteger(requestedSlot)&&requestedSlot>=1&&requestedSlot<=3?requestedSlot-1:(activeSlot?activeSlot-1:0);
+    const layer = document.createElement("div"); layer.className="theme-workbench"; layer.setAttribute("role","dialog"); layer.setAttribute("aria-modal","true"); layer.setAttribute("aria-label","Theme editor");
+    layer.innerHTML = `<div class="tw-frame"><header class="tw-head"><span class="tw-eyebrow">appearance / workbench</span><strong class="tw-title">Tune your palette</strong><span class="beta-badge">beta</span><button class="tw-action tw-close" data-tw="close" aria-label="Close theme editor">esc&nbsp; ×</button></header><div class="tw-body"><aside class="tw-slots"><p class="tw-section-label">Your three palettes</p><div data-tw-slots></div><p style="margin:16px 8px 0;color:var(--faint);font-size:9px;line-height:1.6">Saved in this browser. Built-in themes stay available from the picker.</p></aside><section class="tw-preview"><div class="tw-preview-label"><span>Live preview</span><span>console / sessions</span></div><div class="tw-live"><div class="tw-live-head"><span class="tw-live-dot"></span><span class="tw-live-brand">muck<i>db</i></span><span>live console</span><span class="tw-live-chip">sessions</span><span class="tw-live-chip" style="color:var(--primary)">● connected</span></div><div class="tw-live-content"><div class="tw-live-kicker">pond survey / overview</div><h3>Water quality, this week</h3><p class="tw-live-desc">A small dashboard preview to check contrast and chart color.</p><div class="tw-metric-row"><div class="tw-metric"><span>Readings</span><strong>2,481</strong><em>↗ 8.2%</em></div><div class="tw-metric"><span>Median pH</span><strong>7.34</strong><em>stable</em></div><div class="tw-metric"><span>Sites</span><strong>18</strong><em>● all reporting</em></div></div><div class="tw-chart"><div class="tw-chart-head"><span>Daily dissolved oxygen</span><span>mg/L</span></div><svg viewBox="0 0 560 110" preserveAspectRatio="none" aria-label="Example line chart"><path d="M0 88 C45 81 46 53 95 61 S145 83 190 55 S245 62 280 37 S330 47 376 32 S430 54 470 22 S522 36 560 8" fill="none" stroke="var(--primary)" stroke-width="3"/><path d="M0 88 C45 81 46 53 95 61 S145 83 190 55 S245 62 280 37 S330 47 376 32 S430 54 470 22 S522 36 560 8 L560 110 L0 110Z" fill="var(--primary)" opacity=".12"/><path d="M0 94H560 M0 62H560 M0 30H560" stroke="var(--line)" stroke-dasharray="3 5"/><g fill="none" stroke-width="2"><path d="M10 102l16-5" stroke="var(--chart-1)"/><path d="M32 102l16-5" stroke="var(--chart-2)"/><path d="M54 102l16-5" stroke="var(--chart-3)"/><path d="M76 102l16-5" stroke="var(--chart-4)"/></g></svg></div></div></div></section><aside class="tw-controls" data-tw-controls></aside></div><footer class="tw-foot"><span class="tw-status" data-tw-status>Previewing changes · not saved</span><input data-tw-file type="file" accept="application/json,.json" hidden><button class="tw-action" data-tw="copy">Copy existing theme</button><button class="tw-action" data-tw="export">Export JSON</button><button class="tw-action" data-tw="import">Import JSON</button><button class="tw-action" data-tw="reset">Reset slot</button><button class="tw-action primary" data-tw="save" disabled>Save &amp; apply</button></footer></div>`;
+    layer.querySelector(".tw-chart svg").insertAdjacentHTML("beforeend",'<path d="M0 68 C42 64 55 83 94 75 S147 48 190 69 S236 81 280 68 S328 88 376 62 S426 70 470 55 S522 74 560 49" fill="none" stroke="var(--chart-2)" stroke-width="2" stroke-dasharray="5 4"/>');
+    layer.querySelector(".tw-live-content").insertAdjacentHTML("beforeend",`<div class="tw-series" aria-label="Eight chart series colours">${Array.from({length:8},(_,i)=>`<span data-tw-chart-preview="${i}" title="Chart series ${i+1}" style="--series-color:var(--chart-${i+1})">${i+1}</span>`).join("")}</div>`);
+    layer.querySelector(".tw-live-head").insertAdjacentHTML("beforeend",'<span class="tw-live-action" title="Button glow: the bright end of the action gradient">Apply theme</span>');
+    layer.querySelector(".tw-live").insertAdjacentHTML("afterend",`<div class="tw-role-map"><div class="tw-role-title">Where your colors appear</div><div class="tw-role-grid">${THEME_EDIT_COLORS.map(([key,label])=>`<div class="tw-role"><span class="tw-role-swatch" style="--role-color:var(--${key})"></span><span>${label}</span></div>`).join("")}</div></div>`);
+    layer.querySelector(".tw-preview").insertAdjacentHTML("beforeend",`<div class="tw-examples"><div class="tw-example"><div class="tw-example-head"><strong>Habitat mix</strong><span>stacked bars</span></div>${[["North",[43,27,18,12]],["East",[22,31,29,18]],["South",[33,17,22,28]]].map(([name,parts])=>`<div class="tw-stack-row"><span>${name}</span><div class="tw-stack">${parts.map((width,i)=>`<i style="width:${width}%;--series-color:var(--chart-${i+1})"></i>`).join("")}</div></div>`).join("")}</div><div class="tw-example"><div class="tw-example-head"><strong>Latest readings</strong><span>table &amp; states</span></div><table class="tw-mini-table"><thead><tr><th>Site</th><th>pH</th><th>Status</th></tr></thead><tbody><tr><td><span class="tw-link">North inlet</span></td><td><b>7.34</b></td><td><em>normal</em></td></tr><tr><td><span class="tw-link">East bank</span></td><td><b>6.82</b></td><td><em>normal</em></td></tr><tr><td><span class="tw-link">South pond</span></td><td><b>5.91</b></td><td><em class="alert">review</em></td></tr></tbody></table></div></div><div class="tw-health"><div class="tw-health-head"><strong>Readability</strong><span>4.5:1 text · 3:1 chart marks</span></div><div class="tw-health-grid" data-tw-health></div><div class="tw-health-issues" data-tw-health-issues></div></div>`);
+    layer.querySelector(".tw-role-map").insertAdjacentHTML("beforeend",`<div class="tw-role-title" style="margin-top:11px">Detail colors</div><div class="tw-role-grid">${THEME_EXTRA_COLORS.map(([key,label])=>`<div class="tw-role"><span class="tw-role-swatch" style="--role-color:var(--${key})"></span><span>${label}</span></div>`).join("")}</div>`);
+    layer.querySelector(".tw-health").insertAdjacentHTML("afterend",`<div class="tw-details-preview"><div class="tw-detail-tile"><strong>Chart styling</strong><div class="tw-grad-ramp" title="Continuous chart gradient"></div><div class="tw-detail-bars"><i style="--bar-height:25px"></i><i style="--bar-height:40px"></i><i style="--bar-height:32px"></i><i style="--bar-height:46px"></i></div><div class="tw-marker-line" style="--marker-color:var(--anno-target)">Target marker</div><div class="tw-marker-line" style="--marker-color:var(--anno-threshold)">Threshold marker</div><div class="tw-marker-line" style="--marker-color:var(--tl-marker-color)">Timeline event</div></div><div class="tw-detail-tile"><strong>Map &amp; sequence</strong><div class="tw-map-demo"><svg viewBox="0 0 200 58" preserveAspectRatio="none" aria-label="Example map connection"><path class="land" d="M0 0H78L63 20 82 35 42 58H0Z M131 0H200V58H151L167 38 143 15Z"/><path class="sea" d="M78 3l80 52 M90 0l80 58 M106 0l80 58"/><path data-tw-map-path d="M31 43 Q100 0 169 43"/><circle cx="24" cy="43" r="4"/><circle cx="176" cy="43" r="4"/></svg><span class="tw-map-label">Sample link</span></div><div class="tw-detail-caption" style="margin-top:9px"><span style="color:var(--sequence-number)">01</span> <span style="color:var(--seq-glyph)">◆</span> sequence message · <span style="color:var(--anno-event)">●</span> event</div></div></div>`);
+    document.body.appendChild(layer); themeEditor={layer,startTheme};
+    const refreshSaveState = () => {
+      const changed=JSON.stringify(themeSlots)!==startSlots;
+      const switchesTheme=startTheme!==`custom-${slotIndex+1}`;
+      layer.querySelector('[data-tw="save"]').disabled=!changed&&!switchesTheme;
+      layer.querySelector("[data-tw-status]").textContent=changed?"Unsaved theme changes":switchesTheme?"Ready to apply this slot":"No changes to save";
+    };
+    const render = () => {
+      const t=themeSlots[slotIndex]; const id=`custom-${slotIndex+1}`;
+      layer.querySelector("[data-tw-slots]").innerHTML=themeSlots.map((s,i)=>`<button class="tw-slot ${i===slotIndex?"active":""}" data-tw-slot="${i}"><span class="tw-swatch" style="background:linear-gradient(135deg,${s.vars.bg} 0 45%,${s.vars.primary} 45% 58%,${s.chart[1]} 58%)"></span><span><span class="tw-slot-name">${esc(s.label)}</span><span class="tw-slot-sub">slot ${i+1}${state.theme===`custom-${i+1}`?" · in use":""}</span></span></button>`).join("");
+      const controls=layer.querySelector("[data-tw-controls]");
+      const advancedOpen=!!controls.querySelector(".tw-advanced[open]");
+      controls.innerHTML=`<p class="tw-section-label">Palette settings</p><label class="tw-name-label" for="tw-theme-name">Theme name</label><input id="tw-theme-name" class="tw-name" data-tw-name maxlength="28" aria-label="Theme name" value="${esc(t.label)}" placeholder="Name this palette">${THEME_EDIT_COLORS.map((entry)=>themeColorControl(entry,t.vars)).join("")}<p class="tw-section-label" style="margin:16px 0 6px">Chart series</p><div class="tw-palette">${t.chart.slice(0,8).map((c,i)=>`<label><span>Series ${i+1}</span><input type="color" data-tw-chart="${i}" value="${c}" aria-label="Chart series ${i+1} color"></label>`).join("")}</div>${themeAdvancedControls(t)}`;
+      if(advancedOpen)controls.querySelector(".tw-advanced").open=true;
+      previewThemeSlot(layer,t);
+      refreshSaveState();
+    };
+    render();
+    layer.addEventListener("click",(ev)=>{
+      if(ev.target===layer || ev.target.closest('[data-tw="close"]')) { closeThemeEditor(false); return; }
+      const slot=ev.target.closest("[data-tw-slot]"); if(slot){slotIndex=Number(slot.dataset.twSlot);render();return;}
+      const removeStop=ev.target.closest("[data-tw-remove-stop]");
+      if(removeStop){themeSlots[slotIndex].bargrad.splice(Number(removeStop.dataset.twRemoveStop),1);render();return;}
+      const action=ev.target.closest("[data-tw]")?.dataset.tw;
+      if(action==="add-stop") { const t=themeSlots[slotIndex];if(t.bargrad.length<5){t.bargrad.push(t.chart[Math.min(t.bargrad.length,t.chart.length-1)]);render();}return; }
+      if(action==="save") { try{localStorage.setItem(THEME_SLOT_KEY,JSON.stringify(themeSlots));}catch(_){} installThemeSlots(); applyTheme(`custom-${slotIndex+1}`); closeThemeEditor(true); return; }
+      if(action==="export") { exportThemeSlot(slotIndex); return; }
+      if(action==="import") { layer.querySelector("[data-tw-file]").click(); return; }
+      if(action==="reset") { themeSlots[slotIndex]=themeSlotWithDefaults(structuredClone(THEME_SLOT_DEFAULTS[slotIndex]),slotIndex); THEMES[`custom-${slotIndex+1}`]={...themeSlots[slotIndex],slot:slotIndex+1};render();return; }
+      if(action==="copy") {
+        const sourceNames=Object.keys(THEMES).filter((name)=>THEMES[name].slot!==slotIndex+1);
+        openPicker({placeholder:"Search themes to copy…",foot:`Choose a source for slot ${slotIndex+1}`,items:sourceNames.map((name)=>({label:THEMES[name].label,sub:THEMES[name].slot?`slot ${THEMES[name].slot}`:(THEMES[name].light?"light theme":"built-in"),theme:name,swatch:[THEMES[name].vars.primary,...THEMES[name].chart.slice(0,3)],swbg:THEMES[name].vars.bg})),onPick:(item)=>{
+          const source=THEMES[item.theme], next=themeSlotWithDefaults(structuredClone(source),slotIndex);
+          themeSlots[slotIndex]=next;
+          THEMES[`custom-${slotIndex+1}`]={...next,slot:slotIndex+1,cat:next.chart.slice()};
+          render();layer.querySelector("[data-tw-status]").textContent=`Copied ${source.label} into slot ${slotIndex+1} · save to keep`;
+        }});
+        if(currentPicker) currentPicker.style.zIndex="220";
+        return;
+      }
+    });
+    layer.addEventListener("input",(ev)=>{
+      const t=themeSlots[slotIndex];
+      if(ev.target.matches("[data-tw-name]"))t.label=ev.target.value.trim()||`Palette ${slotIndex+1}`;
+      if(ev.target.matches("[data-tw-color]")) { const key=ev.target.dataset.twColor, old=t.vars[key];t.vars[key]=ev.target.value;themeTuneRelated(t,key,old); }
+      if(ev.target.matches("[data-tw-chart]"))t.chart[Number(ev.target.dataset.twChart)]=ev.target.value;
+      if(ev.target.matches("[data-tw-stop]")) {
+        const list=t[ev.target.dataset.twStop], index=Number(ev.target.dataset.twIndex);
+        const position=list[index].split("@")[1];
+        list[index]=ev.target.value+(position?`@${position}`:"");
+      }
+      if(ev.target.matches("[data-tw-setting]")) {
+        const key=ev.target.dataset.twSetting;
+        const value=ev.target.type==="checkbox"?ev.target.checked:ev.target.type==="range"?Number(ev.target.value):ev.target.value;
+        if(key.startsWith("tl-marker-"))t.vars[key]=String(value);
+        else t[key]=value;
+        if(key==="ambientGlow"&&value&&t.vars.glow==="none")t.vars.glow="radial-gradient(1000px 460px at 80% -14%, color-mix(in srgb, var(--primary) 9%, transparent), transparent 70%)";
+        if(key==="panelSheen"&&value&&t.vars["grad-panel"]==="none")t.vars["grad-panel"]="linear-gradient(180deg, color-mix(in srgb, var(--highlight) 5%, transparent), transparent 58%)";
+        if(key==="edgeSheen"&&value&&t.vars.hi==="none")t.vars.hi="inset 0 1px 0 color-mix(in srgb, var(--fg) 5%, transparent)";
+        const readout=layer.querySelector(`[data-tw-range-value="${key}"]`);if(readout)readout.textContent=String(value);
+      }
+      THEMES[`custom-${slotIndex+1}`]={...t,slot:slotIndex+1,cat:t.chart.slice()};
+      layer.querySelectorAll("[data-tw-color]").forEach((el)=>{el.value=t.vars[el.dataset.twColor];});
+      layer.querySelectorAll("[data-tw-chart]").forEach((el)=>{el.value=t.chart[Number(el.dataset.twChart)];});
+      previewThemeSlot(layer,t);
+      layer.querySelectorAll("[data-tw-slot]").forEach((el,i)=>{el.querySelector(".tw-slot-name").textContent=themeSlots[i].label; el.querySelector(".tw-swatch").style.background=`linear-gradient(135deg,${themeSlots[i].vars.bg} 0 45%,${themeSlots[i].vars.primary} 45% 58%,${themeSlots[i].chart[1]} 58%)`;});
+      refreshSaveState();
+    });
+    layer.querySelector("[data-tw-file]").addEventListener("change", async (ev) => {
+      const file=ev.target.files?.[0]; if(!file)return;
+      try {
+        const imported=validateThemeExport(JSON.parse(await file.text()),slotIndex);
+        themeSlots[slotIndex]=imported;
+        THEMES[`custom-${slotIndex+1}`]={...imported,slot:slotIndex+1,cat:imported.chart.slice()};
+        render(); layer.querySelector("[data-tw-status]").textContent=`Imported ${imported.label} · save palette to keep it`;
+      } catch(err) { layer.querySelector("[data-tw-status]").textContent=`Import failed: ${err.message}`; }
+      ev.target.value="";
+    });
+    layer._keyHandler=(ev)=>{if(ev.key==="Escape")closeThemeEditor(false);};window.addEventListener("keydown",layer._keyHandler);
+  }
+  function closeThemeEditor(saved) {
+    if(!themeEditor)return; const {layer,startTheme}=themeEditor;window.removeEventListener("keydown",layer._keyHandler);layer.remove();themeEditor=null;
+    if(!saved) { themeSlots=readThemeSlots(); installThemeSlots(); applyTheme(startTheme); }
+  }
+  function themeExportData(theme) {
+    const vars={}; THEME_HEX_KEYS.forEach((key)=>vars[key]=theme.vars[key]);
+    ["glow","grad-panel","hi","selection","tl-marker-width","tl-marker-dash","tl-marker-opacity","seq-glyph-width"].forEach((key)=>{if(theme.vars[key]!=null)vars[key]=theme.vars[key];});
+    const settings={};["flat","ambientGlow","panelSheen","edgeSheen","barRadius","catN","arcOpacity","arcGap","roundLinks","labelBg","labelBgAlpha","depOpacity","seaStatic","landOpacity"].forEach((key)=>{if(theme[key]!=null)settings[key]=theme[key];});
+    return {format:"muckdb-theme",version:2,theme:{label:theme.label,light:!!theme.light,vars,chart:theme.chart.slice(0,8),grad2:theme.grad2.slice(),bargrad:theme.bargrad.slice(),settings}};
+  }
+  function validateThemeExport(data,slotIndex) {
+    if(!data || data.format!=="muckdb-theme" || ![1,2].includes(data.version) || !data.theme || typeof data.theme!=="object") throw new Error("This file is not a supported muckdb theme export.");
+    const src=data.theme;
+    if(!Array.isArray(src.chart) || src.chart.length!==8 || !src.chart.every(c=>/^#[0-9a-f]{6}$/i.test(c))) throw new Error("A theme must include eight hex chart colors.");
+    const vars={};const required=["bg","surface","raised","line","line-soft","fg","muted","faint","on-accent","primary","highlight","primary-deep","primary-dim","ok","fail"];
+    required.forEach((key)=>{if(!/^#[0-9a-f]{6}$/i.test(src.vars?.[key]||""))throw new Error(`Missing or invalid ${key} color.`);vars[key]=src.vars[key];});
+    THEME_HEX_KEYS.filter((key)=>!required.includes(key)).forEach((key)=>{if(src.vars?.[key]!=null){if(!/^#[0-9a-f]{6}$/i.test(src.vars[key]))throw new Error(`Invalid ${key} color.`);vars[key]=src.vars[key];}});
+    if(data.version===2){
+      ["glow","grad-panel","hi","selection"].forEach((key)=>{const value=src.vars?.[key];if(value==null)return;if(typeof value!=="string"||value.length>250||/url\s*\(|@import|[;{}]/i.test(value)||!/^(none|radial-gradient\(|linear-gradient\(|inset |rgba\(|color-mix\()/i.test(value))throw new Error(`Invalid ${key} style.`);vars[key]=value;});
+      if(src.vars?.["tl-marker-width"]!=null)vars["tl-marker-width"]=String(Math.max(.5,Math.min(4,Number(src.vars["tl-marker-width"])||1.2)));
+      if(src.vars?.["tl-marker-opacity"]!=null)vars["tl-marker-opacity"]=String(Math.max(.1,Math.min(1,Number(src.vars["tl-marker-opacity"])||.85)));
+      if(src.vars?.["tl-marker-dash"]!=null){if(!["4 3","1 3","8 4","none"].includes(src.vars["tl-marker-dash"]))throw new Error("Invalid timeline dash style.");vars["tl-marker-dash"]=src.vars["tl-marker-dash"];}
+      if(src.vars?.["seq-glyph-width"]!=null)vars["seq-glyph-width"]=String(Math.max(.5,Math.min(4,Number(src.vars["seq-glyph-width"])||1.5)));
+    }
+    const slot={label:String(src.label||"Shared palette").trim().slice(0,28)||"Shared palette",light:!!src.light,vars,chart:src.chart.slice()};
+    if(data.version===2){
+      const hex=/^#[0-9a-f]{6}$/i,stop=/^#[0-9a-f]{6}(?:@(0?\.\d+|[01]))?$/i;
+      if(!Array.isArray(src.grad2)||src.grad2.length!==2||!src.grad2.every(c=>hex.test(c)))throw new Error("Invalid continuous chart gradient.");
+      if(!Array.isArray(src.bargrad)||src.bargrad.length<1||src.bargrad.length>5||!src.bargrad.every(c=>stop.test(c)))throw new Error("Invalid bar gradient.");
+      slot.grad2=src.grad2.slice();slot.bargrad=src.bargrad.slice();
+      const settings=src.settings||{};
+      ["flat","ambientGlow","panelSheen","edgeSheen","roundLinks"].forEach((key)=>{if(settings[key]!=null){if(typeof settings[key]!=="boolean")throw new Error(`Invalid ${key} setting.`);slot[key]=settings[key];}});
+      [["barRadius",0,16],["catN",1,8],["arcOpacity",.05,.9],["arcGap",.5,2],["labelBgAlpha",.2,1],["depOpacity",.1,1],["seaStatic",0,.3],["landOpacity",0,.6]].forEach(([key,min,max])=>{if(settings[key]!=null){if(typeof settings[key]!=="number"||!Number.isFinite(settings[key])||settings[key]<min||settings[key]>max)throw new Error(`Invalid ${key} setting.`);slot[key]=settings[key];}});
+      if(settings.labelBg!=null){if(!["var(--surface)","var(--raised)","var(--bg)"].includes(settings.labelBg))throw new Error("Invalid map label background.");slot.labelBg=settings.labelBg;}
+    }
+    return themeSlotWithDefaults(slot,slotIndex);
+  }
+  function exportThemeSlot(index) {
+    const data=themeExportData(themeSlots[index]);
+    const blob=new Blob([JSON.stringify(data,null,2)+"\n"],{type:"application/json"});
+    const url=URL.createObjectURL(blob), a=document.createElement("a");
+    const slug=themeSlots[index].label.toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||`slot-${index+1}`;
+    a.href=url;a.download=`muckdb-theme-${slug}.json`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),1000);
+  }
   function openThemePicker(anchor) {
     const names = Object.keys(THEMES);
+    const items = names.flatMap((n) => {
+      const item = {
+        label: THEMES[n].label, sub: n === state.theme ? "current" : (THEMES[n].light ? "light" : ""), theme: n,
+        swatch: [THEMES[n].vars.primary, THEMES[n].chart[0], THEMES[n].chart[2], THEMES[n].chart[4]],
+        swbg: THEMES[n].vars.bg,
+      };
+      return THEMES[n].slot === 1 ? [{ separator: true, label: "Your theme slots" }, item] : [item];
+    });
     openPicker({
       anchor, placeholder: "theme…",
-      items: names.map((n) => ({
-        label: THEMES[n].label, sub: n === state.theme ? "current" : (THEMES[n].light ? "light" : ""), theme: n,
-        swatch: [THEMES[n].vars.orange, THEMES[n].chart[0], THEMES[n].chart[2], THEMES[n].chart[4]],
-        swbg: THEMES[n].vars.bg,
-      })),
-      selectedIndex: names.indexOf(state.theme),
+      items,
+      action: { label: "Edit theme slots…", hint: "customize", beta: true, go: openThemeEditor },
+      selectedIndex: items.findIndex((it) => it.theme === state.theme),
       // Persist the choice, then hard-reload so every baked-in colour (charts,
       // canvas maps, computed styles) is rebuilt cleanly from the new theme.
       onPick: (it) => { try { localStorage.setItem("muckdb.theme", it.theme); } catch (_) {} location.reload(); },
@@ -4508,7 +4941,7 @@
     layer.className = "mermaid-editor-overlay no-screenshot";
     layer.setAttribute("role", "dialog"); layer.setAttribute("aria-modal", "true");
     layer.setAttribute("aria-label", `Edit ${tile.title || tile.name}`);
-    layer.innerHTML = `<div class="mermaid-editor"><div class="mermaid-editor-bar"><span class="mermaid-editor-title">${esc(tile.title || tile.name)}</span><span class="mermaid-editor-kind">Mermaid source</span><span class="mermaid-editor-actions"><button class="panel-act mermaid-cancel">cancel</button><button class="panel-act mermaid-save" disabled>save changes</button></span></div><div class="mermaid-workspace"><label class="mermaid-source-pane"><span class="mermaid-pane-label">source <span class="mermaid-editor-status">rendering…</span></span><textarea class="mermaid-source" spellcheck="false" aria-label="Mermaid source"></textarea></label><div class="mermaid-preview-pane"><div class="mermaid-pane-label">live preview</div><div class="mermaid-editor-preview" aria-live="polite"></div></div></div></div>`;
+    layer.innerHTML = `<div class="mermaid-editor"><div class="mermaid-editor-bar"><span class="mermaid-editor-title">${esc(tile.title || tile.name)}</span><span class="mermaid-editor-kind">Mermaid source</span><span class="beta-badge">beta</span><span class="mermaid-editor-actions"><button class="panel-act mermaid-cancel">cancel</button><button class="panel-act mermaid-save" disabled>save changes</button></span></div><div class="mermaid-workspace"><label class="mermaid-source-pane"><span class="mermaid-pane-label">source <span class="mermaid-editor-status">rendering…</span></span><textarea class="mermaid-source" spellcheck="false" aria-label="Mermaid source"></textarea></label><div class="mermaid-preview-pane"><div class="mermaid-pane-label">live preview</div><div class="mermaid-editor-preview" aria-live="polite"></div></div></div></div>`;
     document.body.appendChild(layer);
     const input = layer.querySelector(".mermaid-source");
     input.value = tile.source || "";
@@ -4562,7 +4995,7 @@
     }
     if (t.type === "mermaid") {
       const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
-      return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
+      return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="beta-badge">beta</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -9811,6 +10244,7 @@
   // Theme: ?theme= wins (shareable links, screenshot testing), else the saved pick.
   applyTheme(new URLSearchParams(location.search).get("theme")
     || (() => { try { return localStorage.getItem("muckdb.theme"); } catch (_) { return null; } })() || "hearth");
+  if (new URLSearchParams(location.search).get("theme-editor") === "1") openThemeEditor();
   try { state.tocOpen = localStorage.getItem("muckdb.toc") !== "0"; } catch (_) {}
   // One-shot migration: trash used to be per-browser (localStorage); it now
   // lives on the tile in the session JSON. Push any legacy entries to the

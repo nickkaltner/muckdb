@@ -19,6 +19,59 @@ test('theme picker opens below the theme button', async ({ page }) => {
   expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
 });
 
+test('theme editor labels its name and only enables save after an edit', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/?theme=custom-1`);
+  await page.locator('#theme-btn').click();
+  await page.locator('[data-pick-action]').click();
+
+  const editor = page.locator('.theme-workbench');
+  await expect(editor).toBeVisible();
+  await expect(editor.locator('.beta-badge')).toHaveText('beta');
+  await expect(editor.getByLabel('Theme name')).toBeVisible();
+  const save = editor.locator('[data-tw="save"]');
+  await expect(save).toBeDisabled();
+
+  await editor.locator('.tw-advanced summary').click();
+  await editor.locator('[data-tw-setting="flat"]').check();
+  await expect(save).toBeEnabled();
+  await save.click();
+  await expect(editor).toBeHidden();
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem('muckdb.theme-slots') || '[]'));
+  expect(saved[0].flat).toBe(true);
+});
+
+test('copy theme opens a visible list and advanced settings survive JSON sharing', async ({ page }) => {
+  await page.goto(`/session/${SESSION_ID}/?theme=custom-1`);
+  await page.locator('#theme-btn').click();
+  await page.locator('[data-pick-action]').click();
+  const editor = page.locator('.theme-workbench');
+
+  await editor.locator('[data-tw="copy"]').click();
+  const picker = page.locator('.pick-overlay .pick-box');
+  await expect(picker).toBeVisible();
+  await expect(picker.locator('.pick-row').first()).toBeVisible();
+  const [box, viewport] = await Promise.all([
+    picker.boundingBox(),
+    page.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight })),
+  ]);
+  expect(box).not.toBeNull();
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+  await picker.locator('.pick-row', { hasText: 'ink' }).click();
+  await expect(editor.getByLabel('Theme name')).toHaveValue('ink');
+
+  const downloadPromise = page.waitForEvent('download');
+  await editor.locator('[data-tw="export"]').click();
+  const download = await downloadPromise;
+  const path = await download.path();
+  expect(path).not.toBeNull();
+  await editor.locator('[data-tw="reset"]').click();
+  await editor.locator('[data-tw-file]').setInputFiles(path!);
+  await expect(editor.getByLabel('Theme name')).toHaveValue('ink');
+  await editor.locator('.tw-advanced summary').click();
+  await expect(editor.locator('[data-tw-setting="flat"]')).toBeChecked();
+});
+
 test('the final dashboard panel clears the fixed status bar', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   await expect(page.locator('#panels .panel').last()).toBeVisible();
