@@ -19,18 +19,21 @@ use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
 use serde::Deserialize;
 use serde_json::json;
-use tokio::sync::broadcast;
+use tokio::sync::{Semaphore, broadcast};
 
 use crate::facade;
 use crate::{introspect, paths, session, store, update};
 
 const PREVIEW_LIMIT: u32 = 25;
 const HISTORY_TRIM_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
+const WATCH_BATCH_INTERVAL: Duration = Duration::from_millis(120);
+const MAX_DASHBOARD_QUERIES: usize = 4;
 
 #[derive(Clone)]
 struct AppState {
     tx: broadcast::Sender<String>,
     update: Arc<RwLock<update::Status>>,
+    query_slots: Arc<Semaphore>,
 }
 
 /// Entry point for the daemon: start mDNS, the file watcher, and the server.
@@ -53,7 +56,11 @@ pub async fn run() -> Result<()> {
         }
     };
 
-    let state = AppState { tx, update };
+    let state = AppState {
+        tx,
+        update,
+        query_slots: Arc::new(Semaphore::new(MAX_DASHBOARD_QUERIES)),
+    };
     spawn_watcher(state.clone())?;
     spawn_update_checker(state.clone());
     spawn_history_trimmer();
@@ -249,7 +256,13 @@ fn spawn_watcher(state: AppState) -> Result<()> {
         // Dedupe: only broadcast when the snapshot actually changed, so a stray
         // filesystem event never turns into a client-side refresh storm.
         let mut last_sent = String::new();
-        for _ in raw_rx {
+        while raw_rx.recv().is_ok() {
+            // A CLI invocation writes a start and end record, and posting several
+            // tiles creates several file events. Collapse the events arriving in
+            // this short window into one snapshot while still publishing at least
+            // once per interval during sustained activity.
+            thread::sleep(WATCH_BATCH_INTERVAL);
+            while raw_rx.try_recv().is_ok() {}
             if let Some(s) = snapshot_json(&state)
                 && s != last_sent
             {
@@ -623,12 +636,27 @@ async fn api_schema(Query(p): Query<StatsParams>) -> Response {
 struct QueryParams {
     db: String,
     sql: String,
+    #[serde(default)]
+    scalar: bool,
 }
 
-async fn api_query(Query(p): Query<QueryParams>) -> Response {
-    match introspect::query(&p.db, &p.sql) {
-        Ok(result) => Json(result).into_response(),
-        Err(e) => error_json(&e),
+async fn api_query(State(state): State<AppState>, Query(p): Query<QueryParams>) -> Response {
+    let Ok(permit) = state.query_slots.acquire_owned().await else {
+        return error_json(&anyhow::anyhow!("query worker is unavailable"));
+    };
+    let result = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        if p.scalar {
+            introspect::query_scalar(&p.db, &p.sql)
+        } else {
+            introspect::query(&p.db, &p.sql)
+        }
+    })
+    .await;
+    match result {
+        Ok(Ok(result)) => Json(result).into_response(),
+        Ok(Err(e)) => error_json(&e),
+        Err(e) => error_json(&anyhow::anyhow!("query task failed: {e}")),
     }
 }
 

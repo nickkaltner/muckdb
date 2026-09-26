@@ -860,6 +860,19 @@ pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
         Err(_) => sql.to_string(),
     };
     let rows = query_json(db, &effective)?;
+    Ok(query_result(rows))
+}
+
+/// Markdown scalars are rendered as text and validated as one cell by the
+/// browser, so the nested-column DESCRIBE pass adds no useful information.
+pub fn query_scalar(db: &str, sql: &str) -> Result<QueryResult> {
+    if !Path::new(db).exists() {
+        bail!("database file does not exist: {db}");
+    }
+    Ok(query_result(query_json(db, sql)?))
+}
+
+fn query_result(rows: Vec<Value>) -> QueryResult {
     let columns: Vec<String> = match rows.first() {
         Some(Value::Object(map)) => map.keys().cloned().collect(),
         _ => Vec::new(),
@@ -874,11 +887,11 @@ pub fn query(db: &str, sql: &str) -> Result<QueryResult> {
         })
         .collect();
     let row_count = data.len();
-    Ok(QueryResult {
+    QueryResult {
         columns,
         rows: data,
         row_count,
-    })
+    }
 }
 
 /// Persist one read-only query as a named view. The caller deliberately opts

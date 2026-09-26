@@ -1883,12 +1883,14 @@
   }
 
   // ---- tabs -------------------------------------------------------------
+  let ledgerDirty = false;
   function setTab(tab, opts) {
     if (tab !== "sessions" && state.zoomPanel) closeZoom();
     state.tab = tab;
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     $("view-" + tab).classList.add("active");
+    if (tab === "ledger" && ledgerDirty) renderLedger();
     // Compound navigations (a tab switch plus a db/session select in one user
     // action) pass {silent:true} so only the *final* state pushes a history
     // entry — otherwise Back lands on an intermediate URL built from stale
@@ -1916,6 +1918,7 @@
     return `<li class="entry ${cls}${fresh}"><div class="cmd"><span class="prompt">❯</span> <span class="prog">muckdb</span> ${args || "<em>(interactive shell)</em>"}</div><div class="meta"><span>${fmtTime(inv.ts)}</span>${badge(inv)}${db}${sess}</div></li>`;
   }
   function renderLedger() {
+    ledgerDirty = false;
     const h = state.history;
     $("hist-count").textContent = h.length;
     $("tab-n-ledger").textContent = h.length;
@@ -3697,7 +3700,9 @@
     if (!panel) { scroller.scrollTop = position.scrollTop; return; }
     scroller.scrollTop += panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top - position.offset;
   }
+  let sessionLoadToken = 0;
   async function loadSession(id, push) {
+    const loadToken = ++sessionLoadToken;
     // Switching to a different session closes a stale expand overlay (but a live
     // refresh of the same session leaves it open).
     if (state.zoomPanel && state.selSession !== id) closeZoom();
@@ -3711,6 +3716,7 @@
     if (!keepReaderPosition) $("panels").innerHTML = '<div class="note" style="padding:18px">loading…</div>';
     try {
       const s = await (await fetch("/api/session?id=" + encodeURIComponent(id))).json();
+      if (loadToken !== sessionLoadToken || state.selSession !== id) return;
       // Sync the URL even on error — a silent setTab preceding this call
       // relies on loadSession pushing the final URL (dead session included).
       if (s.error) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(s.error)}</div>`; if (SHOT) markShotReady(); syncUrl(!!push); return; }
@@ -3719,7 +3725,11 @@
       renderSessionHead(s);
       if (keepReaderPosition && previous) reconcilePanels(previous, s, panelPosition);
       else renderPanels(s, panelPosition);
-    } catch (e) { $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`; if (SHOT) markShotReady(); }
+    } catch (e) {
+      if (loadToken !== sessionLoadToken || state.selSession !== id) return;
+      $("panels").innerHTML = `<div class="note err" style="padding:18px">${esc(String(e))}</div>`;
+      if (SHOT) markShotReady();
+    }
     syncUrl(!!push);
   }
   let viewPostedFor = null; // session id whose open has been counted this visit
@@ -4645,7 +4655,7 @@
         if (queries.has(query)) continue;
         try {
           const sql = `SELECT * FROM (\n${query}\n) AS muckdb_scalar LIMIT 2`;
-          const d = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json();
+          const d = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql, scalar: "true" }))).json();
           if (d.error) throw new Error(d.error);
           if (d.columns?.length !== 1 || d.rows?.length !== 1) throw new Error("Expected exactly one row and one column.");
           const v = d.rows[0][0];
@@ -9542,8 +9552,10 @@
     }
   }
   let sessionDataRevision = null;
-  let sessionRevisions = new Map();
+  let historyUiRevision = null, sessionsUiRevision = null, databasesRevision = null;
   const targetedSessionRefreshes = new Set();
+  let liveSessionReloadTimer = null, liveSessionReloadAll = false;
+  const liveSessionReloadDbs = new Set();
   let formatsRev = null; // last-seen fingerprint of the format registry
   let bootSeen = null; // the daemon instance this page's JS came from
   function apply(s) {
@@ -9561,18 +9573,21 @@
       if (bootSeen !== null && s.boot !== bootSeen) { location.reload(); return; }
       bootSeen = s.boot;
     }
-    const revision = JSON.stringify((s.history || []).filter((h) => h.exit_code !== null).map((h) => [h.id, h.exit_code]));
+    const history = s.history || [];
+    const previousHistory = new Map((state.history || []).map((h) => [h.id, h.exit_code]));
+    const newlyCompleted = history.filter((h) => h.exit_code !== null && previousHistory.get(h.id) !== h.exit_code);
+    const changedDbs = new Set(newlyCompleted.map((h) => h.db_path).filter(Boolean));
+    const revision = JSON.stringify(history.filter((h) => h.exit_code !== null).map((h) => [h.id, h.exit_code]));
     const dataChanged = sessionDataRevision !== null && sessionDataRevision !== revision;
     sessionDataRevision = revision;
-    state.history = s.history || [];
+    const nextHistoryUiRevision = JSON.stringify(history.map((h) => [h.id, h.exit_code, h.running]));
+    const historyUiChanged = historyUiRevision !== nextHistoryUiRevision;
+    historyUiRevision = nextHistoryUiRevision;
+    state.history = history;
     const nextSessions = s.sessions || [];
-    const nextRevisions = new Map(nextSessions.map((session) => [session.id, session.updated]));
-    const changedSessions = new Set();
-    if (sessionRevisions.size) {
-      for (const [id, updated] of nextRevisions) if (sessionRevisions.get(id) !== updated) changedSessions.add(id);
-      for (const id of sessionRevisions.keys()) if (!nextRevisions.has(id)) changedSessions.add(id);
-    }
-    sessionRevisions = nextRevisions;
+    const nextSessionsUiRevision = JSON.stringify(nextSessions);
+    const sessionsUiChanged = sessionsUiRevision !== nextSessionsUiRevision;
+    sessionsUiRevision = nextSessionsUiRevision;
     state.sessions = nextSessions;
     setUpdateStatus(s.update);
     // A changed format registry invalidates every cached format map so the
@@ -9586,13 +9601,22 @@
       }
       formatsRev = s.formats_rev;
     }
-    renderLedger();
-    renderSessionNav();
-    maybeRefreshSession(dataChanged, formatsChanged, changedSessions);
+    if (historyUiChanged) {
+      $("hist-count").textContent = history.length;
+      $("tab-n-ledger").textContent = history.length;
+      if (state.tab === "ledger") renderLedger();
+      else ledgerDirty = true;
+    }
+    if (sessionsUiChanged) renderSessionNav();
+    maybeRefreshSession(dataChanged ? changedDbs : new Set(), formatsChanged);
     if (!suppressSync && !pendingNav) maybeAutoSession();
-    refreshDbExistence(s.databases || []);
+    const nextDatabasesRevision = JSON.stringify(s.databases || []);
+    if (databasesRevision !== nextDatabasesRevision) {
+      databasesRevision = nextDatabasesRevision;
+      refreshDbExistence(s.databases || []);
+    }
   }
-  function maybeRefreshSession(dataChanged = false, formatsChanged = false, changedSessions = new Set()) {
+  function maybeRefreshSession(changedDbs = new Set(), formatsChanged = false) {
     if (state.tab !== "sessions" || !state.selSession) return;
     const sum = state.sessions.find((s) => s.id === state.selSession);
     if (!sum) return;
@@ -9601,8 +9625,24 @@
       state.sessionData.updated = sum.updated;
       renderSessionHead(state.sessionData);
     }
-    else if (sum.updated !== state.sessionData.updated) loadSession(state.selSession, false);
-    else if (formatsChanged || (dataChanged && changedSessions.size === 0)) refreshSessionValues();
+    else if (sum.updated !== state.sessionData.updated) scheduleLiveSessionReload(changedDbs, formatsChanged);
+    else if (formatsChanged || changedDbs.size) scheduleSessionValuesRefresh(formatsChanged ? null : changedDbs);
+  }
+  function scheduleLiveSessionReload(changedDbs, formatsChanged) {
+    if (formatsChanged) liveSessionReloadAll = true;
+    changedDbs.forEach((db) => liveSessionReloadDbs.add(db));
+    clearTimeout(liveSessionReloadTimer);
+    const id = state.selSession;
+    liveSessionReloadTimer = setTimeout(async () => {
+      liveSessionReloadTimer = null;
+      const refreshAll = liveSessionReloadAll;
+      const dbs = new Set(liveSessionReloadDbs);
+      liveSessionReloadAll = false;
+      liveSessionReloadDbs.clear();
+      if (state.selSession !== id) return;
+      await loadSession(id, false);
+      if (state.selSession === id && (refreshAll || dbs.size)) scheduleSessionValuesRefresh(refreshAll ? null : dbs);
+    }, 120);
   }
   async function refreshSessionTile(name) {
     if (!state.sessionData) return;
@@ -9613,30 +9653,43 @@
     try { await loadTileChart(tile); }
     finally { panel.style.minHeight = ""; }
   }
-  // Keep panel nodes, the reader's position, expansion state and TOC intact
-  // when only data/formatting changes. Coalesce bursts of CLI updates.
-  let sessionValuesRefreshing = false, sessionValuesPending = false;
+  // Keep panel nodes and their scroll position intact. Collect database paths
+  // for a short window so a burst refreshes each affected tile only once.
+  let sessionValuesRefreshing = false, sessionValueTimer = null, sessionValuesAll = false;
+  const sessionValueDbs = new Set();
+  function scheduleSessionValuesRefresh(dbs = null) {
+    if (dbs === null) sessionValuesAll = true;
+    else dbs.forEach((db) => sessionValueDbs.add(db));
+    if (sessionValueTimer !== null) return;
+    sessionValueTimer = setTimeout(() => { sessionValueTimer = null; refreshSessionValues(); }, 120);
+  }
   async function refreshSessionValues() {
-    if (sessionValuesRefreshing) { sessionValuesPending = true; return; }
+    if (sessionValuesRefreshing) return;
     sessionValuesRefreshing = true;
+    const refreshAll = sessionValuesAll;
+    const changedDbs = new Set(sessionValueDbs);
+    sessionValuesAll = false;
+    sessionValueDbs.clear();
     try {
-      do {
-        sessionValuesPending = false;
-        if (state.tab !== "sessions" || !state.sessionData) break;
+        if (state.tab !== "sessions" || !state.sessionData) return;
+        const sessionId = state.selSession;
         const tiles = state.sessionData.tiles || [];
-        await Promise.allSettled(tiles.filter((t) => !t.trashed).map(async (t) => {
+        await Promise.allSettled(tiles.filter((t) => !t.trashed && t.db && (refreshAll || changedDbs.has(t.db))
+          && (t.type === "view" || (t.type === "markdown" && /\{\{(?:sql|image):/.test(t.markdown || "")))).map(async (t) => {
+          if (state.selSession !== sessionId) return;
           const panel = document.querySelector(`#panels [data-tile="${cssEsc(t.name)}"]`);
-          if (!panel || t.type === "section" || (t.sql && state.tileMode[t.name] === "sql")) return;
+          if (!panel || (t.sql && state.tileMode[t.name] === "sql")) return;
           // Prevent temporary loading content from collapsing the scroll range.
           panel.style.minHeight = panel.getBoundingClientRect().height + "px";
           try {
             if (t.type === "markdown") await loadMarkdown(t);
-            else if (t.type === "mermaid") await renderMermaidTile(t);
             else await loadTileChart(t);
           } finally { panel.style.minHeight = ""; }
         }));
-      } while (sessionValuesPending);
-    } finally { sessionValuesRefreshing = false; }
+    } finally {
+      sessionValuesRefreshing = false;
+      if (sessionValuesAll || sessionValueDbs.size) scheduleSessionValuesRefresh(sessionValuesAll ? null : sessionValueDbs);
+    }
   }
   async function refreshDbExistence(fallbackPaths) {
     try {
