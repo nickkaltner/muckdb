@@ -34,4 +34,27 @@ test('daemon exposes the running build version', async ({ request }) => {
   expect(response.ok()).toBeTruthy();
   const body = await response.json();
   expect(body.version).toMatch(/^\d+\.\d+\.\d+$/);
+
+  const status = await request.get('/api/status');
+  expect(status.ok()).toBeTruthy();
+  const running = await status.json();
+  expect(running.version).toBe(body.version);
+  expect(running.commit).toMatch(/^[0-9a-f]{40}$|^unknown$/);
+  expect(running.executable).toMatch(/muckdb$/);
+  expect(running.pid).toBeGreaterThan(0);
+  expect(running.port).toBeGreaterThan(0);
+  expect(running.binary_size).toBeGreaterThan(0);
+  expect(running.binary_modified_ns).toBeGreaterThan(0);
+});
+
+test('status bar path appears only in the database view', async ({ page }) => {
+  await page.goto('/');
+  await page.locator('#tabs .tab[data-tab="databases"]').click();
+  await expect(page.locator('#sl-db')).toContainText('widgets.duckdb');
+
+  await page.locator('#tabs .tab[data-tab="sessions"]').click();
+  await expect(page.locator('#sl-db')).toBeEmpty();
+
+  await page.locator('#tabs .tab[data-tab="ledger"]').click();
+  await expect(page.locator('#sl-db')).toBeEmpty();
 });

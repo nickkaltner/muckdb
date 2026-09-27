@@ -2066,6 +2066,7 @@
   function setTab(tab, opts) {
     if (tab !== "sessions" && state.zoomPanel) closeZoom();
     state.tab = tab;
+    updateDbStatus();
     document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("active", b.dataset.tab === tab));
     document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
     $("view-" + tab).classList.add("active");
@@ -2127,7 +2128,7 @@
   // ---- nav --------------------------------------------------------------
   function updateDbStatus() {
     const el = $("sl-db"); if (!el) return;
-    el.innerHTML = state.selDb
+    el.innerHTML = state.tab === "databases" && state.selDb
       ? `<span class="sl-db-path">${esc(state.selDb)}</span><button class="sl-copy" data-copydb title="Copy database path">⧉</button>`
       : "";
   }

@@ -57,9 +57,24 @@ pub fn status() -> Result<i32> {
     let port = facade::resolved_port();
     let listening = port_open(port);
     let pid = read_pid(port);
+    if listening && let Some(running) = facade::daemon_identity() {
+        println!(
+            "muckdb daemon v{} running (pid {}) at http://localhost:{port}",
+            running.version, running.pid
+        );
+        println!("executable: {}", running.executable);
+        println!("commit: {}", running.commit);
+        if let Ok(cli) = crate::identity::current(port)
+            && !running.same_binary(&cli)
+        {
+            println!("different binary from this CLI: {}", cli.executable);
+        }
+        return Ok(0);
+    }
     match (listening, pid) {
         (true, Some(pid)) => {
             println!("muckdb daemon running (pid {pid}) at http://localhost:{port}");
+            println!("binary identity unavailable (older daemon)");
             Ok(0)
         }
         (true, None) => {

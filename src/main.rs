@@ -5,6 +5,7 @@ mod daemon;
 mod export;
 mod facade;
 mod formats;
+mod identity;
 mod introspect;
 mod paths;
 mod predict;

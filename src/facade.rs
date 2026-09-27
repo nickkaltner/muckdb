@@ -12,6 +12,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 
+use crate::identity::{self, Identity};
 use crate::store::{self, Phase, Record};
 
 /// Default TCP port the daemon's HTTP/WS server binds.
@@ -115,22 +116,39 @@ pub(crate) fn daemon_version() -> Option<String> {
         .or_else(|| http_get("/").and_then(|page| version_in_page(&page)))
 }
 
+/// Build identity reported by daemons with the status endpoint.
+pub(crate) fn daemon_identity() -> Option<Identity> {
+    http_get("/api/status").and_then(|body| serde_json::from_str(&body).ok())
+}
+
 /// Start the daemon if it isn't already running, returning once it accepts
 /// connections (or the timeout elapses).
 pub fn ensure_daemon() -> Result<()> {
     if daemon_listening() {
-        return match daemon_version() {
-            Some(version) if version == env!("CARGO_PKG_VERSION") => Ok(()),
-            Some(version) => anyhow::bail!(
-                "port {} is serving muckdb v{version}, but this CLI is v{}; stop the old daemon before starting this version",
+        if let Some(running) = daemon_identity() {
+            let cli = identity::current(resolved_port())?;
+            if running.same_binary(&cli) {
+                return Ok(());
+            }
+            anyhow::bail!(
+                "port {} is serving a different muckdb binary (v{}, {}); running: {}; this CLI: {}; stop the running daemon before starting this binary",
                 resolved_port(),
-                env!("CARGO_PKG_VERSION")
+                running.version,
+                running.commit,
+                running.executable,
+                cli.executable
+            );
+        }
+        match daemon_version() {
+            Some(version) => anyhow::bail!(
+                "port {} is serving muckdb v{version}, but that daemon cannot report its binary identity; stop it before starting this binary",
+                resolved_port()
             ),
             None => anyhow::bail!(
                 "port {} is already occupied by an unknown service",
                 resolved_port()
             ),
-        };
+        }
     }
 
     let exe = std::env::current_exe().context("locating muckdb executable")?;

@@ -22,7 +22,7 @@ use serde_json::json;
 use tokio::sync::{Semaphore, broadcast};
 
 use crate::facade;
-use crate::{introspect, paths, session, store, update};
+use crate::{identity, introspect, paths, session, store, update};
 
 const PREVIEW_LIMIT: u32 = 25;
 const HISTORY_TRIM_INTERVAL: Duration = Duration::from_secs(24 * 60 * 60);
@@ -34,6 +34,7 @@ struct AppState {
     tx: broadcast::Sender<String>,
     update: Arc<RwLock<update::Status>>,
     query_slots: Arc<Semaphore>,
+    identity: identity::Identity,
 }
 
 /// Entry point for the daemon: start mDNS, the file watcher, and the server.
@@ -60,6 +61,7 @@ pub async fn run() -> Result<()> {
         tx,
         update,
         query_slots: Arc::new(Semaphore::new(MAX_DASHBOARD_QUERIES)),
+        identity: identity::current(facade::resolved_port())?,
     };
     spawn_watcher(state.clone())?;
     spawn_update_checker(state.clone());
@@ -68,6 +70,7 @@ pub async fn run() -> Result<()> {
     let app = Router::new()
         .route("/", get(index))
         .route("/api/version", get(api_version))
+        .route("/api/status", get(api_status))
         .route("/api/state", get(api_state))
         .route("/api/databases", get(api_databases))
         .route("/api/tables", get(api_tables))
@@ -349,6 +352,10 @@ async fn index() -> Response {
 
 async fn api_version() -> Json<serde_json::Value> {
     Json(json!({ "version": env!("CARGO_PKG_VERSION") }))
+}
+
+async fn api_status(State(state): State<AppState>) -> Json<identity::Identity> {
+    Json(state.identity)
 }
 
 /// Serialize the current derived state, or an error response.
