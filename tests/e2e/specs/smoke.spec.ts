@@ -50,6 +50,8 @@ test('daemon exposes the running build version', async ({ request }) => {
 test('status bar path appears only in the database view', async ({ page }) => {
   await page.goto('/');
   await page.locator('#tabs .tab[data-tab="databases"]').click();
+  await page.locator('#db-combo').click();
+  await page.locator('.pick-row').filter({ hasText: 'widgets.duckdb' }).click();
   await expect(page.locator('#sl-db')).toContainText('widgets.duckdb');
 
   await page.locator('#tabs .tab[data-tab="sessions"]').click();
