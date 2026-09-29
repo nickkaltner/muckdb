@@ -269,6 +269,22 @@
   .mermaid-host svg, .mermaid-editor-preview svg { display: block; max-width: 100%; height: auto; }
   .mermaid-host svg { width: auto; max-height: 600px; }
   .mermaid-render-error { align-self: center; justify-self: stretch; padding: 14px 16px; border-left: 3px solid var(--fail); background: color-mix(in srgb, var(--fail) 8%, var(--surface)); color: var(--fail); white-space: pre-wrap; font-size: 11px; line-height: 1.55; }
+  .ml-architecture-host { overflow: auto; padding: 18px; background: color-mix(in srgb, var(--bg) 68%, var(--surface)); }
+  .ml-architecture-host svg { display: block; width: 100%; min-width: 720px; height: auto; font-family: var(--mono); }
+  .ml-architecture-host .ml-title { fill: var(--fg); font-size: 28px; font-weight: 750; letter-spacing: -.04em; }
+  .ml-architecture-host .ml-eyebrow { fill: var(--faint); font-size: 11px; letter-spacing: .18em; }
+  .ml-architecture-host .ml-label { fill: var(--fg); font-size: 13px; font-weight: 650; }
+  .ml-architecture-host .ml-small { fill: var(--muted); font-size: 11px; }
+  .ml-architecture-host .ml-metric { fill: var(--fg); font-size: 20px; font-weight: 700; }
+  .ml-architecture-host .ml-line { stroke: var(--muted); stroke-width: 2; fill: none; }
+  .ml-architecture-host .ml-module-line { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 4 5; fill: none; }
+  .ml-architecture-host .ml-card { fill: var(--surface); stroke: var(--line); stroke-width: 1.5; }
+  .ml-architecture-host .ml-stage { fill: var(--raised); stroke: var(--line); stroke-width: 1.5; }
+  .ml-architecture-host .ml-stage.hot { fill: color-mix(in srgb, var(--ml-accent) 25%, var(--surface)); stroke: var(--ml-accent); }
+  .ml-architecture-host .ml-stack { fill: color-mix(in srgb, var(--ml-accent) 11%, var(--surface)); stroke: var(--ml-accent); stroke-width: 1.5; }
+  .ml-architecture-host .ml-accent { fill: var(--ml-accent); }
+  .ml-architecture-host .ml-accent-line { stroke: var(--ml-accent); stroke-width: 2; fill: none; }
+  .ml-architecture-host .ml-module { fill: color-mix(in srgb, var(--ml-accent) 6%, var(--surface)); stroke: var(--ml-accent); stroke-width: 1.5; stroke-dasharray: 5 4; }
   @media (max-width: 850px) {
     .mermaid-editor-overlay { padding: 0; }
     .mermaid-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(220px, .85fr) minmax(260px, 1.15fr); }
@@ -4205,6 +4221,7 @@
   function loadPanelTile(t) {
     if (t.type === "markdown") return loadMarkdown(t);
     if (t.type === "mermaid") return renderMermaidTile(t);
+    if (t.type === "mlarchitecture") return renderMlArchitectureTile(t);
     if (t.type !== "view") return null;
     if (t.sql && state.tileMode[t.name] === "sql") { showTileSql(t); return null; }
     return loadTileChart(t);
@@ -4373,7 +4390,7 @@
   }
   // One TOC entry per panel, in order; clicking jumps to it. Markdown panels are
   // included (they're usually the intro/summary you most want to jump to).
-  function tocKind(t) { return t.type === "markdown" ? "md" : t.type === "mermaid" ? "mermaid" : t.type === "section" ? "section" : ((t.chart && t.chart.kind) || "table"); }
+  function tocKind(t) { return t.type === "markdown" ? "md" : t.type === "mermaid" ? "mermaid" : t.type === "mlarchitecture" ? "ML" : t.type === "section" ? "section" : ((t.chart && t.chart.kind) || "table"); }
   function renderToc(tiles, trashed) {
     const el = $("session-toc"); if (!el) return;
     trashed = trashed || [];
@@ -4895,6 +4912,66 @@
     return renderMermaidSource(t.source || "", host);
   }
 
+  function mlArchitectureSvg(spec, tileName) {
+    const accent = /^#[0-9a-f]{6}$/i.test(spec.accent || "") ? spec.accent : "#42b8d6";
+    const arrowId = `ml-arrow-${tileName.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+    const steps = spec.stack.steps;
+    const modules = spec.modules || [];
+    const stepY = (i) => 565 - i * (280 / Math.max(steps.length - 1, 1));
+    const rect = (x, y, w, h, cls, rx = 10) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="${rx}" class="${cls}"/>`;
+    const label = (x, y, value, cls = "ml-label", anchor = "start") => `<text x="${x}" y="${y}" class="${cls}" text-anchor="${anchor}">${esc(String(value))}</text>`;
+    const line = (x1, y1, x2, y2, cls = "ml-line", arrow = false) => `<path d="M${x1} ${y1} L${x2} ${y2}" class="${cls}"${arrow ? ` marker-end="url(#${attr(arrowId)})"` : ""}/>`;
+    const metric = (y, key, value) => value == null ? "" : `${label(54, y, key.toUpperCase(), "ml-eyebrow")}${label(54, y + 29, value, "ml-metric")}`;
+    let svg = `<svg viewBox="0 0 1120 800" role="img" aria-label="${attr(spec.model)} model architecture" style="--ml-accent:${accent}"><defs><marker id="${attr(arrowId)}" markerWidth="8" markerHeight="8" refX="6" refY="4" orient="auto"><path d="M1 1 L7 4 L1 7" fill="none" stroke="currentColor" stroke-width="1.4"/></marker></defs>`;
+    svg += rect(24, 24, 1072, 752, "ml-card", 18);
+    svg += rect(24, 24, 8, 752, "ml-stack", 4);
+    svg += label(54, 71, "MODEL ARCHITECTURE", "ml-eyebrow") + label(54, 112, spec.model, "ml-title");
+    svg += metric(180, "Parameters", spec.parameters) + metric(263, "Context window", spec.context) + metric(346, "Embedding width", spec.embedding) + metric(429, "Attention heads", spec.heads);
+    svg += label(54, 686, "READ BOTTOM → TOP", "ml-eyebrow") + label(54, 711, `${spec.stack.repeat} repeated blocks`, "ml-label");
+    svg += rect(307, 211, 319, 408, "ml-stack", 23);
+    svg += label(332, 239, `TRANSFORMER BLOCK  × ${spec.stack.repeat}`, "ml-eyebrow");
+    svg += line(466, 710, 466, 100);
+    svg += rect(355, 675, 222, 43, "ml-stage", 9) + label(466, 702, spec.input, "ml-label", "middle");
+    svg += rect(355, 625, 222, 38, "ml-stage", 9) + label(466, 650, spec.embedding_label || "Token embedding", "ml-label", "middle");
+    svg += rect(355, 161, 222, 38, "ml-stage", 9) + label(466, 186, spec.final_norm || "Final norm", "ml-label", "middle");
+    svg += rect(355, 111, 222, 38, "ml-stage", 9) + label(466, 136, spec.output, "ml-label", "middle");
+    svg += line(466, 100, 466, 82, "ml-line", true);
+    steps.forEach((step, i) => {
+      const y = stepY(i);
+      const hot = ["attention", "feedforward", "moe"].includes(step.kind);
+      svg += rect(344, y - 18, 244, 36, `ml-stage${hot ? " hot" : ""}`, 8);
+      svg += label(466, y + 5, step.label, "ml-label", "middle");
+      if (step.residual) {
+        const mergeY = i + 1 < steps.length ? (y + stepY(i + 1)) / 2 : 211;
+        svg += `<path d="M588 ${y} H611 V${mergeY} H466" class="ml-accent-line"/>`;
+        svg += `<circle cx="466" cy="${mergeY}" r="11" class="ml-stage"/>${label(466, mergeY + 5, "+", "ml-label", "middle")}`;
+      }
+    });
+    modules.forEach((module, i) => {
+      const y = 145 + i * 202;
+      const source = steps.findIndex((step) => step.label === module.from || step.kind === module.from);
+      const fromY = source < 0 ? stepY(Math.min(i, steps.length - 1)) : stepY(source);
+      svg += `<path d="M588 ${fromY} C650 ${fromY}, 640 ${y + 74}, 686 ${y + 74}" class="ml-module-line"/>`;
+      svg += rect(686, y, 377, 190, "ml-module", 14);
+      svg += label(706, y + 28, module.title.toUpperCase(), "ml-eyebrow");
+      const stages = module.stages;
+      const gap = 31;
+      stages.forEach((stage, j) => {
+        const sy = y + 45 + j * gap;
+        svg += rect(713, sy, 324, 24, "ml-stage", 5) + label(875, sy + 17, stage, "ml-small", "middle");
+        if (j) svg += line(875, sy + 24, 875, sy + gap);
+      });
+      if (module.note) svg += label(706, y + 181, module.note, "ml-small");
+    });
+    if (!modules.length) svg += label(687, 315, "Add modules to explain attention, feed forward, or routing internals.", "ml-small");
+    svg += `</svg>`;
+    return svg;
+  }
+  function renderMlArchitectureTile(t) {
+    const host = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .ml-architecture-host`);
+    if (host) host.innerHTML = mlArchitectureSvg(t.spec, t.name);
+  }
+
   let mermaidEditor = null;
   function closeMermaidEditor(force = false) {
     if (!mermaidEditor) return true;
@@ -4976,6 +5053,10 @@
       copyText(t.source || "", "Mermaid source copied");
       return;
     }
+    if (t.type === "mlarchitecture") {
+      copyText(JSON.stringify(t.spec, null, 2), "ML architecture spec copied");
+      return;
+    }
     const d = tileData[name]; if (!d) { toast("table is still loading", true); return; }
     const q = (state.tileFilter[name] || "").trim().toLowerCase();
     const rows = q ? d.rows.filter((r) => r.some((v) => String(v ?? "").toLowerCase().includes(q))) : d.rows;
@@ -5001,6 +5082,10 @@
     if (t.type === "mermaid") {
       const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
       return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="beta-badge">beta</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
+    }
+    if (t.type === "mlarchitecture") {
+      const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
+      return `<div class="panel wide ml-architecture-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">ML architecture</span><span class="panel-actions no-screenshot">${copyTileBtn(t.name, "Copy architecture JSON")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="ml-architecture-host"></div>${cap}</div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";

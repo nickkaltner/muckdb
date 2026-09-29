@@ -141,7 +141,7 @@ muckdb commands:
   --stop                 stop the background daemon
   --port <N>             use TCP port N for the daemon (default 11000; per-port pidfile)
   --version              print muckdb's version, then duckdb's
-  session <subcommand>   build dashboards: create | list | post | mermaid | context | tile | screenshot | export | import | rm
+  session <subcommand>   build dashboards: create | list | post | mermaid | ml-architecture | context | tile | screenshot | export | import | rm
   ls <what>              print state as JSON: databases | tables | sessions | session | history
   format <db> <col>      attach a display format to a column ($, %, units, decimals)
   skill <install|uninstall|path>   manage the muckdb agent skill

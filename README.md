@@ -132,6 +132,11 @@ muckdb session post analysis --name notes --title Notes \
 muckdb session mermaid analysis --name architecture --title Architecture \
   --source architecture.mmd --caption "Service topology and dependencies."
 
+# a model diagram with a repeated block, residual paths and side modules
+muckdb session ml-architecture analysis --name model --title "Qwen3 8B" \
+  --source examples/ml-architecture-qwen3-8b.json \
+  --caption "Bottom-to-top token path; one transformer block represents 36 repeats."
+
 # a data panel from a duckdb view, charted as a bar; --trend overlays a
 # smoothed trendline (single-series bar/line/area/scatter)
 muckdb mydb.db -c "CREATE VIEW by_species AS SELECT species, count(*) n FROM readings GROUP BY 1"
@@ -173,7 +178,7 @@ returns it as `agent_session` from `muckdb ls session <id>`. Set
 `CLAUDE_CODE_SESSION_ID` on every command, so integrations can address the
 conversation currently working on the dashboard without guessing an ID format.
 
-Re-running `post`/`mermaid`/`tile` with the same `--name` updates that tile in place; the
+Re-running `post`/`mermaid`/`ml-architecture`/`tile` with the same `--name` updates that tile in place; the
 dashboard updates live. Charts: `bar | line | area | scatter | pie | table |
 heatmap | todo` (a todo is a collaborative checklist backed by an updateable
 table; hover an item to set pending, skipped, success, or failure). A heatmap takes two categorical axes — `--x` and `--y` — plus a

@@ -1,0 +1,35 @@
+{
+  "model": "Qwen3 8B",
+  "accent": "#42b8d6",
+  "parameters": "8B",
+  "context": "40,960 tokens",
+  "embedding": "4,096",
+  "heads": "32 query / 8 KV",
+  "input": "Tokenized text",
+  "embedding_label": "Token embedding",
+  "final_norm": "Final RMSNorm",
+  "output": "Linear output · 151K vocab",
+  "stack": {
+    "repeat": 36,
+    "steps": [
+      { "label": "RMSNorm", "kind": "norm" },
+      { "label": "Grouped query attention", "kind": "attention", "residual": true },
+      { "label": "RMSNorm", "kind": "norm" },
+      { "label": "SwiGLU feed forward", "kind": "feedforward", "residual": true }
+    ]
+  },
+  "modules": [
+    {
+      "title": "SwiGLU feed forward",
+      "from": "feedforward",
+      "stages": ["Up projection", "SiLU gate × value", "Down projection"],
+      "note": "Hidden width 12,288."
+    },
+    {
+      "title": "Grouped query attention",
+      "from": "attention",
+      "stages": ["Q: 32 heads · K/V: 8 heads", "Rotary position encoding", "Causal attention", "Output projection"],
+      "note": "Shared key/value heads reduce KV cache size."
+    }
+  ]
+}

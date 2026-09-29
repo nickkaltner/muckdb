@@ -313,6 +313,7 @@ muckdb session create <name> [--title T] [--agent-session UUID]
 muckdb session list
 muckdb session post <name> --md <text|->  [--name TILE] [--title T] [--db DB]
 muckdb session mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-) [--title T] [--caption C]
+muckdb session ml-architecture <name> --name TILE (--source FILE|- | --json JSON) [--title T] [--caption C]
 muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
@@ -381,8 +382,22 @@ muckdb session rm <name> [--tile TILE]
   messages come from data or are authored for the dashboard. Use `session
   mermaid` for a sequence diagram only when the user specifically asks for
   Mermaid. Sequence tiles can still export Mermaid from their toolbar.
+- **Use `session ml-architecture` when the human wants to see how a neural model
+  is built.** It is suited to transformer and MoE schematics with an input-to-
+  output path, a repeated block, residual connections, and attention, feed
+  forward, or routing details. Use one tile per model when comparing designs.
+  Write an authored JSON spec and post it with `muckdb session ml-architecture
+  SESSION --name model --source architecture.json --title "Model architecture"
+  --caption "..."`. Required keys are `model`, `input`, `output`, and `stack`
+  with `repeat` and bottom-to-top `steps` (`label`, optional `kind` and
+  `residual`). Optional keys are `accent` (hex colour), `parameters`, `context`,
+  `embedding`, `heads`, `embedding_label`, `final_norm`, and up to three `modules`
+  (`title`, `from` stage label or kind, `stages` string array, optional `note`).
+  The spec is illustrative: verify model dimensions and architectural claims
+  from the material you are presenting. Re-post the same name to update it,
+  then use `session screenshot` to check that labels and connections are clear.
 - **Use authored Mermaid for other naturally structured information.** When a
-  flowchart, tree, state machine, or architecture sketch is the source itself,
+  flowchart, tree, state machine, or general architecture sketch is the source itself,
   keep its Mermaid text in the session with `session mermaid`; do not flatten it
   into artificial DuckDB rows. Pass a `.mmd` file to `--source`, use `--source
   -` for stdin, or `--mmd` for short inline source. The tile's **edit** button

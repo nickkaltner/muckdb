@@ -1,5 +1,5 @@
 //! Sessions: named dashboards of tiles (panels) that an agent posts to from the
-//! CLI. A tile is markdown, authored Mermaid source, or a data view (a duckdb
+//! CLI. A tile is markdown, an authored diagram, or a data view (a duckdb
 //! view or inline SQL) rendered as a chart and explorable as a faceted search.
 //! Stored as one JSON file per session under the data dir, shared with the daemon.
 
@@ -208,6 +208,18 @@ pub enum Tile {
         #[serde(default, skip_serializing_if = "is_false")]
         trashed: bool,
     },
+    /// An authored model architecture: a vertical data path with a repeated
+    /// block, optional residuals, and explanatory side modules.
+    MlArchitecture {
+        name: String,
+        #[serde(default)]
+        title: Option<String>,
+        spec: Value,
+        #[serde(default)]
+        caption: Option<String>,
+        #[serde(default, skip_serializing_if = "is_false")]
+        trashed: bool,
+    },
     /// A heading-only tile that groups the panels after it: renders as a section
     /// divider in the dashboard and as a section header in the contents.
     Section {
@@ -249,6 +261,7 @@ impl Tile {
         match self {
             Tile::Markdown { name, .. }
             | Tile::Mermaid { name, .. }
+            | Tile::MlArchitecture { name, .. }
             | Tile::Section { name, .. }
             | Tile::View { name, .. } => name,
         }
@@ -258,6 +271,7 @@ impl Tile {
         match self {
             Tile::Markdown { trashed, .. }
             | Tile::Mermaid { trashed, .. }
+            | Tile::MlArchitecture { trashed, .. }
             | Tile::Section { trashed, .. }
             | Tile::View { trashed, .. } => *trashed,
         }
@@ -267,6 +281,7 @@ impl Tile {
         match self {
             Tile::Markdown { trashed, .. }
             | Tile::Mermaid { trashed, .. }
+            | Tile::MlArchitecture { trashed, .. }
             | Tile::Section { trashed, .. }
             | Tile::View { trashed, .. } => *trashed = on,
         }
@@ -1346,6 +1361,75 @@ fn read_mermaid_source(value: &str, inline: bool) -> Result<String> {
     Ok(source)
 }
 
+fn read_ml_architecture_spec(value: &str, inline: bool) -> Result<Value> {
+    let source = if inline || value == "-" {
+        read_md(value)?
+    } else {
+        fs::read_to_string(value)
+            .with_context(|| format!("reading ML architecture spec {value:?}"))?
+    };
+    let spec: Value = serde_json::from_str(&source).context("ML architecture spec must be JSON")?;
+    let obj = spec
+        .as_object()
+        .context("ML architecture spec must be an object")?;
+    let required_text = |value: &Value, field: &str| -> Result<()> {
+        if value
+            .get(field)
+            .and_then(Value::as_str)
+            .is_some_and(|s| !s.trim().is_empty())
+        {
+            Ok(())
+        } else {
+            bail!("ML architecture needs nonempty '{field}'")
+        }
+    };
+    required_text(&spec, "model")?;
+    required_text(&spec, "input")?;
+    required_text(&spec, "output")?;
+    let stack = obj.get("stack").context("ML architecture needs 'stack'")?;
+    let repeat = stack.get("repeat").and_then(Value::as_u64).unwrap_or(0);
+    if repeat == 0 || repeat > 10000 {
+        bail!("ML architecture stack.repeat must be between 1 and 10000");
+    }
+    let steps = stack
+        .get("steps")
+        .and_then(Value::as_array)
+        .context("ML architecture stack.steps must be an array")?;
+    if steps.is_empty() || steps.len() > 12 {
+        bail!("ML architecture stack.steps must contain 1 to 12 stages");
+    }
+    for (i, step) in steps.iter().enumerate() {
+        required_text(step, "label").with_context(|| format!("stack.steps[{i}]"))?;
+        if let Some(kind) = step.get("kind").and_then(Value::as_str)
+            && !matches!(kind, "attention" | "feedforward" | "moe" | "norm" | "other")
+        {
+            bail!("stack.steps[{i}].kind must be attention, feedforward, moe, norm, or other");
+        }
+    }
+    if let Some(modules) = obj.get("modules") {
+        let modules = modules
+            .as_array()
+            .context("ML architecture modules must be an array")?;
+        if modules.len() > 3 {
+            bail!("ML architecture supports at most 3 side modules");
+        }
+        for (i, module) in modules.iter().enumerate() {
+            required_text(module, "title").with_context(|| format!("modules[{i}]"))?;
+            let stages = module
+                .get("stages")
+                .and_then(Value::as_array)
+                .context("ML architecture module.stages must be an array")?;
+            if stages.is_empty()
+                || stages.len() > 6
+                || stages.iter().any(|s| s.as_str().is_none_or(str::is_empty))
+            {
+                bail!("ML architecture modules[{i}].stages must contain 1 to 6 nonempty strings");
+            }
+        }
+    }
+    Ok(spec)
+}
+
 /// Entry point for `muckdb session <action> ...`.
 pub fn cli(args: &[String]) -> Result<i32> {
     let action = args.first().map(String::as_str).unwrap_or("");
@@ -1459,6 +1543,34 @@ pub fn cli(args: &[String]) -> Result<i32> {
             save(&s)?;
             crate::facade::ensure_daemon()?;
             println!("set Mermaid tile '{tile_name}' in session {id}");
+            Ok(0)
+        }
+        "ml-architecture" => {
+            let name = session_arg.context(
+                "usage: muckdb session ml-architecture <name> --name TILE (--source FILE|- | --json JSON)",
+            )?;
+            let id = slug(&name);
+            let _lock = lock_session(&id)?;
+            let (raw, inline) = if let Some(value) = p.get("source") {
+                (value, false)
+            } else if let Some(value) = p.get("json") {
+                (value, true)
+            } else {
+                bail!("an ML architecture tile needs --source <file|-> or --json <JSON>");
+            };
+            let tile_name = p.get("name").context("--name <tile> required")?.to_string();
+            let tile = Tile::MlArchitecture {
+                name: tile_name.clone(),
+                title: p.get("title").map(str::to_string),
+                spec: read_ml_architecture_spec(raw, inline)?,
+                caption: p.get("caption").map(str::to_string),
+                trashed: false,
+            };
+            let mut s = load_or_new(&id, None)?;
+            upsert_tile(&mut s, tile);
+            save(&s)?;
+            crate::facade::ensure_daemon()?;
+            println!("set ML architecture tile '{tile_name}' in session {id}");
             Ok(0)
         }
         "section" => {
@@ -1872,6 +1984,36 @@ mod tests {
         assert_eq!(name, "architecture");
         assert!(source.contains("API --> DB"));
         assert_eq!(caption.as_deref(), Some("Authored rather than queried."));
+    }
+
+    #[test]
+    fn ml_architecture_spec_validates_and_roundtrips() {
+        let spec = read_ml_architecture_spec(
+            include_str!("../examples/ml-architecture-qwen3-8b.json"),
+            true,
+        )
+        .unwrap();
+        let tile = Tile::MlArchitecture {
+            name: "qwen".into(),
+            title: Some("Qwen3 8B".into()),
+            spec,
+            caption: None,
+            trashed: false,
+        };
+        let json = serde_json::to_string(&tile).unwrap();
+        let back: Tile = serde_json::from_str(&json).unwrap();
+        let Tile::MlArchitecture { spec, .. } = back else {
+            panic!("expected ML architecture tile");
+        };
+        assert_eq!(spec["stack"]["repeat"], 36);
+        assert_eq!(spec["modules"].as_array().unwrap().len(), 2);
+        assert!(
+            read_ml_architecture_spec(
+                r#"{"model":"x","input":"i","output":"o","stack":{"repeat":0,"steps":[]}}"#,
+                true
+            )
+            .is_err()
+        );
     }
 
     #[test]
