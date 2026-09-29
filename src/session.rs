@@ -34,6 +34,11 @@ pub struct Chart {
     pub x: Option<String>,
     #[serde(default)]
     pub y: Vec<String>,
+    /// Table tiles: numeric columns whose highest/lowest values use the theme accent.
+    #[serde(default, alias = "bold_max", skip_serializing_if = "Vec::is_empty")]
+    pub accent_max: Vec<String>,
+    #[serde(default, alias = "bold_min", skip_serializing_if = "Vec::is_empty")]
+    pub accent_min: Vec<String>,
     /// Map tiles: the latitude / longitude columns (`--lat`/`--lon`). When unset,
     /// a map tile auto-detects columns named lat/latitude and lon/lng/longitude.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -1011,6 +1016,26 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
     for y in &chart.y {
         check("--y", y)?;
     }
+    for (flag, columns) in [
+        ("--accent-max", &chart.accent_max),
+        ("--accent-min", &chart.accent_min),
+    ] {
+        if !columns.is_empty() && chart.kind != "table" {
+            bail!("{flag} is only supported with --chart table");
+        }
+        for column in columns {
+            check(flag, column)?;
+            let ty = rows
+                .iter()
+                .find(|r| r.get("column_name").and_then(Value::as_str) == Some(column))
+                .and_then(|r| r.get("column_type").and_then(Value::as_str))
+                .unwrap_or("")
+                .to_ascii_uppercase();
+            if !crate::introspect::is_numeric(&ty) {
+                bail!("{flag} column '{column}' must be numeric (got {ty})");
+            }
+        }
+    }
     if let Some(v) = &chart.value {
         check("--value", v)?;
     }
@@ -1676,6 +1701,11 @@ pub fn cli(args: &[String]) -> Result<i32> {
                         .collect()
                 })
                 .unwrap_or_default();
+            for flag in ["accent-max", "accent-min", "bold-max", "bold-min"] {
+                if p.get(flag).is_some() && parse_columns(p.get(flag)).is_empty() {
+                    bail!("--{flag} needs at least one column");
+                }
+            }
             let band = if let Some(raw) = p.get("band") {
                 let cols: Vec<_> = raw
                     .split(',')
@@ -1746,6 +1776,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     bars: p.get("bars").map(str::to_string),
                     y_range,
                     y,
+                    accent_max: parse_columns(p.get("accent-max").or(p.get("bold-max"))),
+                    accent_min: parse_columns(p.get("accent-min").or(p.get("bold-min"))),
                     targets: parse_markers(&p.get_all("target")),
                     thresholds: parse_markers(&p.get_all("threshold")),
                     events: parse_markers(&p.get_all("event")),
@@ -1905,6 +1937,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  context <name|agent-session-uid> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
                  tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 [--accent-max C1,C2] [--accent-min C1,C2]  (table: colour tied numeric highs/lows with the theme accent, within the filtered fetched rows)\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
                  --chart map: --lat COL --lon COL (else auto-detected lat/latitude & lon/lng/longitude); markers shade by point count, or --value COL by magnitude; --label COL names points in the hover tooltip; connections: --from-lat/--from-lon/--to-lat/--to-lon per arc, --from-label/--to-label name each endpoint marker\n                       \
@@ -2022,6 +2055,8 @@ mod tests {
             kind: "heatmap".into(),
             x: Some("port_speed".into()),
             y: vec!["country".into()],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: None,
             lon: None,
             from_lat: None,
@@ -2086,6 +2121,8 @@ mod tests {
             kind: "map".into(),
             x: None,
             y: vec![],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: Some("latitude".into()),
             lon: Some("longitude".into()),
             from_lat: None,
@@ -2153,6 +2190,8 @@ mod tests {
             kind: "timeline".into(),
             x: None,
             y: vec![],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: None,
             lon: None,
             from_lat: None,
@@ -2228,6 +2267,8 @@ mod tests {
             kind: "sequence".into(),
             x: None,
             y: vec![],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: None,
             lon: None,
             from_lat: None,
@@ -2512,6 +2553,71 @@ mod tests {
     }
 
     #[test]
+    fn table_extreme_columns_roundtrip_and_validate() {
+        let old: Chart = serde_json::from_str(r#"{"kind":"table"}"#).unwrap();
+        assert!(old.accent_max.is_empty() && old.accent_min.is_empty());
+        let chart: Chart = serde_json::from_str(
+            r#"{"kind":"table","accent_max":["revenue"],"accent_min":["latency"]}"#,
+        )
+        .unwrap();
+        let restored: Chart =
+            serde_json::from_value(serde_json::to_value(&chart).unwrap()).unwrap();
+        assert_eq!(restored.accent_max, vec!["revenue"]);
+        assert_eq!(restored.accent_min, vec!["latency"]);
+        let legacy: Chart = serde_json::from_str(
+            r#"{"kind":"table","bold_max":["revenue"],"bold_min":["latency"]}"#,
+        )
+        .unwrap();
+        assert_eq!(legacy.accent_max, chart.accent_max);
+        assert_eq!(legacy.accent_min, chart.accent_min);
+
+        if !duckdb_ok() {
+            eprintln!("skipping table extreme column validation: no duckdb");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("muckdb-extremes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("extremes.duckdb");
+        let dbs = db.to_str().unwrap();
+        run_sql(
+            dbs,
+            "CREATE TABLE scores AS SELECT 12.5::DECIMAL(8,2) revenue, 8::INTEGER latency, 'east' region, [1,2] sizes",
+        );
+        assert!(validate_tile(dbs, Some("scores"), None, &chart).is_ok());
+        let mut invalid = chart.clone();
+        invalid.accent_max = vec!["regoin".into()];
+        assert!(
+            validate_tile(dbs, Some("scores"), None, &invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("did you mean 'region'")
+        );
+        invalid.accent_max = vec!["region".into()];
+        assert!(
+            validate_tile(dbs, Some("scores"), None, &invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("must be numeric")
+        );
+        invalid.accent_max = vec!["sizes".into()];
+        assert!(
+            validate_tile(dbs, Some("scores"), None, &invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("must be numeric")
+        );
+        invalid.accent_max = vec!["revenue".into()];
+        invalid.kind = "bar".into();
+        assert!(
+            validate_tile(dbs, Some("scores"), None, &invalid)
+                .unwrap_err()
+                .to_string()
+                .contains("only supported with --chart table")
+        );
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
     fn timeline_validation_requires_core_flags() {
         if !duckdb_ok() {
             eprintln!("skipping timeline_validation_requires_core_flags: no duckdb");
@@ -2533,6 +2639,8 @@ mod tests {
             kind: "timeline".into(),
             x: None,
             y: vec![],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: None,
             lon: None,
             from_lat: None,
@@ -2625,6 +2733,8 @@ mod tests {
             kind: "sequence".into(),
             x: None,
             y: vec![],
+            accent_max: vec![],
+            accent_min: vec![],
             lat: None,
             lon: None,
             from_lat: None,

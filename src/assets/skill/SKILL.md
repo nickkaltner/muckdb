@@ -320,6 +320,7 @@ muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE |
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|topology|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--limit N] (positive row limit, default 10000; applies to views and inline SQL)
+        [--accent-max C1,C2] [--accent-min C1,C2]  (table: colour tied highest/lowest numeric values with the dashboard accent)
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
@@ -351,6 +352,29 @@ muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--h
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
+```
+
+### Highlight extremes in table tiles
+
+Use `--accent-max` and `--accent-min` with comma-separated **numeric** columns on
+`--chart table`. Each column is compared independently; ties all use the
+dashboard theme's accent text colour at normal font weight.
+The comparison uses the fetched rows matching the tile's current text filter,
+before the table's 20-row display cutoff. If the tile hits its `--limit`, only
+that partial result is compared. Reposting a tile without these flags clears
+its highlighting.
+
+```sh
+# Sales leaderboard: emphasize the largest revenue and order count.
+muckdb session tile sales --name leaders --db sales.duckdb --view by_region \
+  --chart table --accent-max revenue,orders --title "Regional leaders" \
+  --caption "Accent figures lead their column among the filtered regions."
+
+# Operations review: emphasize the worst latency and fewest successful requests.
+muckdb session tile ops --name services --db ops.duckdb --view service_health \
+  --chart table --accent-max p95_latency_ms --accent-min successful_requests \
+  --title "Service health" \
+  --caption "Accent figures identify the slowest service and lowest success count."
 ```
 
 - **Keep the current thread attached.** Export `MUCKDB_SESSION=<dashboard>` before

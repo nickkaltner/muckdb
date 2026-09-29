@@ -402,6 +402,8 @@ mod tests {
                         kind: "bar".into(),
                         x: Some("k".into()),
                         y: vec!["n".into()],
+                        accent_max: vec![],
+                        accent_min: vec![],
                         lat: None,
                         lon: None,
                         from_lat: None,

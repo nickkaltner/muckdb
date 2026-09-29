@@ -498,6 +498,7 @@
   table.preview thead th .ind { color: var(--fg); margin-left: 4px; }
   table.preview tbody tr:hover { background: var(--raised); }
   table.preview td.null { color: var(--faint); }
+  table.preview td.tile-extreme, table.preview td.tile-extreme .cell-link { color: var(--primary); }
   /* Hover "+" on categorical cells: adds a filter on that column+value. Sits
      inline right after the text; space is reserved (visibility, not display)
      so columns don't shift on hover. Stays visible as "−" while active. */
@@ -5295,7 +5296,7 @@
     await ensureFormats(t.db);
     if (!rows.length) { discardExistingChart(); slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
     if (kind === "todo") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = todoHtml(cols, rows, t); return; }
-    if (kind === "table") { discardExistingChart(); tileData[t.name] = { cols, rows, db: t.db, table: t.view || null }; renderTileTable(t.name); return; }
+    if (kind === "table") { discardExistingChart(); tileData[t.name] = { cols, rows, db: t.db, table: t.view || null, chart: t.chart || {} }; renderTileTable(t.name); return; }
     if (kind === "heatmap") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = heatmapHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "box") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = boxTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "probability") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = probabilityTileHtml(cols, rows, t.chart || {}, t.db, t.view || null); applyTileHeight(t.name); return; }
@@ -5365,6 +5366,25 @@
   // Table tiles keep their fetched rowset here so the title-bar filter can
   // re-render locally (substring match across all columns) without refetching.
   let tileData = {};
+  function tableExtremes(cols, rows, chart) {
+    const extreme = new Map();
+    for (const [mode, columns] of [["max", chart.accent_max || []], ["min", chart.accent_min || []]]) {
+      for (const column of columns) {
+        const index = cols.indexOf(column);
+        if (index < 0) continue;
+        let best;
+        for (const row of rows) {
+          const raw = row[index];
+          if (raw === null || raw === undefined || typeof raw === "boolean" || typeof raw === "object" || String(raw).trim() === "") continue;
+          const value = Number(raw);
+          if (!Number.isFinite(value)) continue;
+          if (best === undefined || (mode === "max" ? value > best : value < best)) best = value;
+        }
+        if (best !== undefined) extreme.set(`${mode}:${index}`, best);
+      }
+    }
+    return extreme;
+  }
   function renderTileTable(name) {
     const slot = document.querySelector(`[data-tile="${cssEsc(name)}"] .panel-chart`);
     const d = tileData[name];
@@ -5373,7 +5393,7 @@
     const rows = q ? d.rows.filter((r) => r.some((v) => String(v ?? "").toLowerCase().includes(q))) : d.rows;
     slot.style.height = "auto";
     slot.innerHTML = rows.length
-      ? miniTable(d.cols, rows, d.db, d.table, state.tableShrunk[name], TILE_TABLE_ROWS, !!q)
+      ? miniTable(d.cols, rows, d.db, d.table, state.tableShrunk[name], TILE_TABLE_ROWS, !!q, tableExtremes(d.cols, rows, d.chart))
       : `<div class="note" style="padding:6px 12px">no rows match “${esc(q)}”.</div>`;
     applyTileHeight(name);
   }
@@ -8230,11 +8250,17 @@
       + `</span>`;
   }
   const TILE_TABLE_ROWS = 20;
-  function miniTable(cols, rows, db, table, shrunk, limit, filtered) {
+  function miniTable(cols, rows, db, table, shrunk, limit, filtered, extremes) {
     const head = cols.map((c) => `<th>${esc(c)}</th>`).join("");
     const shown = rows.slice(0, limit || 100);
     const au = autoEpochUnits(cols, shown, db, table);
-    const body = shown.map((r) => "<tr>" + r.map((v, i) => cell(v, cols[i], table, db, au[i], false, r, cols)).join("") + "</tr>").join("");
+    const body = shown.map((r) => "<tr>" + r.map((v, i) => {
+      const html = cell(v, cols[i], table, db, au[i], false, r, cols);
+      if (!extremes || v === null || v === undefined || typeof v === "boolean" || typeof v === "object" || String(v).trim() === "") return html;
+      const value = Number(v);
+      const accented = Number.isFinite(value) && (value === extremes.get(`max:${i}`) || value === extremes.get(`min:${i}`));
+      return accented ? html.replace("<td>", '<td class="tile-extreme">') : html;
+    }).join("") + "</tr>").join("");
     const more = rows.length > shown.length
       ? `<div class="note hide-presentation" style="padding:6px 12px">+${rows.length - shown.length} more ${filtered ? "matches — narrow the filter" : "rows — filter, or explore to see them all"}.</div>` : "";
     return `<div class="preview-wrap${shrunk ? " shrunk" : ""}"><table class="preview"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table></div>${more}`;

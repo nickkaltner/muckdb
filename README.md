@@ -87,6 +87,13 @@ Pass `--limit N` to `session tile` to change a tile's positive row limit. Partia
 results show a notice; use an ordered, aggregated or deliberately sampled query
 when the full result would be too large to display.
 
+On a table tile, `--accent-max revenue,orders` and `--accent-min latency` colour
+the highest or lowest numeric value in each named column with the theme accent
+(including ties).
+Extremes update with the tile's text filter and are calculated from fetched
+rows before the 20-row display cutoff. If the tile hits its row limit, the
+comparison covers only that partial result.
+
 Markdown tiles can contain live scalar SQL values:
 
 ```sh

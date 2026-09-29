@@ -1,5 +1,7 @@
 import { test, expect } from '../fixtures/test';
-import { SESSION_ID } from '../constants';
+import { BINARY, SESSION_ID } from '../constants';
+import { execFileSync } from 'node:child_process';
+import { join } from 'node:path';
 
 test('seeded session renders its tiles', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
@@ -12,6 +14,41 @@ test('seeded session renders its tiles', async ({ page }) => {
   await expect(page.locator('.panel', { hasText: 'By category' })).toBeVisible();
   await expect(page.locator('.panel', { hasText: 'By day' })).toBeVisible();
   await expect(page.locator('.panel', { hasText: 'All widgets' })).toBeVisible();
+});
+
+test('table tile accents tied extrema and updates them with the text filter', async ({ page, e2eState }) => {
+  const env = {
+    ...process.env,
+    XDG_DATA_HOME: join(e2eState.tmpDir, 'data'),
+    XDG_STATE_HOME: join(e2eState.tmpDir, 'state'),
+  };
+  const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env, stdio: 'pipe' });
+  const db = join(e2eState.tmpDir, 'extremes.duckdb');
+  run([db, '-c', "CREATE TABLE scores AS SELECT * FROM (VALUES ('alpha', 10, 2), ('beta', 10, 5), ('gamma', 3, NULL)) t(name, score, latency)"]);
+  run(['format', db, 'score', '--suffix', ' pts']);
+  run(['session', 'tile', 'extremes', '--name', 'scores', '--db', db, '--view', 'scores',
+    '--chart', 'table', '--accent-max', 'score', '--accent-min', 'latency', '--caption', 'Extremes.']);
+
+  await page.goto('/session/extremes/');
+  const tile = page.locator('.panel[data-tile="scores"]');
+  const row = (name: string) => tile.locator('tbody tr').filter({ hasText: name });
+  await expect(row('alpha').locator('td.tile-extreme')).toHaveCount(2);
+  await expect(row('beta').locator('td.tile-extreme')).toHaveCount(1);
+  await expect(row('gamma').locator('td.tile-extreme')).toHaveCount(0);
+  const accentStyle = await row('alpha').locator('td.tile-extreme').first().evaluate((cell) => ({
+    color: getComputedStyle(cell).color,
+    weight: getComputedStyle(cell).fontWeight,
+  }));
+  expect(accentStyle.color).toBe(await tile.locator('thead th').first().evaluate((head) => getComputedStyle(head).color));
+  expect(accentStyle.weight).toBe('400');
+  const mutedAffix = await row('gamma').locator('td .fmt-affix').evaluate((suffix) => getComputedStyle(suffix).color);
+  await expect(row('alpha').locator('td.tile-extreme .fmt-affix')).toHaveCSS('color', mutedAffix);
+  expect(mutedAffix).not.toBe(accentStyle.color);
+
+  await tile.locator('[data-tfilter]').fill('beta');
+  await expect(row('beta').locator('td.tile-extreme')).toHaveCount(2);
+  await tile.locator('[data-tfilter]').fill('gamma');
+  await expect(row('gamma').locator('td.tile-extreme')).toHaveCount(1);
 });
 
 test('linked session UUID is shown beside the picker and copies', async ({ page, context }) => {
