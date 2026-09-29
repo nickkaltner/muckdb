@@ -285,6 +285,8 @@
   .ml-architecture-host .ml-accent { fill: var(--ml-accent); }
   .ml-architecture-host .ml-accent-line { stroke: var(--ml-accent); stroke-width: 2; fill: none; }
   .ml-architecture-host .ml-module { fill: color-mix(in srgb, var(--ml-accent) 6%, var(--surface)); stroke: var(--ml-accent); stroke-width: 1.5; stroke-dasharray: 5 4; }
+  .zoom-chart .ml-architecture-host { width: 100%; height: 100%; overflow: hidden; padding: 0; }
+  .zoom-chart .ml-architecture-host svg { width: 100%; height: 100%; min-width: 0; }
   @media (max-width: 850px) {
     .mermaid-editor-overlay { padding: 0; }
     .mermaid-workspace { grid-template-columns: 1fr; grid-template-rows: minmax(220px, .85fr) minmax(260px, 1.15fr); }
@@ -1117,6 +1119,8 @@
   .presentation-stage .panel-actions, .presentation-stage .panel-grip { display: none; }
   .presentation-stage .panel-body { flex: 1; min-height: 0; display: flex; flex-direction: column; padding: 18px 20px; }
   .presentation-stage .panel-chart { flex: 1; min-height: 0; height: auto !important; }
+  .presentation-stage .ml-architecture-host { flex: 1; min-height: 0; overflow: hidden; padding: 0; }
+  .presentation-stage .ml-architecture-host svg { width: 100%; height: 100%; min-width: 0; }
   .presentation-stage .panel-chart.presentation-chart-enter { animation: presentation-chart-fade 520ms cubic-bezier(0.23, 1, 0.32, 1) both; }
   .presentation-stage .panel-caption { flex: none; margin: 12px 2px 0; font-size: 12px; }
   /* A map has an intrinsic, width-driven height. Do not stretch its chart slot
@@ -3907,7 +3911,7 @@
     if (state.zoomPanel) { state.zoomPanel = null; syncUrl(true); }
   }
   async function zoomTile(name) {
-    const t = sessionTile(name); if (!t || t.type !== "view") return;
+    const t = sessionTile(name); if (!t || (t.type !== "view" && t.type !== "mlarchitecture")) return;
     postActivity(name, "zoom");
     state.zoomPanel = name; syncUrl(true);
     const exploreBtn = t.view ? `<button class="zoom-explore" data-zexplore>explore</button>` : "";
@@ -3921,6 +3925,10 @@
       if (e.target === layer || e.target.closest(".zoom-close")) closeZoom();
     });
     const slot = layer.querySelector(".zoom-chart");
+    if (t.type === "mlarchitecture") {
+      slot.innerHTML = `<div class="ml-architecture-host">${mlArchitectureSvg(t.spec, t.name + "-zoom")}</div>`;
+      return;
+    }
     const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
     try {
       const data = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json();
@@ -5068,6 +5076,9 @@
   function trashBtn(name) {
     return `<button class="panel-act icon" data-trash="${attr(name)}" title="Hide panel (restore from the trash in contents)" aria-label="Hide panel">${SVG_TRASH_X}</button>`;
   }
+  function zoomTileBtn(name) {
+    return `<button class="panel-act icon" data-zoom="${attr(name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
+  }
   function panelHtml(t) {
     if (t.type === "section") {
       // A heading-only divider that groups the panels after it — not a boxed
@@ -5085,7 +5096,7 @@
     }
     if (t.type === "mlarchitecture") {
       const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
-      return `<div class="panel wide ml-architecture-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">ML architecture</span><span class="panel-actions no-screenshot">${copyTileBtn(t.name, "Copy architecture JSON")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="ml-architecture-host"></div>${cap}</div></div>`;
+      return `<div class="panel wide ml-architecture-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">ML architecture</span><span class="panel-actions no-screenshot">${copyTileBtn(t.name, "Copy architecture JSON")}${copyImgBtn(t.name)}${zoomTileBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="ml-architecture-host"></div>${cap}</div></div>`;
     }
     const kind = (t.chart && t.chart.kind) || "table";
     const sqlBtn = t.sql ? `<button class="panel-act${state.tileMode[t.name] === "sql" ? " active" : ""}" data-tsql="${attr(t.name)}">sql</button>` : "";
@@ -5106,7 +5117,7 @@
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)) : "";
-    const zoomBtn = `<button class="panel-act icon" data-zoom="${attr(t.name)}" title="Expand" aria-label="Expand"><svg viewBox="0 0 16 16" width="12" height="12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 2h5v5M14 2l-5.5 5.5M7 14H2V9M2 14l5.5-5.5"/></svg></button>`;
+    const zoomBtn = zoomTileBtn(t.name);
     const explore = t.view ? `<button class="panel-act" data-explore="${attr(t.name)}">explore</button>` : "";
     const mapToggle = kind === "map" ? mapModeToggle() : "";
     const mermaidBtn = kind === "sequence" || kind === "quadrant" ? `<button class="panel-act" data-mermaid="${attr(t.name)}" title="Copy as mermaid.js">mermaid</button>` : "";
