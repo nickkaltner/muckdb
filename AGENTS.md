@@ -70,7 +70,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence|topology|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|map|timeline|sequence|topology|flame|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
         [--no-values]  (heatmap: colour cells only — hover shows the figure)
         [--lat COL] [--lon COL]  (map: latitude/longitude columns; auto-detected from lat/latitude & lon/lng/longitude if omitted)
@@ -92,6 +92,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--from-mark C1,C2] [--to-mark C1,C2]  (topology: AZ/diversity/trust/owner badges)
         [--from-port COL] [--to-port COL]  (topology: connection-end labels)
         [--direction right|down] [--routing orthogonal|metro] [--spacing compact|comfortable]
+        [--stack COL]  (flame: folded stack 'root;child;leaf' or a LIST column; --value weights each row, --direction down = icicle)
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
@@ -126,7 +127,7 @@ muckdb session rm <name> [--tile TILE]
   SQL** (`--sql`). Prefer `--view` for anything the human should be able to drill
   into — view tiles get an **explore** button that opens the faceted table
   explorer; inline-SQL tiles get a **sql** button that shows the formatted query.
-- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence | topology | todo`. For
+- Chart kinds: `bar | stacked | line | area | scatter | pie | table | heatmap | box | map | timeline | sequence | topology | flame | todo`. For
   `bar`/`line`/etc, put aggregation in the view/SQL (one row per x). If the `--x`
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
@@ -234,6 +235,17 @@ muckdb session rm <name> [--tile TILE]
   Compact labels avoid tracks and are included in the diagram bounds.
   Layout controls are `--direction right|down`,
   `--routing orthogonal|metro`, and `--spacing compact|comfortable`.
+- **`flame`** draws a **flame graph** from folded stacks — CPU/allocation
+  profiles, trace span trees, or any hierarchy where width = share of a total.
+  One row per sampled stack: `--stack` is a `;`-separated string, root first
+  (`main;run;parse`), or a LIST column; `--value` (optional, default 1 per row)
+  is the sample count/weight. Rows sharing a prefix merge into one frame,
+  siblings sort by name, and each frame's width is its share of the total.
+  Root at the bottom by default; `--direction down` draws an icicle (root at the
+  top). Click a frame to zoom into it (ancestors stay as dimmed breadcrumbs);
+  **reset zoom** returns to the full view. Hover shows total, self, % of all and
+  % of parent through `--value`'s format. Build stacks in SQL with
+  `string_agg(frame, ';' ORDER BY depth)` or a recursive CTE over parent ids.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

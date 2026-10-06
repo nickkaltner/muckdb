@@ -706,6 +706,22 @@
   .bx-med-val { font-size: 11.5px; color: var(--muted); text-align: right; }
   .bx-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; }
   .bx-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 3px; }
+  /* Flame graph tiles: folded stacks merged into a prefix tree; each frame's
+     width is its share of the total. Click a frame to zoom into it. */
+  .fl { padding: 6px 2px 2px; }
+  .fl-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 18px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+  .fl-path button { font: inherit; color: var(--primary); background: none; border: 0; padding: 0; cursor: pointer; }
+  .fl-path button:hover { text-decoration: underline; }
+  .fl-crumb .fl-total { margin-left: auto; color: var(--faint); }
+  .fl-plot { position: relative; }
+  .fl-frame { position: absolute; height: 17px; box-sizing: border-box; border: 1px solid var(--surface); border-radius: 3px; padding: 0 4px;
+    font-size: 11px; line-height: 15px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    transition: left .18s ease, width .18s ease, opacity .18s ease; }
+  .fl-frame.narrow { padding: 0; color: transparent; }
+  .fl-frame:hover { box-shadow: inset 0 0 0 1.5px var(--primary); }
+  .fl-frame.fl-anc { opacity: .45; }
+  .fl-frame.fl-hide { display: none; }
+  .fl-note { margin-top: 4px; font-size: 10.5px; color: var(--faint); }
   /* Probability tiles: one normal-distribution curve per row on a shared x scale. */
   .pr { display: flex; flex-direction: column; gap: 12px; padding: 8px 4px; }
   .pr-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 104px; gap: 14px; align-items: center; }
@@ -3940,7 +3956,7 @@
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "flame") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.classList.add("mapzoom");
@@ -3955,6 +3971,7 @@
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "flame") { slot.innerHTML = flameHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "topology") {
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)));
         const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];
@@ -5114,7 +5131,7 @@
     // the columns at once.
     const wide = kind === "topology" && topologyAutomaticLayout(t.db, t.view || null, t.name) ? true :
       state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
-    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident"
+    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident" || kind === "flame"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)) : "";
@@ -5128,7 +5145,7 @@
     // sense on them (markdown panels already skip it too). Probability tiles
     // intentionally keep the standard grip: a taller panel gives their curves
     // more breathing room, like a bar or line chart.
-    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "todo" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "flame" || kind === "todo" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions no-screenshot">${topologyControls}${mapToggle}${sqlBtn}${mermaidBtn}${presentBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -5305,6 +5322,7 @@
     if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "flame") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = flameHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];slot.innerHTML = topologyHtml(...view);fitTopologyLayout(slot,view,topologyAutomaticLayout(t.db,t.view || null,t.name));return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
@@ -7777,6 +7795,123 @@
     const axis = `<div class="bx-axis"><span></span><div class="bx-axis-line"><span>${esc(fv(lo))}</span><span>${esc(fv(hi))}</span></div><span></span></div>`;
     return `<div class="bx">${rowsHtml}${axis}</div>`;
   }
+
+  // A flame graph tile: one row per sampled stack in folded form. --stack is a
+  // ';'-separated string ("main;parse;lex", root first) or a LIST column;
+  // --value (optional, default 1 per row) is the sample count/weight. Rows
+  // sharing a prefix merge into one frame, siblings sort by name, and each
+  // frame's width is its share of the total. Root at the bottom (flame);
+  // --direction down puts it at the top (icicle). Click a frame to zoom in.
+  const FL_ROW = 18;
+  function flameStack(v) {
+    if (v == null) return [];
+    const parts = Array.isArray(v) ? v : String(v).split(";");
+    return parts.map((p) => (p == null ? "" : String(p).trim())).filter((p) => p !== "");
+  }
+  function flameHtml(cols, rows, spec, db, table) {
+    const si = cols.indexOf(spec.stack);
+    if (si < 0) return '<div class="note">flame graphs need --stack (a \';\'-separated stack or a LIST column).</div>';
+    const vi = spec.value ? cols.indexOf(spec.value) : -1;
+    const root = { name: "all", value: 0, self: 0, children: new Map() };
+    rows.forEach((r) => {
+      const v = vi >= 0 ? Number(r[vi]) : 1;
+      const frames = flameStack(r[si]);
+      if (!isFinite(v) || v <= 0 || !frames.length) return;
+      root.value += v;
+      let node = root;
+      frames.forEach((name) => {
+        let child = node.children.get(name);
+        if (!child) { child = { name, value: 0, self: 0, children: new Map() }; node.children.set(name, child); }
+        child.value += v;
+        node = child;
+      });
+      node.self += v;
+    });
+    if (!root.value) return '<div class="note">no stacks with a positive value.</div>';
+    const f = vi >= 0 ? colFmt(db, spec.value, table) : null;
+    const fv = (v) => f ? applyFmtHtml(f, round3(v)) : esc(fmtNum(round3(v)));
+    const pct = (a, b) => b ? (a / b * 100).toFixed(a / b < 0.001 ? 3 : 1) + "%" : "—";
+    // Lay frames out depth-first; sub-pixel frames are pruned (they'd render as
+    // nothing anyway) so huge profiles stay a sane DOM size.
+    const minW = 1 / 4000;
+    const frames = [];
+    let maxDepth = 0, pruned = 0;
+    const walk = (node, x0, depth, path, parentValue) => {
+      const w = node.value / root.value;
+      if (w < minW) { pruned++; return; }
+      const id = frames.length;
+      frames.push({ node, x0, w, depth, path, parentValue });
+      maxDepth = Math.max(maxDepth, depth);
+      let x = x0;
+      [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => {
+        walk(c, x, depth + 1, path.concat(c.name), node.value);
+        x += c.value / root.value;
+      });
+      return id;
+    };
+    walk(root, 0, 0, [], root.value);
+    const down = spec.direction === "down";
+    const top = (d) => (down ? d : maxDepth - d) * FL_ROW;
+    // Shade each frame from the theme accent, keyed by its name, so the same
+    // function reads as the same colour wherever it appears.
+    const shade = (name) => {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+      return mixColors("var(--primary)", 22 + (Math.abs(h) % 7) * 7, "var(--surface)");
+    };
+    const html = frames.map((fr, i) => {
+      const n = fr.node, isRoot = i === 0;
+      const stack = isRoot ? "" : `<div class="tl-tip-sep"></div><span class="tl-tip-cat">${fr.path.map(esc).join(" → ")}</span>`;
+      const tip = `<b>${esc(n.name)}</b>${stack}<div class="tl-tip-sep"></div><ul class="wm-tip-list">` +
+        `<li><span class="wm-tip-lb">total</span><span class="wm-tip-c">${fv(n.value)}</span></li>` +
+        `<li><span class="wm-tip-lb">self</span><span class="wm-tip-c">${fv(n.self)}</span></li>` +
+        `<li><span class="wm-tip-lb">of all</span><span class="wm-tip-c">${pct(n.value, root.value)}</span></li>` +
+        (isRoot ? "" : `<li><span class="wm-tip-lb">of parent</span><span class="wm-tip-c">${pct(n.value, fr.parentValue)}</span></li>`) + `</ul>`;
+      const bg = isRoot ? mixColors("var(--muted)", 22, "var(--surface)") : shade(n.name);
+      return `<div class="fl-frame wm-x${fr.w < 0.012 ? " narrow" : ""}" data-fl="${i}" data-x0="${fr.x0}" data-w="${fr.w}" data-d="${fr.depth}" data-name="${attr(n.name)}"
+        style="left:${(fr.x0 * 100).toFixed(4)}%;width:${(fr.w * 100).toFixed(4)}%;top:${top(fr.depth)}px;background:${bg}" data-tip="${attr(tip)}">${esc(n.name)}</div>`;
+    }).join("");
+    const note = pruned ? `<div class="fl-note">${pruned.toLocaleString()} frame${pruned === 1 ? "" : "s"} under 0.025% of the total hidden.</div>` : "";
+    return `<div class="fl"><div class="fl-crumb"><span class="fl-path"></span><span class="fl-total">${fv(root.value)} total</span><button class="tl-reset" type="button" data-flzoom="0" hidden title="Reset flame graph zoom">reset zoom</button></div>` +
+      `<div class="fl-plot" style="height:${(maxDepth + 1) * FL_ROW}px">${html}</div>${note}</div>`;
+  }
+  // Zoom a flame graph so frame `id` spans the full width: its descendants
+  // rescale beneath it, its ancestors stretch full-width (dimmed) and every
+  // other frame hides. id 0 (the root) resets. Pure style updates — no re-render.
+  function flameZoom(box, id) {
+    const frames = [...box.querySelectorAll(".fl-frame")];
+    const focus = frames[id] || frames[0];
+    const a = Number(focus.dataset.x0), w = Number(focus.dataset.w), d = Number(focus.dataset.d);
+    const eps = 1e-9;
+    const crumbs = [];
+    frames.forEach((el) => {
+      const x0 = Number(el.dataset.x0), fw = Number(el.dataset.w), fd = Number(el.dataset.d);
+      const inside = fd >= d && x0 >= a - eps && x0 + fw <= a + w + eps;
+      const ancestor = fd < d && x0 <= a + eps && x0 + fw >= a + w - eps;
+      el.classList.toggle("fl-hide", !inside && !ancestor);
+      el.classList.toggle("fl-anc", ancestor);
+      if (ancestor) { el.style.left = "0%"; el.style.width = "100%"; crumbs[fd] = el; }
+      else if (inside) {
+        const nw = fw / w;
+        el.style.left = ((x0 - a) / w * 100).toFixed(4) + "%";
+        el.style.width = (nw * 100).toFixed(4) + "%";
+        el.classList.toggle("narrow", nw < 0.012);
+      }
+    });
+    const path = box.querySelector(".fl-path");
+    if (path) {
+      path.innerHTML = id ? crumbs.filter(Boolean).concat(focus).map((el) =>
+        `<button type="button" data-flzoom="${el.dataset.fl}">${esc(el.dataset.name)}</button>`).join(" › ") : "";
+    }
+    const reset = box.querySelector(".tl-reset");
+    if (reset) reset.hidden = !id;
+  }
+  document.addEventListener("click", (ev) => {
+    const el = ev.target.closest && ev.target.closest(".fl-frame, [data-flzoom]");
+    if (!el) return;
+    const box = el.closest(".fl");
+    if (box) flameZoom(box, Number(el.dataset.flzoom ?? el.dataset.fl));
+  });
 
   // A probability tile estimates one density curve per --x group from raw
   // observations in its single --y column. This is deliberately non-parametric:
