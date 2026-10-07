@@ -726,6 +726,7 @@ pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result
         sql_literal(status),
         sql_literal(item)
     );
+    let _db_lock = crate::db_lock::acquire(db, false)?;
     let output = std::process::Command::new("duckdb")
         .arg(db)
         .arg("-c")

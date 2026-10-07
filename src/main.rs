@@ -2,6 +2,7 @@
 //! live web view of your muckdb history and databases.
 
 mod daemon;
+mod db_lock;
 mod export;
 mod facade;
 mod formats;

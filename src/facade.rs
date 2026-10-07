@@ -215,6 +215,10 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
 
     // Inherit stdio so muckdb behaves exactly like duckdb (interactive shell,
     // pipes, colours, exit code).
+    let _db_lock = db_path
+        .as_deref()
+        .map(|db| crate::db_lock::acquire(db, args.iter().any(|a| a == "-readonly")))
+        .transpose()?;
     let status = Command::new("duckdb")
         .args(args)
         .status()

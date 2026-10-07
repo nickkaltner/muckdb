@@ -62,6 +62,7 @@ fn tile_dbs(session: &Session) -> Vec<String> {
 /// mid-write WAL. Falls back to a raw byte copy (+ `.wal`) if the CLI copy
 /// fails (e.g. an old duckdb without COPY FROM DATABASE).
 fn snapshot_db(src: &str, dst: &Path) -> Result<()> {
+    let _db_lock = crate::db_lock::acquire(src, true)?;
     let _ = fs::remove_file(dst);
     let esc = |s: &str| s.replace('\'', "''");
     let sql = format!(

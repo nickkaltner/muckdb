@@ -289,6 +289,12 @@ column's formatted value, so `--currency USD --link …` renders a clickable
   records older than seven days on startup and once per day while running.
 - **Database views**: the daemon reads databases by shelling out to
   `duckdb -readonly -json`, so reads go through the same CLI you'd use by hand.
+- **Database coordination**: muckdb commands and UI operations share a per-database
+  advisory lock. Read-only operations can run together; read-write operations wait
+  until other operations finish. Pass `-readonly` for CLI queries that only read.
+  An interactive read-write shell holds its lock until you exit. Direct `duckdb`
+  clients, older muckdb builds, and databases attached inside arbitrary SQL do
+  not participate; DuckDB lock errors remain possible for those accesses.
 
 ### API
 

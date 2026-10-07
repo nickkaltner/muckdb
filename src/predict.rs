@@ -560,6 +560,7 @@ fn build_script(ctas: &str, branches: &[String]) -> String {
 /// one JSON array per completed SELECT; parse leniently so a deadline kill
 /// still yields every batch that finished (`truncated` reports the kill).
 fn run_script(db: &str, script: &str, budget: Duration) -> Result<(Vec<Value>, bool)> {
+    let _db_lock = crate::db_lock::acquire(db, true)?;
     let mut child = Command::new("duckdb")
         .arg("-readonly")
         .arg("-json")
