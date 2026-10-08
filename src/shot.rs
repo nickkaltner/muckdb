@@ -46,7 +46,7 @@ const MEASURE_TIMEOUT: Duration = Duration::from_secs(20);
 const POLL: Duration = Duration::from_millis(100);
 
 /// The shot-mode URL for a session (optionally narrowed to one tile).
-pub fn shot_url(session: &str, tile: Option<&str>) -> String {
+pub fn shot_url(session: &str, tile: Option<&str>, theme: Option<&str>) -> String {
     let mut url = format!(
         "http://127.0.0.1:{}/session/{}/?shot=1",
         facade::resolved_port(),
@@ -55,6 +55,10 @@ pub fn shot_url(session: &str, tile: Option<&str>) -> String {
     if let Some(t) = tile {
         url.push_str("&tile=");
         url.push_str(&urlencode(t));
+    }
+    if let Some(theme) = theme {
+        url.push_str("&theme=");
+        url.push_str(&urlencode(theme));
     }
     url
 }
@@ -78,6 +82,7 @@ fn urlencode(s: &str) -> String {
 pub fn capture_png(
     session: &str,
     tile: Option<&str>,
+    theme: Option<&str>,
     width: u32,
     height: Option<u32>,
 ) -> Result<Vec<u8>> {
@@ -91,7 +96,7 @@ pub fn capture_png(
         SEQ.fetch_add(1, Ordering::Relaxed)
     ));
     std::fs::create_dir_all(&tmp).with_context(|| format!("creating {tmp:?}"))?;
-    let result = capture_in(&browser, &tmp, session, tile, width, height);
+    let result = capture_in(&browser, &tmp, session, tile, theme, width, height);
     let _ = std::fs::remove_dir_all(&tmp);
     result
 }
@@ -101,10 +106,11 @@ fn capture_in(
     tmp: &Path,
     session: &str,
     tile: Option<&str>,
+    theme: Option<&str>,
     width: u32,
     height: Option<u32>,
 ) -> Result<Vec<u8>> {
-    let url = shot_url(session, tile);
+    let url = shot_url(session, tile, theme);
     let width = width.clamp(MIN_WIDTH, MAX_WIDTH);
     let height = match height {
         Some(h) => h.clamp(MIN_HEIGHT, MAX_HEIGHT),
@@ -338,12 +344,23 @@ mod tests {
     fn shot_url_includes_tile_when_given() {
         let port = facade::resolved_port();
         assert_eq!(
-            shot_url("pond-analysis", None),
+            shot_url("pond-analysis", None, None),
             format!("http://127.0.0.1:{port}/session/pond-analysis/?shot=1")
         );
         assert_eq!(
-            shot_url("pond-analysis", Some("by species")),
+            shot_url("pond-analysis", Some("by species"), None),
             format!("http://127.0.0.1:{port}/session/pond-analysis/?shot=1&tile=by%20species")
+        );
+    }
+
+    #[test]
+    fn shot_url_preserves_theme_and_encodes_query_values() {
+        let port = facade::resolved_port();
+        assert_eq!(
+            shot_url("pond-analysis", Some("by species"), Some("paper & ink")),
+            format!(
+                "http://127.0.0.1:{port}/session/pond-analysis/?shot=1&tile=by%20species&theme=paper%20%26%20ink"
+            )
         );
     }
 

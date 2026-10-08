@@ -95,7 +95,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--xlabel L] [--ylabel L] [--bars gradient|solid]
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--trend]
-muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
+muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
@@ -352,9 +352,11 @@ interactions across many views is a hint to present that data differently.
 
 ## Screenshots — see what you built
 
-`muckdb session screenshot <name> [--tile TILE] [--out F.png]` renders the
+`muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out F.png]` renders the
 session (or one tile) exactly as the web UI shows it and writes a PNG — read the
-file to check your dashboard looks right. Omit `--tile` for the whole dashboard;
+file to check your dashboard looks right. Pass `--theme paper` (or another theme name)
+to choose the capture theme; `/api/shot` accepts the same name as `&theme=paper`.
+Omit `--tile` for the whole dashboard;
 the height auto-fits the content. Needs a Chromium-based browser (chromium/
 chrome/brave/edge, or `MUCKDB_BROWSER=/path`). The same render is available as
 `GET /api/shot?session=<id>&tile=<name>` (`image/png`) and behind the copy-image

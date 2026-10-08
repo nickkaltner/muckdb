@@ -348,7 +348,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--xlabel L] [--ylabel L] [--bars gradient|solid] [--y-range tight]
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
-muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
+muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
@@ -1021,6 +1021,8 @@ muckdb session screenshot pond-analysis --tile species --out species.png
 
 - Omit `--tile` to capture the whole dashboard; the image auto-fits the content
   height. `--out` defaults to `muckdb-<session>[-<tile>].png` in the cwd.
+- Pass `--theme paper` (or another theme name) to choose the capture theme;
+  `/api/shot` accepts `&theme=paper`. Without it, captures use `hearth`.
 - **Verify visually after building.** After posting tiles, screenshot the
   session and look at it — wrong chart kind, an empty series, or unreadable
   labels are obvious in the image and invisible in the CLI output.

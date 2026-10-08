@@ -980,6 +980,7 @@ async fn api_activity(Query(p): Query<ActivityParams>) -> Response {
 struct ShotParams {
     session: String,
     tile: Option<String>,
+    theme: Option<String>,
     width: Option<u32>,
     height: Option<u32>,
 }
@@ -1005,7 +1006,7 @@ async fn api_shot(Query(p): Query<ShotParams>) -> Response {
     let _guard = LOCK.lock().await;
     let width = p.width.unwrap_or(crate::shot::DEFAULT_WIDTH);
     let result = tokio::task::spawn_blocking(move || {
-        crate::shot::capture_png(&id, p.tile.as_deref(), width, p.height)
+        crate::shot::capture_png(&id, p.tile.as_deref(), p.theme.as_deref(), width, p.height)
     })
     .await;
     match result {

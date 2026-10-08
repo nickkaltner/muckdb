@@ -8983,10 +8983,17 @@
       p.addEventListener("animationend", () => p.remove());
     }
   }
-  function annoLabel(ctx, text, x, y, col, align, baseline) {
+  function annoLabel(ctx, text, x, y, col, align, baseline, bounds) {
     ctx.setLineDash([]);
     ctx.font = "11px ui-monospace, Menlo, monospace";
     const w = ctx.measureText(text).width, padX = 4, boxH = 15;
+    // An event on the last x-value still needs its complete label. Keep its
+    // text and background inside the plot, including both endpoint markers.
+    if (bounds) {
+      const minX = bounds.left + padX + (align === "right" ? w : 0);
+      const maxX = bounds.right - padX - (align === "right" ? 0 : w);
+      x = Math.max(minX, Math.min(x, maxX));
+    }
     const left = align === "right" ? x - w - padX : x - padX;
     const top = baseline === "bottom" ? y - boxH : y;
     ctx.globalAlpha = 0.82; ctx.fillStyle = cssVar("--bg") || "#000";
@@ -9052,7 +9059,7 @@
         if (thr) { ctx.setLineDash([]); ctx.globalAlpha = 0.5; } else { ctx.setLineDash([2, 4]); ctx.globalAlpha = 1; }
         ctx.beginPath(); ctx.moveTo(a.left, py); ctx.lineTo(a.right, py); ctx.stroke();
         ctx.globalAlpha = 1;
-        if (h.label) annoLabel(ctx, h.label, a.right - 5, py - 3, col, "right", "bottom");
+        if (h.label) annoLabel(ctx, h.label, a.right - 5, py - 3, col, "right", "bottom", a);
       });
       (opts.vlines || []).forEach((v) => {
         if (!xS) return;
@@ -9061,7 +9068,7 @@
         const col = cssVar("--anno-event") || cssVar("--highlight") || "#b8b2a6";
         ctx.strokeStyle = col; ctx.lineWidth = 1.5; ctx.setLineDash([4, 4]);
         ctx.beginPath(); ctx.moveTo(px, a.top); ctx.lineTo(px, a.bottom); ctx.stroke();
-        if (v.label) annoLabel(ctx, v.label, px + 5, a.top + 3, col, "left", "top");
+        if (v.label) annoLabel(ctx, v.label, px + 5, a.top + 3, col, "left", "top", a);
       });
       ctx.restore();
     },
@@ -10599,6 +10606,26 @@
   if (window.visualViewport) window.visualViewport.addEventListener("resize", recoverChartsAfterResize);
 
   if (window.Chart) {
+    // Chart.js measures a parent's bounding rect on its first resize. That
+    // includes CSS zoom, then the canvas is zoomed a second time. Ordinary
+    // browsers eventually correct it via ResizeObserver; virtual-time captures
+    // can finish before that callback. Use layout content dimensions from the
+    // first render in screenshot mode, before its height is measured.
+    if (SHOT) Chart.register({
+      id: "muckCanvasSize",
+      beforeInit(chart) {
+        const maximumSize = chart.platform.getMaximumSize.bind(chart.platform);
+        chart.platform.getMaximumSize = (canvas, width, height, aspectRatio) => {
+          const host = canvas.parentElement;
+          if (host && (width === undefined || height === undefined)) {
+            const style = getComputedStyle(host);
+            width ??= host.clientWidth - parseFloat(style.paddingLeft || 0) - parseFloat(style.paddingRight || 0);
+            height ??= host.clientHeight - parseFloat(style.paddingTop || 0) - parseFloat(style.paddingBottom || 0);
+          }
+          return maximumSize(canvas, width, height, aspectRatio);
+        };
+      },
+    });
     try { Chart.defaults.font.family = "ui-monospace, Menlo, monospace"; Chart.defaults.font.size = 11; } catch (_) {}
     // Tooltip interpolation is distracting under load: selection should feel
     // attached to the pointer, while chart entrance animations remain intact.

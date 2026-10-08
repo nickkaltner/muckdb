@@ -228,9 +228,11 @@ chains of areas also run horizontally, with separate internal wiring. Switch to
 choice. Connections are bidirectional, without arrowheads, and label colours
 stay matched to their lines when hovered.
 
-`session screenshot` (and the copy-image button) render through a local headless
+`session screenshot` renders through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a
-browser binary. The image auto-fits the rendered content height.
+browser binary. The image auto-fits the rendered content height. Use
+`session screenshot analysis --theme paper` to choose a capture theme; the API
+accepts `&theme=paper` too. Without a theme, captures use the default `hearth`.
 
 **Try it:** `./demo.sh` seeds sample data (sales, a regular sensor series, and an
 irregular event stream) and builds a demo dashboard, then prints the URL.
@@ -326,7 +328,7 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/session?id=ID` | one session with its tiles |
 | `GET /api/session/export?id=ID` | download a session as a `.muckdb` archive (session + db snapshots) |
 | `POST /api/session/import` | install a `.muckdb` archive (raw zip body) |
-| `GET /api/shot?session=ID&tile=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
+| `GET /api/shot?session=ID&tile=NAME&theme=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
 | `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 
 The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`;
