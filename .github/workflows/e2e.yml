@@ -7,7 +7,7 @@ on:
 
 jobs:
   e2e:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v5
 
@@ -40,7 +40,10 @@ jobs:
 
       - name: Install Chromium
         working-directory: tests/e2e
-        run: npx playwright install --with-deps chromium
+        # The Ubuntu 24.04 runner already supplies Chromium runtime libraries.
+        # --with-deps also downloads extra font packages via apt on every run;
+        # a slow package mirror previously added three minutes to this job.
+        run: npx playwright install chromium
 
       - name: Run Playwright tests
         working-directory: tests/e2e

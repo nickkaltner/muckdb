@@ -257,6 +257,10 @@ fn parse_shot_height(dom: &str) -> Option<u32> {
 fn browser_cmd(browser: &Path, profile: &Path, width: u32, height: u32) -> Command {
     let mut cmd = Command::new(browser);
     cmd.arg("--headless")
+        // An explicit profile otherwise runs regular-profile startup tasks that
+        // can prevent virtual time from completing the DOM measurement pass.
+        // Incognito keeps captures isolated and avoids that startup stall.
+        .arg("--incognito")
         .arg("--disable-gpu")
         .arg("--hide-scrollbars")
         .arg("--no-first-run")

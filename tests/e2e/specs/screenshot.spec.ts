@@ -97,10 +97,13 @@ test('captures fit every chart before any window resize', async ({ page, e2eStat
 });
 
 test('CLI and API screenshot captures honor the requested theme', async ({ page, e2eState }) => {
-  test.setTimeout(90000);
   const { session, run } = seedCapture(e2eState, 'area');
+  await page.setViewportSize({ width: 1200, height: 900 });
   await page.goto(`/session/${session}/?shot=1&theme=paper`);
   await expect.poll(() => page.locator('html').getAttribute('data-shot-ready')).toBe('1');
+  const expectedHeight = Number(await page.locator('html').getAttribute('data-shot-h'));
+  expect(expectedHeight).toBeGreaterThan(200);
+  expect(expectedHeight).toBeLessThan(900);
   const pixel = async (bytes: Buffer) => page.evaluate(async (data) => {
     const blob = await (await fetch(`data:image/png;base64,${data}`)).blob();
     const bitmap = await createImageBitmap(blob);
@@ -112,11 +115,16 @@ test('CLI and API screenshot captures honor the requested theme', async ({ page,
   expect(api.ok()).toBe(true);
   const apiBody = await api.body();
   expect(api.headers()['content-type'], apiBody.toString('utf8')).toBe('image/png');
+  // Check auto-fitting actually measured the panel instead of timing out and
+  // silently falling back to a 900px capture. PNG IHDR stores height at byte 20.
+  expect(apiBody.readUInt32BE(20)).toBe(expectedHeight);
   const apiPixel = await pixel(apiBody);
   const out = test.info().outputPath('paper-cli.png');
   mkdirSync(dirname(out), { recursive: true });
   run(['session', 'screenshot', session, '--tile', 'chart', '--theme', 'paper', '--out', out]);
-  expect(await pixel(readFileSync(out))).toEqual(apiPixel);
+  const cliBody = readFileSync(out);
+  expect(cliBody.readUInt32BE(20)).toBe(expectedHeight);
+  expect(await pixel(cliBody)).toEqual(apiPixel);
   // Pale paper must differ from the dark default hearth capture.
   expect(apiPixel[0]).toBeGreaterThan(180);
   expect(apiPixel[1]).toBeGreaterThan(180);
