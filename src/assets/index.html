@@ -8596,7 +8596,8 @@
             tickWidth: 1 },
           ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, padding: 3, color: tickColor, major: { enabled: true },
             font: (ctx) => (activeXTick(ctx) || (ctx.tick && ctx.tick.major) ? { weight: "bold" } : {}) } }
-      : { type: linearX ? "linear" : "category", grid: linearX ? { color: gridMinor } : {
+      : { type: linearX ? "linear" : "category", grid: linearX ? { color: gridMinor, drawTicks: true,
+          tickLength: 4, tickColor: tickMarkColor, tickWidth: 1 } : {
           color: gridMinor, drawOnChartArea: false, drawTicks: true, tickLength: 4, tickColor: tickMarkColor,
           tickWidth: 1,
         // Keep every categorical label (each bar needs its own name), but let
@@ -9464,6 +9465,7 @@
     const data = continuousX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const allYValues = datasets.flatMap((set) => set.data.map((v) => v && typeof v === "object" ? v.y : v));
     const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(numericX, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
+    if (numericX && presentX.every(Number.isInteger)) o.scales.x.ticks.precision = 0;
     if (type === "line" && !continuousX) Object.assign(o.scales.x.ticks, {
       autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0,
     });
