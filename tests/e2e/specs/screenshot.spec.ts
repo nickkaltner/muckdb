@@ -2,12 +2,12 @@ import { test, expect } from '../fixtures/test';
 import { BINARY } from '../constants';
 import { chromium } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { mkdirSync, readFileSync } from 'node:fs';
+import { dirname, join } from 'node:path';
 
-function seedCapture(state: { tmpDir: string; port: number }, kind: string) {
+function seedCapture(state: { tmpDir: string; browserPath: string; port: number }, kind: string) {
   const env = { ...process.env, XDG_DATA_HOME: join(state.tmpDir, 'data'),
-    XDG_STATE_HOME: join(state.tmpDir, 'state'), MUCKDB_BROWSER: chromium.executablePath() };
+    XDG_STATE_HOME: join(state.tmpDir, 'state'), MUCKDB_BROWSER: state.browserPath };
   const run = (args: string[]) => execFileSync(BINARY, ['--port', String(state.port), ...args], { env, stdio: 'pipe' });
   const session = `capture-${kind}`;
   const temporal = ['line', 'area', 'stacked-time'].includes(kind);
@@ -96,8 +96,11 @@ test('CLI and API screenshot captures honor the requested theme', async ({ page,
   }, bytes.toString('base64'));
   const api = await page.request.get(`/api/shot?session=${session}&tile=chart&theme=paper`);
   expect(api.ok()).toBe(true);
-  const apiPixel = await pixel(await api.body());
+  const apiBody = await api.body();
+  expect(api.headers()['content-type'], apiBody.toString('utf8')).toBe('image/png');
+  const apiPixel = await pixel(apiBody);
   const out = test.info().outputPath('paper-cli.png');
+  mkdirSync(dirname(out), { recursive: true });
   run(['session', 'screenshot', session, '--tile', 'chart', '--theme', 'paper', '--out', out]);
   expect(await pixel(readFileSync(out))).toEqual(apiPixel);
   // Pale paper must differ from the dark default hearth capture.

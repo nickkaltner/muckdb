@@ -8,13 +8,13 @@ import { seed } from './seed';
 
 type WorkerFixtures = { e2eState: E2EState };
 
-function isolatedEnv(tmpDir: string): NodeJS.ProcessEnv {
+function isolatedEnv(tmpDir: string, browserPath: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
     XDG_DATA_HOME: join(tmpDir, 'data'),
     XDG_STATE_HOME: join(tmpDir, 'state'),
     MUCKDB_BIND: '127.0.0.1',
-    MUCKDB_BROWSER: chromium.executablePath(),
+    MUCKDB_BROWSER: browserPath,
   };
 }
 
@@ -35,7 +35,9 @@ export const test = base.extend<{}, WorkerFixtures>({
   e2eState: [async ({}, use, workerInfo) => {
     const port = BASE_PORT + workerInfo.parallelIndex;
     const tmpDir = mkdtempSync(join(tmpdir(), `muckdb-e2e-w${workerInfo.parallelIndex}-`));
-    const env = isolatedEnv(tmpDir);
+    const browserPath = join(tmpDir, 'chromium-no-sandbox');
+    writeFileSync(browserPath, `#!/bin/sh\nexec ${JSON.stringify(chromium.executablePath())} --no-sandbox "$@"\n`, { mode: 0o755 });
+    const env = isolatedEnv(tmpDir, browserPath);
     const stateFile = join(tmpDir, 'state.json');
     const dbPath = join(tmpDir, 'widgets.duckdb');
     process.env.MUCKDB_E2E_STATE = stateFile;
@@ -55,7 +57,7 @@ export const test = base.extend<{}, WorkerFixtures>({
       const entry = dbs.find((db) => db.path === dbPath)
         ?? dbs.find((db) => db.path.endsWith('widgets.duckdb'));
       if (!entry) throw new Error(`seeded db ${dbPath} not found in ls databases`);
-      const state = { tmpDir, port, dbId: entry.id, sessionId: 'e2e' };
+      const state = { tmpDir, browserPath, port, dbId: entry.id, sessionId: 'e2e' };
       writeFileSync(stateFile, JSON.stringify(state));
       await use(state);
     } finally {
