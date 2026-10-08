@@ -8,6 +8,10 @@ import { seed } from './seed';
 
 type WorkerFixtures = { e2eState: E2EState };
 
+function shellQuote(value: string): string {
+  return `'${value.replace(/'/g, "'\\''")}'`;
+}
+
 function isolatedEnv(tmpDir: string, browserPath: string): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -36,7 +40,7 @@ export const test = base.extend<{}, WorkerFixtures>({
     const port = BASE_PORT + workerInfo.parallelIndex;
     const tmpDir = mkdtempSync(join(tmpdir(), `muckdb-e2e-w${workerInfo.parallelIndex}-`));
     const browserPath = join(tmpDir, 'chromium-no-sandbox');
-    writeFileSync(browserPath, `#!/bin/sh\nexec ${JSON.stringify(chromium.executablePath())} --no-sandbox "$@"\n`, { mode: 0o755 });
+    writeFileSync(browserPath, `#!/bin/sh\nexec ${shellQuote(chromium.executablePath())} --no-sandbox "$@"\n`, { mode: 0o755 });
     const env = isolatedEnv(tmpDir, browserPath);
     const stateFile = join(tmpDir, 'state.json');
     const dbPath = join(tmpDir, 'widgets.duckdb');
