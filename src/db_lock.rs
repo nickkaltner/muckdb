@@ -43,19 +43,23 @@ fn database_path(db: &str) -> Result<PathBuf> {
 }
 
 pub(crate) fn acquire(db: &str, readonly: bool) -> Result<DatabaseLock> {
-    use std::hash::{Hash, Hasher};
     let path = database_path(db)?;
-    let mut hash = std::collections::hash_map::DefaultHasher::new();
-    path.hash(&mut hash);
-    let dir = crate::paths::data_dir()?.join("database-locks");
-    std::fs::create_dir_all(&dir)?;
-    let file = OpenOptions::new()
-        .create(true)
-        .read(true)
-        .write(true)
-        .truncate(false)
-        .open(dir.join(format!("{:016x}.lock", hash.finish())))
-        .with_context(|| format!("opening coordination lock for {}", path.display()))?;
+    let mut name = path.as_os_str().to_os_string();
+    name.push(".muckdb.lock");
+    let lock_path = PathBuf::from(name);
+    // flock does not require a writable descriptor. Opening an existing
+    // sidecar read-only lets sandboxed readers participate without write access.
+    let file = match File::open(&lock_path) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => OpenOptions::new()
+            .create(true)
+            .read(true)
+            .write(true)
+            .truncate(false)
+            .open(&lock_path)
+            .with_context(|| format!("creating coordination lock {} beside the database; its directory must be writable", lock_path.display()))?,
+        Err(error) => return Err(error).with_context(|| format!("opening coordination lock {}", lock_path.display())),
+    };
     lock(&file, readonly)?;
     // Never unlink lock files: waiters must continue using the same inode.
     Ok(DatabaseLock { _file: file })

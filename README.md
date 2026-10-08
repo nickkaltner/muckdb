@@ -290,11 +290,19 @@ column's formatted value, so `--currency USD --link …` renders a clickable
 - **Database views**: the daemon reads databases by shelling out to
   `duckdb -readonly -json`, so reads go through the same CLI you'd use by hand.
 - **Database coordination**: muckdb commands and UI operations share a per-database
-  advisory lock. Read-only operations can run together; read-write operations wait
+  advisory lock in a persistent `<database>.muckdb.lock` sidecar beside the
+  database. Keep that file in place; deleting it can break coordination. Existing
+  lock files can be opened read-only; creating one requires a writable database
+  directory. Read-only operations can run together; read-write operations wait
   until other operations finish. Pass `-readonly` for CLI queries that only read.
   An interactive read-write shell holds its lock until you exit. Direct `duckdb`
   clients, older muckdb builds, and databases attached inside arbitrary SQL do
   not participate; DuckDB lock errors remain possible for those accesses.
+- **Restricted environments**: ordinary CLI database commands continue with a
+  warning if the daemon cannot be reached or started, its binary differs, or the
+  history ledger cannot be written. Database locking and DuckDB errors still
+  apply. Commands without writable history are not recorded in the live ledger;
+  explicit dashboard and daemon commands still report failures.
 
 ### API
 

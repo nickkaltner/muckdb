@@ -74,8 +74,9 @@ fn run(args: &[String]) -> anyhow::Result<i32> {
     if let Some(session) = std::env::var("MUCKDB_SESSION")
         .ok()
         .filter(|session| !session.is_empty())
+        && let Err(error) = session::sync_current_thread(&session)
     {
-        session::sync_current_thread(&session)?;
+        eprintln!("muckdb: warning: could not sync dashboard conversation: {error:#}");
     }
     match args.first().map(String::as_str) {
         // Hidden flag used by ensure_daemon to launch the detached server.
