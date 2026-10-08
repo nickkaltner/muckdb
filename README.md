@@ -228,6 +228,10 @@ chains of areas also run horizontally, with separate internal wiring. Switch to
 choice. Connections are bidirectional, without arrowheads, and label colours
 stay matched to their lines when hovered.
 
+Numeric x columns on `line` and `area` charts use a linear axis, preserving
+spacing between values with readable ticks. Dense categorical line charts skip
+crowded labels while retaining all points.
+
 `session screenshot` renders through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a
 browser binary. The image auto-fits the rendered content height. Use

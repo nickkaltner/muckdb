@@ -131,6 +131,10 @@ muckdb session rm <name> [--tile TILE]
   column is a date/timestamp, the chart uses a real time axis automatically, drawn
   on a **UTC wall-clock** so daily/hourly buckets stay on their boundaries (a
   `DATE` day won't skew by the viewer's timezone).
+- **Numeric line/area axes** use actual x values and a linear scale, with sparse
+  ticks. Use them for optimizer steps, sample counts or frequency sweeps;
+  irregular intervals keep their proportional spacing. Dense categorical
+  line/area charts skip crowded tick labels while retaining every point.
 - **Axis labels**: `--xlabel`/`--ylabel` set the x/y axis titles on any chart.
 - **Pick the chart that packs in the most information** — don't default everything
   to single-series bars. `stacked` bars show a total *and* its composition in one

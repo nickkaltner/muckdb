@@ -1008,6 +1008,10 @@ Use it to adapt: a session with many views is worth keeping polished; a tile
 the human zooms or explores repeatedly deserves more depth; a tile with zero
 interactions across many views is a hint to present that data differently.
 
+Numeric x columns on `line` and `area` charts use a linear axis with readable
+ticks and proportional spacing. Dense categorical line/area charts skip crowded
+labels while retaining every data point.
+
 ## See what you built — screenshot a panel
 
 `muckdb session screenshot` renders a session (or one tile) exactly as the web

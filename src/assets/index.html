@@ -8570,7 +8570,7 @@
       return new Date(instant).toISOString().slice(0, 19).replace("T", " ") + " · UTC";
     }
   }
-  function chartOpts(scatter, time, stacked, minUnit, offset) {
+  function chartOpts(linearX, time, stacked, minUnit, offset) {
     // Grid lines are the theme foreground mixed toward the surface (an opaque soft
     // grey — light on dark themes, a soft mid-grey on light ones), so they read on
     // every theme where a fixed faint white was invisible on paper/glacier. Light
@@ -8596,7 +8596,7 @@
             tickWidth: 1 },
           ticks: { autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0, padding: 3, color: tickColor, major: { enabled: true },
             font: (ctx) => (activeXTick(ctx) || (ctx.tick && ctx.tick.major) ? { weight: "bold" } : {}) } }
-      : { type: scatter ? "linear" : "category", grid: scatter ? { color: gridMinor } : {
+      : { type: linearX ? "linear" : "category", grid: linearX ? { color: gridMinor } : {
           color: gridMinor, drawOnChartArea: false, drawTicks: true, tickLength: 4, tickColor: tickMarkColor,
           tickWidth: 1,
         // Keep every categorical label (each bar needs its own name), but let
@@ -8605,6 +8605,9 @@
         // readable without dropping categories.
         }, ticks: { autoSkip: false, minRotation: 0, maxRotation: 45, padding: 3, color: tickColor,
           font: (ctx) => activeXTick(ctx) ? { weight: "bold" } : {} } };
+    if (linearX && !time) Object.assign(x.ticks, {
+      autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0,
+    });
     if (stacked) x.stacked = true;
     const y = { grid: { color: gridMinor } };
     if (stacked) y.stacked = true;
@@ -9260,11 +9263,17 @@
     // or forced by a column format), and renders in the format's tz if set.
     const epoch = (xf && xf.epoch) || epochUnit(xname, xvals);
     const timeX = !!epoch || isDateish(xvals);
+    // Numeric progress/frequency axes are continuous: spacing and tick labels
+    // must follow their values rather than allocating a label to every row.
+    const presentX = xvals.filter((v) => v != null && v !== "");
+    const numericX = !timeX && (kind === "line" || kind === "area") && presentX.length > 0
+      && presentX.every((v) => typeof v === "number" && Number.isFinite(v));
+    const continuousX = timeX || numericX;
     const axisTz = (xf && xf.tz) || "utc";
     const minUnit = epoch ? null : dateGranularity(xvals);
     const toX = (v) => (epoch != null && isFinite(Number(v))
       ? pinMs(epochToMs(Number(v), epoch), axisTz) : pinMs(parseTs(v), axisTz));
-    const xv = (r) => (timeX ? toX(r[xi]) : +r[xi]);
+    const xv = (r) => (timeX ? toX(r[xi]) : r[xi] == null || r[xi] === "" ? null : +r[xi]);
     // SQL NULL means "this series has not started yet", not zero. Keeping it
     // as null lets Chart.js leave a genuine gap instead of drawing a misleading
     // plunge to the baseline.
@@ -9293,10 +9302,9 @@
     // their calendar-aware labels; other x axes use the column format too.
     const applyXFmt = (o) => {
       if (!xf || timeX || !o.scales || !o.scales.x) return o;
-      o.scales.x.ticks = Object.assign({}, o.scales.x.ticks, { callback: (v, i) => {
-        // Cartesian scatter charts use a linear x scale. Other non-time charts
-        // use a category scale, whose tick value is the label index.
-        const raw = kind === "scatter" ? v : rows[i]?.[xi];
+      o.scales.x.ticks = Object.assign({}, o.scales.x.ticks, { callback: (v) => {
+        // Linear ticks are actual values; category ticks are label indices.
+        const raw = o.scales.x.type === "linear" ? v : rows[v]?.[xi];
         return raw == null ? "" : applyFmt(xf, raw);
       } });
       o.plugins = o.plugins || {};
@@ -9387,7 +9395,7 @@
     const seriesCols = catColors(ys.length);
     const bandDatasets = band ? band.flatMap((c, i) => {
       const yi = cols.indexOf(c);
-      const data = timeX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
+      const data = continuousX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
       return [{
         label: i === 0 ? "confidence lower" : "confidence band",
         data,
@@ -9427,7 +9435,7 @@
       } else {
         bg = col;
       }
-      const values = timeX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
+      const values = continuousX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
       // A small marker on a late-starting series makes its real first point
       // explicit without turning every point on a dense history into a dot.
       const firstPresent = values.findIndex((v) => (v && typeof v === "object" ? v.y != null : v != null));
@@ -9444,18 +9452,21 @@
     })];
     // Optional fitted trendline over the first series (single-series charts).
     if (spec.trend && single) {
-      const pts = timeX
-        ? datasets[bandDatasets.length].data.filter((p) => p && isFinite(p.y))
+      const pts = continuousX
+        ? datasets[bandDatasets.length].data.filter((p) => p && Number.isFinite(p.x) && Number.isFinite(p.y))
         : datasets[bandDatasets.length].data.map((y, i) => ({ x: i, y: y == null ? NaN : +y })).filter((p) => isFinite(p.y));
-      const t = trendDataset(pts, timeX);
+      const t = trendDataset(pts, continuousX);
       if (t) {
-        if (!timeX) t.data = t.data.map((p) => p.y); // category axis: align by index
+        if (!continuousX) t.data = t.data.map((p) => p.y); // category axis: align by index
         datasets.push(t);
       }
     }
-    const data = timeX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
+    const data = continuousX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
     const allYValues = datasets.flatMap((set) => set.data.map((v) => v && typeof v === "object" ? v.y : v));
-    const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(false, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
+    const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(numericX, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
+    if (type === "line" && !continuousX) Object.assign(o.scales.x.ticks, {
+      autoSkip: true, autoSkipPadding: 18, maxTicksLimit: 9, maxRotation: 0,
+    });
     if (timeX) o.plugins.muckTimeTickTooltip = { enabled: true, tz: axisTz };
     if (type === "bar") {
       // A bar's entire painted rectangle is its hover target. This avoids a
