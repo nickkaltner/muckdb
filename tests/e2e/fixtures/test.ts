@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { BASE_PORT, BINARY, E2EState } from '../constants';
 import { seed } from './seed';
 
+type TestFixtures = { sessionTiles: string[] };
+
 type WorkerFixtures = { e2eState: E2EState };
 
 function shellQuote(value: string): string {
@@ -35,7 +37,22 @@ async function waitForServer(url: string, timeoutMs = 15000): Promise<void> {
   throw new Error(`muckdb daemon did not serve ${url} within ${timeoutMs}ms`);
 }
 
-export const test = base.extend<{}, WorkerFixtures>({
+export const test = base.extend<TestFixtures, WorkerFixtures>({
+  sessionTiles: [[], { option: true }],
+  page: async ({ page, sessionTiles }, use) => {
+    // Focused tests use real daemon data without rendering unrelated panels.
+    // Full-dashboard integration tests retain the default empty filter.
+    if (sessionTiles.length) {
+      await page.route(`/api/session?id=e2e`, async (route) => {
+        const response = await route.fetch();
+        const session = await response.json();
+        session.tiles = session.tiles.filter((tile: { name: string }) => sessionTiles.includes(tile.name));
+        expect(session.tiles.map((tile: { name: string }) => tile.name).sort()).toEqual([...sessionTiles].sort());
+        await route.fulfill({ response, json: session });
+      });
+    }
+    await use(page);
+  },
   e2eState: [async ({}, use, workerInfo) => {
     const port = BASE_PORT + workerInfo.parallelIndex;
     const tmpDir = mkdtempSync(join(tmpdir(), `muckdb-e2e-w${workerInfo.parallelIndex}-`));

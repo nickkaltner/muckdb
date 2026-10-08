@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ['summary', 'analysis', 'by-cat', 'map', 'timeline-ts', 'incident', 'all'] });
+
 test.describe('presentation mode', () => {
   test('opens with pp, advances live tiles, and returns on Escape', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
@@ -66,7 +68,7 @@ test.describe('presentation mode', () => {
     await expect(deck.locator('.hide-presentation')).toBeHidden();
 
     // Every deck closes on a dedicated, non-tile final slide.
-    for (let i = 0; i < 20; i++) await page.keyboard.press('ArrowRight');
+    await page.keyboard.press('ArrowRight');
     const fin = deck.locator('.presentation-stage > .presentation-fin');
     await expect(fin).toBeVisible();
     await expect(fin).toHaveText('Fin.');
