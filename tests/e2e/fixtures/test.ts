@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test';
+import { chromium, test as base, expect } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -14,6 +14,7 @@ function isolatedEnv(tmpDir: string): NodeJS.ProcessEnv {
     XDG_DATA_HOME: join(tmpDir, 'data'),
     XDG_STATE_HOME: join(tmpDir, 'state'),
     MUCKDB_BIND: '127.0.0.1',
+    MUCKDB_BROWSER: chromium.executablePath(),
   };
 }
 
