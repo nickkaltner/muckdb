@@ -1048,8 +1048,8 @@
      a live update is visible. Neither runs in screenshot mode. */
   .panels.enter .panel { animation: panel-in 0.3s cubic-bezier(0.23, 1, 0.32, 1) both; animation-delay: calc(var(--i, 0) * 45ms); }
   @keyframes panel-in { from { opacity: 0; transform: translateY(8px); } }
-  .panel.updated { animation: tile-pulse 1.8s ease-out; }
-  @keyframes tile-pulse { 0%, 35% { box-shadow: 0 0 0 1px var(--primary), 0 0 22px color-mix(in srgb, var(--primary) 35%, transparent); } }
+  .panel-update-glow { position: absolute; inset: 0; pointer-events: none; z-index: 3; opacity: 0;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 35%, transparent), inset 0 0 16px color-mix(in srgb, var(--primary) 8%, transparent); }
   body.shot .panels .panel { animation: none !important; }
   /* Press feedback: pressable elements dip on :active — rows dip less than
      buttons so wide elements don't visibly shear. */
@@ -4169,15 +4169,63 @@
       if (candidate.getBoundingClientRect().top <= line) panel = candidate;
       else break;
     }
-    return { tile: panel.dataset.tile, offset: panel.getBoundingClientRect().top - scrollerTop, scrollTop: scroller.scrollTop };
+    const block = [...panel.querySelectorAll(".md p, .md li, .md tr, .md h1, .md h2, .md h3, .md pre")].find((node) => node.getBoundingClientRect().bottom > line);
+    return { block, blockOffset: block ? block.getBoundingClientRect().top - scrollerTop : null, tile: panel.dataset.tile, offset: panel.getBoundingClientRect().top - scrollerTop, scrollTop: scroller.scrollTop, userScroll: readerScrollRevision };
   }
   function restorePanelPosition(position) {
-    if (!position) return;
+    if (!position || position.userScroll !== readerScrollRevision) return;
     const scroller = $("panels-scroll");
     const panel = document.querySelector(`#panels [data-tile="${cssEsc(position.tile)}"]`);
     if (!scroller) return;
     if (!panel) { scroller.scrollTop = position.scrollTop; return; }
-    scroller.scrollTop += panel.getBoundingClientRect().top - scroller.getBoundingClientRect().top - position.offset;
+    const anchor = position.block?.isConnected ? position.block : panel;
+    const scale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
+    scroller.scrollTop += (anchor.getBoundingClientRect().top - scroller.getBoundingClientRect().top - (anchor === panel ? position.offset : position.blockOffset)) / scale;
+  }
+  let readerScrollRevision = 0;
+  // User input invalidates an async scroll snapshot; our own restoration does not.
+  ["wheel", "touchmove", "pointerdown", "keydown"].forEach((event) => {
+    $("panels-scroll").addEventListener(event, () => { readerScrollRevision++; }, { passive: true });
+  });
+  // Reconcile parsed, sanitized markdown without replacing unchanged blocks.
+  function patchMarkdown(target, next) {
+    function patch(parent, fresh) {
+      let current = parent.firstChild;
+      const desiredNodes = [...fresh.childNodes];
+      for (let index = 0; index < desiredNodes.length; index++) {
+        const desired = desiredNodes[index];
+        if (current?.isEqualNode(desired)) { current = current.nextSibling; continue; }
+        // Retain an existing block when prose was inserted or removed before it.
+        if (current?.nodeType === Node.ELEMENT_NODE && desiredNodes.slice(index + 1, index + 9).some((node) => node.isEqualNode(current))) {
+          parent.insertBefore(desired.cloneNode(true), current);
+          continue;
+        }
+        let match = desired.nodeType === Node.ELEMENT_NODE ? current?.nextSibling : null;
+        let lookahead = 0;
+        while (match && !match.isEqualNode(desired) && lookahead++ < 8) match = match.nextSibling;
+        if (match && !match.isEqualNode(desired)) match = null;
+        if (match) {
+          while (current !== match) { const old = current; current = current.nextSibling; old.remove(); }
+          current = match.nextSibling;
+          continue;
+        }
+        if (current && current.nodeType === desired.nodeType && current.nodeName === desired.nodeName) {
+          if (current.nodeType === Node.TEXT_NODE) current.nodeValue = desired.nodeValue;
+          else if (current.nodeType === Node.ELEMENT_NODE) {
+            for (const a of [...current.attributes]) if (!desired.hasAttribute(a.name)) current.removeAttribute(a.name);
+            for (const a of [...desired.attributes]) if (current.getAttribute(a.name) !== a.value) current.setAttribute(a.name, a.value);
+            patch(current, desired);
+          }
+          current = current.nextSibling;
+        } else parent.insertBefore(desired.cloneNode(true), current);
+      }
+      while (current) { const old = current; current = current.nextSibling; old.remove(); }
+    }
+    if (target.childNodes.length === next.childNodes.length && [...target.childNodes].every((node, index) => node.isEqualNode(next.childNodes[index]))) return;
+    const position = capturePanelPosition();
+    patch(target, next);
+    restorePanelPosition(position);
+    pulsePanel(target.closest(".panel"));
   }
   let sessionLoadToken = 0;
   async function loadSession(id, push) {
@@ -4215,6 +4263,23 @@
   // Motion (experimental): remember what was on screen so a re-render can tell
   // navigation (stagger the panels in) from a live update (pulse changed tiles).
   let lastPanelsSession = null, lastTileSigs = {};
+  function pulsePanel(panel) {
+    if (!panel || SHOT || $("panels").classList.contains("enter") ||
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    // Animate only an overlay's opacity, keeping tile geometry and text steady.
+    // Let an active pulse finish rather than restarting it on frequent updates.
+    if (panel.updatePulse?.playState === "running") return;
+    let glow = panel.querySelector(":scope > .panel-update-glow");
+    if (!glow) {
+      glow = document.createElement("span");
+      glow.className = "panel-update-glow";
+      glow.setAttribute("aria-hidden", "true");
+      panel.appendChild(glow);
+    }
+    panel.updatePulse = glow.animate([
+      { opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 0 }
+    ], { duration: 650, easing: "ease-out" });
+  }
   function animatePanels(tiles) {
     const box = $("panels");
     const sigs = {};
@@ -4227,12 +4292,7 @@
     } else if (!SHOT) {
       tiles.filter((t) => lastTileSigs[t.name] !== sigs[t.name]).forEach((t) => {
         const p = box.querySelector(`.panel[data-tile="${cssEsc(t.name)}"]`);
-        if (!p) return;
-        p.classList.add("updated");
-        p.addEventListener("animationend", function ae(e) {
-          if (e.target !== p) return;
-          p.classList.remove("updated"); p.removeEventListener("animationend", ae);
-        });
+        if (t.type !== "markdown") pulsePanel(p);
       });
     }
     lastPanelsSession = state.selSession; lastTileSigs = sigs;
@@ -4310,6 +4370,7 @@
     renderSessionHead(next);
     const { tiles, trashed } = visibleSessionTiles(next);
     const box = $("panels");
+    const previousTiles = new Map((previous.tiles || []).map((tile) => [tile.name, tile]));
     const oldByName = new Map((previous.tiles || []).map((tile) => [tile.name, JSON.stringify(tile)]));
     const existing = new Map([...box.querySelectorAll(":scope > .panel")].map((panel) => [panel.dataset.tile, panel]));
     const loads = [];
@@ -4320,10 +4381,24 @@
     } else {
       // Replace the empty/trash note before the first real panel is appended.
       if (!existing.size) box.replaceChildren();
-      tiles.forEach((tile) => {
+      tiles.forEach((tile, index) => {
         let panel = existing.get(tile.name);
         const changed = oldByName.get(tile.name) !== JSON.stringify(tile);
-        if (!panel || changed) {
+        if (panel && changed && tile.type === "markdown" && previousTiles.get(tile.name)?.type === "markdown") {
+          const title = panel.querySelector(".panel-title");
+          if (title.textContent !== (tile.title || tile.name)) {
+            title.textContent = tile.title || tile.name;
+            pulsePanel(panel);
+          }
+          if (/\{\{(?:sql|image):/.test(tile.markdown || "")) loads.push(loadMarkdown(tile));
+          else {
+            const fresh = document.createElement("div");
+            fresh.innerHTML = mdRender(tile.markdown || "");
+            const slot = panel.querySelector(".md");
+            slot.liveGeneration = (slot.liveGeneration || 0) + 1;
+            patchMarkdown(slot, fresh);
+          }
+        } else if (!panel || changed) {
           if (panel) destroyPanelCharts(panel);
           const holder = document.createElement("div");
           holder.innerHTML = panelHtml(tile);
@@ -4332,14 +4407,14 @@
           panel = replacement;
           loads.push(loadPanelTile(tile));
         }
-        // Appending an existing node moves it without replacing it, retaining
-        // its canvas, Chart.js object, hover state, and current data pixels.
-        box.appendChild(panel);
+        // Move nodes only when their order actually changes.
+        if (box.children[index] !== panel) box.insertBefore(panel, box.children[index] || null);
         existing.delete(tile.name);
       });
       existing.forEach((panel) => { destroyPanelCharts(panel); panel.remove(); });
     }
-    renderToc(tiles, trashed);
+    const tocSignature = (session) => JSON.stringify((session.tiles || []).map(({ name, title, type, chart, trashed }) => [name, title, type, chart?.kind, trashed]));
+    if (tocSignature(previous) !== tocSignature(next)) renderToc(tiles, trashed);
     animatePanels(tiles);
     if (panelPosition && !SHOT) {
       restorePanelPosition(panelPosition);
@@ -5197,7 +5272,8 @@
       return key;
     });
     if (!values.length && !images.length) return;
-    slot.textContent = "Loading live content…";
+    const generation = (slot.liveGeneration || 0) + 1;
+    slot.liveGeneration = generation;
     try {
       if (!t.db) throw new Error("Live SQL/images require a database (--db).");
       await ensureFormats(t.db);
@@ -5222,8 +5298,10 @@
           src: "/api/image?" + new URLSearchParams({ db: t.db, sql: query }).toString(),
         };
       }
-      slot.innerHTML = mdRender(template, imageRefs);
-      const walker = document.createTreeWalker(slot, NodeFilter.SHOW_TEXT);
+      if (!slot.isConnected || slot.liveGeneration !== generation) return;
+      const fresh = document.createElement("div");
+      fresh.innerHTML = mdRender(template, imageRefs);
+      const walker = document.createTreeWalker(fresh, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
         for (const { key, query } of values) {
@@ -5231,6 +5309,8 @@
           node.textContent = node.textContent.split(key).join(result.error ? `SQL error: ${result.error}` : result.value);
         }
       }
+      slot.removeAttribute("title");
+      patchMarkdown(slot, fresh);
       const imageLoads = [...slot.querySelectorAll("img[data-db-image]")].map((img) => new Promise((resolve) => {
         let settled = false;
         const done = () => { if (!settled) { settled = true; resolve(); } };
@@ -5248,7 +5328,7 @@
         if (img.complete) (img.naturalWidth > 0 ? done : failed)();
       }));
       await Promise.all(imageLoads);
-    } catch (e) { slot.textContent = String(e.message || e); }
+    } catch (e) { if (slot.isConnected && slot.liveGeneration === generation) slot.title = String(e.message || e); }
   }
   function todoHtml(cols, rows, tile) {
     const index = (name) => cols.indexOf(name);
@@ -10493,7 +10573,7 @@
     const tile = (state.sessionData.tiles || []).find((candidate) => candidate.name === name);
     const panel = document.querySelector(`#panels [data-tile="${cssEsc(name)}"]`);
     if (!tile || !panel || tile.trashed || tile.type !== "view") return;
-    panel.style.minHeight = panel.getBoundingClientRect().height + "px";
+    panel.style.minHeight = getComputedStyle(panel).height;
     try { await loadTileChart(tile); }
     finally { panel.style.minHeight = ""; }
   }
@@ -10523,12 +10603,16 @@
           if (state.selSession !== sessionId) return;
           const panel = document.querySelector(`#panels [data-tile="${cssEsc(t.name)}"]`);
           if (!panel || (t.sql && state.tileMode[t.name] === "sql")) return;
-          // Prevent temporary loading content from collapsing the scroll range.
-          panel.style.minHeight = panel.getBoundingClientRect().height + "px";
-          try {
-            if (t.type === "markdown") await loadMarkdown(t);
-            else await loadTileChart(t);
-          } finally { panel.style.minHeight = ""; }
+          // Markdown stays mounted while resolving live values; no height guard
+          // is needed. Chart loading still needs one, in unscaled CSS pixels.
+          if (t.type === "markdown") {
+            await loadMarkdown(t);
+          } else {
+            const previousMinHeight = panel.style.minHeight;
+            panel.style.minHeight = getComputedStyle(panel).height;
+            try { await loadTileChart(t); }
+            finally { panel.style.minHeight = previousMinHeight; }
+          }
         }));
     } finally {
       sessionValuesRefreshing = false;
