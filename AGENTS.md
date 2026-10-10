@@ -235,17 +235,30 @@ muckdb session rm <name> [--tile TILE]
   Compact labels avoid tracks and are included in the diagram bounds.
   Layout controls are `--direction right|down`,
   `--routing orthogonal|metro`, and `--spacing compact|comfortable`.
-- **`flame`** draws a **flame graph** from folded stacks — CPU/allocation
-  profiles, trace span trees, or any hierarchy where width = share of a total.
-  One row per sampled stack: `--stack` is a `;`-separated string, root first
-  (`main;run;parse`), or a LIST column; `--value` (optional, default 1 per row)
-  is the sample count/weight. Rows sharing a prefix merge into one frame,
-  siblings sort by name, and each frame's width is its share of the total.
-  Root at the bottom by default; `--direction down` draws an icicle (root at the
-  top). Click a frame to zoom into it (ancestors stay as dimmed breadcrumbs);
-  **reset zoom** returns to the full view. Hover shows total, self, % of all and
-  % of parent through `--value`'s format. Build stacks in SQL with
-  `string_agg(frame, ';' ORDER BY depth)` or a recursive CTE over parent ids.
+- **`flame`** draws a flame graph from root-first stacks. Prefer a
+  `VARCHAR[]` LIST column (`['main','run','a']`) for `--stack`: frame names
+  remain exact, including spaces and semicolons. Folded VARCHAR strings
+  (`main;run;a`) remain supported for imports, but cannot represent semicolons
+  inside a frame name. Use qualified names (module/function/source location)
+  when different functions share a display name; frames merge by exact name
+  within the same parent.
+  `--value` is the positive **exclusive weight of that exact stack**, default
+  one sample per row. The chart adds descendants automatically: stacks
+  `['main','run','a']=60`, `['main','run','b']=30`, and `['main','run']=30`
+  make `run` total 120, with self weight 30 and a gap above that part of its box.
+  Do not supply 120 for the parent row: that would count the children twice.
+  For trace spans, use exclusive duration, not inclusive span duration.
+  Duplicate stacks are summed in DuckDB before the distinct-stack `--limit`
+  (default 10000). If that limit is exceeded, the chart asks you to increase
+  it or filter the source; it does not display partial percentages.
+  Keep raw timestamp/thread/profile observations if you need those filters
+  later, and expose stacks plus weights through a view. For example:
+  `SELECT stack, count(*) AS samples FROM profile_samples GROUP BY stack`.
+  Root is at the bottom by default; `--direction down` draws an icicle.
+  Click frames or breadcrumbs to zoom; **reset zoom** restores the overview.
+  Small branches are hidden only in the current layout and can be revealed
+  by zooming into their parent. Hover shows total, self, percentage of all,
+  and percentage of parent through the weight column's display format.
 - **Bar fill**: `--bars solid` gives each bar its own palette colour — use it for
   categorical x (methods, status codes, regions). `--bars gradient` (default for a
   single series) suits continuous/over-time data. Colours come from the theme.

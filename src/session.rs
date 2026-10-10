@@ -1298,9 +1298,9 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
                 .to_ascii_uppercase()
         };
         let st = col_type(stack);
-        if !(st.contains("VARCHAR") || st.contains("TEXT") || st.ends_with("[]")) {
+        if !matches!(st.as_str(), "VARCHAR" | "TEXT" | "VARCHAR[]" | "TEXT[]") {
             bail!(
-                "--chart flame: --stack ({stack}: {st}) must be a ';'-separated VARCHAR or a LIST column"
+                "--chart flame: --stack ({stack}: {st}) must be a ';'-separated VARCHAR or a VARCHAR[] list"
             );
         }
         if let Some(v) = chart.value.as_deref() {
@@ -2775,7 +2775,7 @@ mod tests {
         run_sql(
             dbs,
             "CREATE TABLE prof AS SELECT 'main;parse;lex' AS stack, ['main','parse'] AS frames, \
-             12 AS samples, 'x' AS label",
+             12 AS samples, 'x' AS label, [1,2] AS numeric_frames, [['main']] AS nested_frames",
         );
         let mk = |chart: Chart| validate_tile(dbs, Some("prof"), None, &chart);
         assert!(mk(base.clone()).is_ok());
@@ -2783,6 +2783,11 @@ mod tests {
         let mut c = base.clone();
         c.stack = Some("frames".into());
         assert!(mk(c).is_ok());
+        for stack in ["numeric_frames", "nested_frames"] {
+            let mut c = base.clone();
+            c.stack = Some(stack.into());
+            assert!(mk(c).is_err());
+        }
         // Missing --stack fails.
         let mut c = base.clone();
         c.stack = None;
