@@ -706,6 +706,21 @@
   .bx-med-val { font-size: 11.5px; color: var(--muted); text-align: right; }
   .bx-axis { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 80px; gap: 14px; }
   .bx-axis-line { display: flex; justify-content: space-between; font-size: 10.5px; color: var(--faint); border-top: 1px solid var(--line-soft); padding-top: 3px; }
+  /* Flame graph tiles: folded stacks merged into a prefix tree; each frame's
+     width is its share of the total. Click a frame to zoom into it. */
+  .fl { padding: 6px 2px 2px; }
+  .fl-crumb { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; min-height: 18px; margin-bottom: 6px; font-size: 11px; color: var(--muted); }
+  .fl-path button { font: inherit; color: var(--primary); background: none; border: 0; padding: 0; cursor: pointer; }
+  .fl-path button:hover { text-decoration: underline; }
+  .fl-crumb .fl-total { margin-left: auto; color: var(--faint); }
+  .fl-plot { position: relative; }
+  .fl-frame { position: absolute; height: 17px; box-sizing: border-box; border: 1px solid var(--surface); border-radius: 3px; padding: 0 4px;
+    font-size: 11px; line-height: 15px; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: pointer;
+    transition: left .18s ease, width .18s ease, opacity .18s ease; }
+  .fl-frame.narrow { padding: 0; color: transparent; }
+  .fl-frame:hover { box-shadow: inset 0 0 0 1.5px var(--primary); }
+  .fl-frame.fl-anc { opacity: .45; }
+  .fl-note { margin-top: 4px; font-size: 10.5px; color: var(--faint); }
   /* Probability tiles: one normal-distribution curve per row on a shared x scale. */
   .pr { display: flex; flex-direction: column; gap: 12px; padding: 8px 4px; }
   .pr-row { display: grid; grid-template-columns: minmax(120px, 220px) 1fr 104px; gap: 14px; align-items: center; }
@@ -3946,17 +3961,18 @@
       slot.innerHTML = `<div class="ml-architecture-host">${mlArchitectureSvg(t.spec, t.name + "-zoom")}</div>`;
       return;
     }
-    const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
+    const sql = t.chart?.kind === "flame" ? tileQuerySql(t) : t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
     try {
       const data = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json();
       if (data.error) { slot.innerHTML = `<div class="note err">${esc(data.error)}</div>`; return; }
       const cols = data.columns || [], rows = data.rows || [];
       const kind = (t.chart && t.chart.kind) || "table";
+      if (kind === "flame" && rows.length > tileRowLimit(t)) { slot.innerHTML = flameLimitHtml(t); return; }
       await ensureFormats(t.db);
       // Heatmap/box render to their content height, so shrink the modal to fit
       // rather than stretching it full-height with whitespace below. A map fills
       // the modal instead — the SVG letterbox-fits, so it goes near full-screen.
-      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology") layer.querySelector(".zoom-box").classList.add("fit");
+      if (kind === "heatmap" || kind === "box" || kind === "probability" || kind === "quadrant" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "flame") layer.querySelector(".zoom-box").classList.add("fit");
       if (kind === "map") {
         layer.querySelector(".zoom-box").classList.add("mapzoom");
         layer.classList.add("mapzoom");
@@ -3971,6 +3987,7 @@
       if (kind === "timeline") { slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
       if (kind === "incident") { slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "sequence") { slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+      if (kind === "flame") { mountFlame(slot, cols, rows, t.chart || {}, t.db, t.view || null); return; }
       if (kind === "topology") {
         layer.querySelector(".zoom-actions").insertAdjacentHTML("afterbegin", topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)));
         const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];
@@ -5205,7 +5222,7 @@
     // the columns at once.
     const wide = kind === "topology" && topologyAutomaticLayout(t.db, t.view || null, t.name) ? true :
       state.tileWide[t.name] ?? (kind === "topology" && topologyLayoutMode(t.db, t.view || null, t.name) === "wide");
-    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident"
+    const widenBtn = kind === "table" || kind === "timeline" || kind === "incident" || kind === "flame"
       ? `<button class="panel-act icon${wide ? " active" : ""}" data-widen="${attr(t.name)}" title="${wide ? "Fit to column width" : "Expand to full width"}" aria-label="Toggle full width">${SVG_WIDEN}</button>`
       : "";
     const topologyControls = kind === "topology" ? topologyLayoutControls(topologyLayoutMode(t.db, t.view || null, t.name), ["one", "two", "wide"], topologyAutomaticLayout(t.db, t.view || null, t.name)) : "";
@@ -5219,7 +5236,7 @@
     // sense on them (markdown panels already skip it too). Probability tiles
     // intentionally keep the standard grip: a taller panel gives their curves
     // more breathing room, like a bar or line chart.
-    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "todo" ? "" : gripHtml(t.name);
+    const grip = kind === "heatmap" || kind === "box" || kind === "quadrant" || kind === "map" || kind === "timeline" || kind === "incident" || kind === "sequence" || kind === "topology" || kind === "flame" || kind === "todo" ? "" : gripHtml(t.name);
     return `<div class="panel${wide ? " full-bleed" : ""}" data-tile="${attr(t.name)}">
       <div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">${esc(kind)}</span>${filt}
         <span class="panel-actions no-screenshot">${topologyControls}${mapToggle}${sqlBtn}${mermaidBtn}${presentBtn}${widenBtn}${contractBtn}${kind === "table" ? copyTileBtn(t.name, "Copy filtered table") : ""}${copyImgBtn(t.name)}${zoomBtn}${explore}${trashBtn(t.name)}</span></div>
@@ -5350,13 +5367,27 @@
       </div>`;
     }).join("")}</div>`;
   }
+  function tileRowLimit(t) { return Number.isInteger(t.limit) && t.limit > 0 ? t.limit : 10000; }
+  function flameLimitHtml(t) {
+    return `<div class="note err">Flame graph exceeds the ${tileRowLimit(t).toLocaleString()} distinct-stack limit. Increase --limit or filter the source view. No percentages are shown for an incomplete profile.</div>`;
+  }
+  function tileQuerySql(t) {
+    const source = t.sql ? t.sql.trim().replace(/;+\s*$/, "") : `SELECT * FROM ${quoteId(t.view || "")}`;
+    if (t.chart?.kind === "flame") {
+      // Fold duplicate stacks in DuckDB before applying the distinct-stack cap.
+      // Weights describe only this exact stack, never an inclusive parent total.
+      const stack = quoteId(t.chart.stack), value = t.chart.value ? quoteId(t.chart.value) : "1";
+      const weight = quoteId(t.chart.value || "__muckdb_flame_weight");
+      return `SELECT ${stack}, sum(${value}) AS ${weight} FROM (\n${source}\n) AS muckdb_tile WHERE ${value} > 0 AND isfinite(CAST(${value} AS DOUBLE)) GROUP BY ${stack} LIMIT ${tileRowLimit(t) + 1}`;
+    }
+    return `SELECT * FROM (\n${source}\n) AS muckdb_tile LIMIT ${tileRowLimit(t) + 1}`;
+  }
   async function loadTileChart(t) {
     const slot = document.querySelector(`[data-tile="${cssEsc(t.name)}"] .panel-chart`);
     if (!slot) return;
     const fadedSeriesKey = `${state.selSession || ""}/${t.name}`;
-    const limit = Number.isInteger(t.limit) && t.limit > 0 ? t.limit : 10000;
-    const source = t.sql ? t.sql.trim().replace(/;+\s*$/, "") : `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}"`;
-    const sql = `SELECT * FROM (\n${source}\n) AS muckdb_tile LIMIT ${limit + 1}`;
+    const limit = tileRowLimit(t);
+    const sql = tileQuerySql(t);
     let data;
     try { data = await (await fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))).json(); }
     catch (e) { slot.innerHTML = `<div class="note err">${esc(String(e))}</div>`; return; }
@@ -5389,6 +5420,7 @@
       slot.before(note);
     }
     const kind = (t.chart && t.chart.kind) || "table";
+    if (kind === "flame" && truncated) { discardExistingChart(); slot.innerHTML = flameLimitHtml(t); slot.style.height = "auto"; return; }
     await ensureFormats(t.db);
     if (!rows.length) { discardExistingChart(); slot.innerHTML = '<div class="note">no rows.</div>'; slot.style.height = "auto"; return; }
     if (kind === "todo") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = todoHtml(cols, rows, t); return; }
@@ -5401,6 +5433,7 @@
     if (kind === "timeline") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = timelineHtml(cols, rows, t.chart || {}, t.db, t.view || null); hydrateTimelines(slot); return; }
     if (kind === "incident") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = incidentHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "sequence") { discardExistingChart(); slot.style.height = "auto"; slot.innerHTML = sequenceHtml(cols, rows, t.chart || {}, t.db, t.view || null); return; }
+    if (kind === "flame") { discardExistingChart(); slot.style.height = "auto"; mountFlame(slot, cols, rows, t.chart || {}, t.db, t.view || null); return; }
     if (kind === "topology") { discardExistingChart(); slot.style.height = "auto"; const view=[cols,rows,t.chart || {},t.db,t.view || null,t.name];slot.innerHTML = topologyHtml(...view);fitTopologyLayout(slot,view,topologyAutomaticLayout(t.db,t.view || null,t.name));return; }
     slot.style.height = "300px";
     // Pie tiles get the same looping static clip behind the canvas — it shows in
@@ -7874,6 +7907,110 @@
     return `<div class="bx">${rowsHtml}${axis}</div>`;
   }
 
+  // A flame graph tile: one row per sampled stack in folded form. --stack is a
+  // ';'-separated string ("main;parse;lex", root first) or a LIST column;
+  // --value (optional, default 1 per row) is the sample count/weight. Rows
+  // sharing a prefix merge into one frame, siblings sort by name, and each
+  // frame's width is its share of the total. Root at the bottom (flame);
+  // --direction down puts it at the top (icicle). Click a frame to zoom in.
+  const FL_ROW = 18;
+  const flameViews = new WeakMap();
+  function mountFlame(slot, cols, rows, spec, db, table, focusPath = []) {
+    spec = { ...spec, value: spec.value || "__muckdb_flame_weight" };
+    slot.innerHTML = flameHtml(cols, rows, spec, db, table, focusPath);
+    const box = slot.querySelector(".fl");
+    if (box) flameViews.set(box, { cols, rows, spec, db, table });
+  }
+  function flameStack(v) {
+    if (v == null) return [];
+    const parts = Array.isArray(v) ? v : String(v).split(";");
+    // Preserve exact frame names; list elements may contain semicolons or spaces.
+    if (parts.some((p) => typeof p !== "string" || !p.length)) return [];
+    return parts;
+  }
+  function flameHtml(cols, rows, spec, db, table, focusPath = []) {
+    const si = cols.indexOf(spec.stack);
+    if (si < 0) return '<div class="note">flame graphs need --stack (a \';\'-separated stack or a LIST column).</div>';
+    const vi = spec.value ? cols.indexOf(spec.value) : -1;
+    const root = { name: "all", value: 0, self: 0, children: new Map() };
+    rows.forEach((r) => {
+      const v = vi >= 0 ? Number(r[vi]) : 1;
+      const frames = flameStack(r[si]);
+      if (!isFinite(v) || v <= 0 || !frames.length) return;
+      root.value += v;
+      let node = root;
+      frames.forEach((name) => {
+        let child = node.children.get(name);
+        if (!child) { child = { name, value: 0, self: 0, children: new Map() }; node.children.set(name, child); }
+        child.value += v;
+        node = child;
+      });
+      node.self += v;
+    });
+    if (!root.value) return '<div class="note">no stacks with a positive value.</div>';
+    const f = vi >= 0 ? colFmt(db, spec.value, table) : null;
+    const fv = (v) => f ? applyFmtHtml(f, round3(v)) : esc(fmtNum(round3(v)));
+    const pct = (a, b) => b ? (a / b * 100).toFixed(a / b < 0.001 ? 3 : 1) + "%" : "—";
+    // Keep every stack in the model. Cull only the current visible layout so
+    // zooming into a small branch can reveal its previously hidden children.
+    let focus = root;
+    const ancestors = [];
+    for (const name of focusPath) {
+      ancestors.push(focus);
+      focus = focus.children.get(name);
+    }
+    const minW = 1 / 4000;
+    const frames = [];
+    let maxDepth = 0, pruned = 0;
+    const walk = (node, x0, depth, path, parentValue) => {
+      const w = node.value / focus.value;
+      if (w < minW) { pruned++; return; }
+      const id = frames.length;
+      frames.push({ node, x0, w, depth, path, parentValue });
+      maxDepth = Math.max(maxDepth, depth);
+      let x = x0;
+      [...node.children.values()].sort((a, b) => a.name.localeCompare(b.name)).forEach((c) => {
+        walk(c, x, depth + 1, path.concat(c.name), node.value);
+        x += c.value / focus.value;
+      });
+      return id;
+    };
+    ancestors.forEach((node, depth) => frames.push({ node, x0: 0, w: 1, depth,
+      path: focusPath.slice(0, depth), parentValue: depth ? ancestors[depth - 1].value : root.value, ancestor: true }));
+    walk(focus, 0, focusPath.length, focusPath, ancestors.at(-1)?.value || root.value);
+    const down = spec.direction === "down";
+    const top = (d) => (down ? d : maxDepth - d) * FL_ROW;
+    // Shade each frame from the theme accent, keyed by its name, so the same
+    // function reads as the same colour wherever it appears.
+    const shade = (name) => {
+      let h = 0;
+      for (let i = 0; i < name.length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+      return mixColors("var(--primary)", 22 + (Math.abs(h) % 7) * 7, "var(--surface)");
+    };
+    const html = frames.map((fr, i) => {
+      const n = fr.node, isRoot = fr.path.length === 0;
+      const stack = isRoot ? "" : `<div class="tl-tip-sep"></div><span class="tl-tip-cat">${fr.path.map(esc).join(" → ")}</span>`;
+      const tip = `<b>${esc(n.name)}</b>${stack}<div class="tl-tip-sep"></div><ul class="wm-tip-list">` +
+        `<li><span class="wm-tip-lb">total</span><span class="wm-tip-c">${fv(n.value)}</span></li>` +
+        `<li><span class="wm-tip-lb">self</span><span class="wm-tip-c">${fv(n.self)}</span></li>` +
+        `<li><span class="wm-tip-lb">of all</span><span class="wm-tip-c">${pct(n.value, root.value)}</span></li>` +
+        (isRoot ? "" : `<li><span class="wm-tip-lb">of parent</span><span class="wm-tip-c">${pct(n.value, fr.parentValue)}</span></li>`) + `</ul>`;
+      const bg = isRoot ? mixColors("var(--muted)", 22, "var(--surface)") : shade(n.name);
+      return `<div class="fl-frame wm-x${fr.ancestor ? " fl-anc" : ""}${fr.w < 0.012 ? " narrow" : ""}" data-fl="${i}" data-flpath="${attr(JSON.stringify(fr.path))}" data-x0="${fr.x0}" data-w="${fr.w}" data-d="${fr.depth}" data-name="${attr(n.name)}"
+        style="left:${(fr.x0 * 100).toFixed(4)}%;width:${(fr.w * 100).toFixed(4)}%;top:${top(fr.depth)}px;background:${bg}" data-tip="${attr(tip)}">${esc(n.name)}</div>`;
+    }).join("");
+    const note = pruned ? `<div class="fl-note">${pruned.toLocaleString()} branch${pruned === 1 ? "" : "es"} under 0.025% of the current view hidden; zoom into their parent to reveal them.</div>` : "";
+    const crumbs = focusPath.length ? ancestors.concat(focus).map((node, depth) =>
+      `<button type="button" data-flpath="${attr(JSON.stringify(focusPath.slice(0, depth)))}">${esc(node.name)}</button>`).join(" › ") : "";
+    return `<div class="fl"><div class="fl-crumb"><span class="fl-path">${crumbs}</span><span class="fl-total">${fv(root.value)} total</span><button class="tl-reset" type="button" data-flpath="[]" ${focusPath.length ? "" : "hidden"} title="Reset flame graph zoom">reset zoom</button></div>` +
+      `<div class="fl-plot" style="height:${(maxDepth + 1) * FL_ROW}px">${html}</div>${note}</div>`;
+  }
+  document.addEventListener("click", (ev) => {
+    const el = ev.target.closest?.("[data-flpath]");
+    const box = el?.closest(".fl"), view = box && flameViews.get(box);
+    if (view) mountFlame(box.parentElement, view.cols, view.rows, view.spec, view.db, view.table, JSON.parse(el.dataset.flpath));
+  });
+
   // A probability tile estimates one density curve per --x group from raw
   // observations in its single --y column. This is deliberately non-parametric:
   // skew, multiple peaks, and long tails are preserved instead of assumed away.
@@ -10148,7 +10285,7 @@
     if (mmd) {
       const t = sessionTile(mmd.dataset.mermaid);
       if (!t || t.type !== "view") return;
-      const sql = t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
+      const sql = t.chart?.kind === "flame" ? tileQuerySql(t) : t.sql || `SELECT * FROM "${(t.view || "").replace(/"/g, '""')}" LIMIT 5000`;
       fetch("/api/query?" + new URLSearchParams({ db: t.db, sql }))
         .then((r) => r.json())
         .then((data) => {

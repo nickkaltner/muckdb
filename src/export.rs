@@ -450,6 +450,7 @@ mod tests {
                         direction: None,
                         routing: None,
                         spacing: None,
+                        stack: None,
                     }),
                     caption: Some("c".into()),
                     skip_presentation: false,

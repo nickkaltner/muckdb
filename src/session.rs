@@ -183,6 +183,12 @@ pub struct Chart {
     pub routing: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub spacing: Option<String>,
+    /// Flame graph tiles: the folded-stack column (`--stack`), either a
+    /// `;`-separated string (root first) or a LIST of frame names. `--value`
+    /// optionally weights each row (default 1); `--direction down` draws an
+    /// icicle (root at the top) instead of a flame (root at the bottom).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub stack: Option<String>,
 }
 
 /// One panel in a session.
@@ -1280,6 +1286,40 @@ fn validate_tile(db: &str, view: Option<&str>, sql: Option<&str>, chart: &Chart)
             }
         }
     }
+    if chart.kind == "flame" {
+        let stack = chart.stack.as_deref().context(
+            "--chart flame needs --stack <column> (a ';'-separated stack, root first, or a LIST column)",
+        )?;
+        check("--stack", stack)?;
+        let col_type = |name: &str| {
+            rows.iter()
+                .find(|r| r.get("column_name").and_then(Value::as_str) == Some(name))
+                .and_then(|r| r.get("column_type").and_then(Value::as_str))
+                .unwrap_or("")
+                .to_ascii_uppercase()
+        };
+        let st = col_type(stack);
+        if !matches!(st.as_str(), "VARCHAR" | "TEXT" | "VARCHAR[]" | "TEXT[]") {
+            bail!(
+                "--chart flame: --stack ({stack}: {st}) must be a ';'-separated VARCHAR or a VARCHAR[] list"
+            );
+        }
+        if let Some(v) = chart.value.as_deref() {
+            let vt = col_type(v);
+            if !crate::introspect::is_numeric(&vt) {
+                bail!(
+                    "--chart flame: --value ({v}: {vt}) must be numeric (the sample count/weight)"
+                );
+            }
+        }
+        if let Some(value) = chart.direction.as_deref()
+            && !matches!(value, "up" | "down")
+        {
+            bail!(
+                "--chart flame: --direction must be 'up' (flame) or 'down' (icicle), got '{value}'"
+            );
+        }
+    }
     if chart.kind == "topology" {
         let from = chart
             .from_participant
@@ -1808,6 +1848,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                     direction: p.get("direction").map(str::to_string),
                     routing: p.get("routing").map(str::to_string),
                     spacing: p.get("spacing").map(str::to_string),
+                    stack: p.get("stack").map(str::to_string),
                 }),
                 caption: p.get("caption").map(str::to_string),
                 skip_presentation: if p.get("include-presentation").is_some() {
@@ -1938,7 +1979,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  section <name> --name TILE --title HEADING   (a heading that groups the panels after it)\n  \
                  context <name|agent-session-uid> <read|save> [--md <text|->]  (agent handoff: data sources + session-wide notes)\n  \
                  move <name> --tile T (--up | --down | --to N | --before TILE | --after TILE)\n  \
-                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
+                 tile <name> --name TILE --db DB (--view V | --sql SQL) [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|flame|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]\n                       \
                  [--accent-max C1,C2] [--accent-min C1,C2]  (table: colour tied numeric highs/lows with the theme accent, within the filtered fetched rows)\n                       \
                  [--value COL]  (heatmap: the cell value; --x and --y name the two axes, one row per pair)\n                       \
                  [--no-values]  (heatmap: colour cells only — hover still shows the figure)\n                       \
@@ -1949,6 +1990,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  --chart timeline: --lane COL --label COL --start COL (--end COL | --duration COL); optional --color CAT --id COL --depends-on COL; --event 'T|label' markers\n                       \
                  --chart incident: --start COL --label COL; optional --desc COL for narrative and --color CAT for severity/category\n                       \
                  --chart sequence: --from COL --to COL --label COL (one row per message); optional --message-type sync|reply|async|lost, --from-type/--to-type participant|actor|database|boundary, --group 'kind:label', --group-branch COL, --autonumber\n                       \
+                 --chart flame: --stack COL (folded stack 'root;child;leaf' or a LIST column, one row per sampled stack); optional --value COL (sample count/weight, default 1), --direction down for an icicle; click a frame to zoom\n                       \
                  --chart todo: updateable --view table with item_description, full_description, status, completed_at; hover an item to change pending|skipped|success|failure\n                       \
                  [--skip-presentation | --include-presentation]  (todo: omit/include the tile in presentation mode; omitted preserves its setting)\n                       \
                  [--desc COL]  (box: a per-box note; probability: a per-distribution note; incident: event narrative)\n                       \
@@ -2104,6 +2146,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         assert!(json.contains("\"value\":\"sites\""));
@@ -2170,6 +2213,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -2239,6 +2283,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -2316,6 +2361,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         let json = serde_json::to_string(&c).unwrap();
         let back: Chart = serde_json::from_str(&json).unwrap();
@@ -2688,6 +2734,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         // Missing --lane fails.
         let mut c = base();
@@ -2710,6 +2757,57 @@ mod tests {
         let mut c = base();
         c.end = None;
         c.duration = Some("t1".into());
+        assert!(mk(c).is_ok());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn flame_validation_requires_stack_column() {
+        let base: Chart =
+            serde_json::from_str(r#"{"kind":"flame","stack":"stack","value":"samples"}"#).unwrap();
+        assert!(serde_json::to_string(&base).unwrap().contains("\"stack\""));
+        if !duckdb_ok() {
+            eprintln!("skipping flame_validation_requires_stack_column: no duckdb");
+            return;
+        }
+        let dir = std::env::temp_dir().join(format!("muckdb-flame-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let db = dir.join("flame.duckdb");
+        let dbs = db.to_str().unwrap();
+        run_sql(
+            dbs,
+            "CREATE TABLE prof AS SELECT 'main;parse;lex' AS stack, ['main','parse'] AS frames, \
+             12 AS samples, 'x' AS label, [1,2] AS numeric_frames, [['main']] AS nested_frames",
+        );
+        let mk = |chart: Chart| validate_tile(dbs, Some("prof"), None, &chart);
+        assert!(mk(base.clone()).is_ok());
+        // A LIST --stack is accepted.
+        let mut c = base.clone();
+        c.stack = Some("frames".into());
+        assert!(mk(c).is_ok());
+        for stack in ["numeric_frames", "nested_frames"] {
+            let mut c = base.clone();
+            c.stack = Some(stack.into());
+            assert!(mk(c).is_err());
+        }
+        // Missing --stack fails.
+        let mut c = base.clone();
+        c.stack = None;
+        assert!(mk(c).is_err());
+        // A numeric --stack fails.
+        let mut c = base.clone();
+        c.stack = Some("samples".into());
+        assert!(mk(c).is_err());
+        // A non-numeric --value fails.
+        let mut c = base.clone();
+        c.value = Some("label".into());
+        assert!(mk(c).is_err());
+        // A --direction other than up|down fails; down is accepted.
+        let mut c = base.clone();
+        c.direction = Some("right".into());
+        assert!(mk(c).is_err());
+        let mut c = base;
+        c.direction = Some("down".into());
         assert!(mk(c).is_ok());
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -2782,6 +2880,7 @@ mod tests {
             direction: None,
             routing: None,
             spacing: None,
+            stack: None,
         };
         // A fully-specified valid spec passes.
         assert!(mk(base()).is_ok());

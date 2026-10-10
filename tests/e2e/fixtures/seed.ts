@@ -97,6 +97,27 @@ CREATE VIEW incident_events AS SELECT * FROM (VALUES
   (TIMESTAMP '2026-05-02 00:03:00', 'Traffic shifted', NULL, 'mitigating')
 ) t(occurred_at, event_name, narrative, severity);
 
+-- Flame graph fixture: folded stacks (root first, ';'-separated) with a sample
+-- weight per stack. main → {run → {a, b}, init} gives a three-level tree.
+CREATE VIEW flame_stacks AS SELECT * FROM (VALUES
+  ('main;run;a', 60),
+  ('main;run;b', 30),
+  ('main;init', 10)
+) t(stack, samples);
+
+-- Lists preserve frame boundaries; parent rows carry exclusive weight only.
+CREATE VIEW flame_list_stacks AS SELECT * FROM (VALUES
+  (['main','run','a'], 60), (['main','run','b'], 30), (['main','run'], 30)
+) t(stack, samples);
+CREATE VIEW flame_raw_samples AS SELECT ['main','run'] AS stack FROM range(12001);
+CREATE VIEW flame_distinct_stacks AS SELECT ['main', 'frame-' || i::VARCHAR] AS stack FROM range(4) t(i);
+CREATE VIEW flame_rare_stacks AS SELECT * FROM (VALUES
+  (['main','big'], 9990), (['main','small','common'], 9), (['main','small','rare'], 1)
+) t(stack, samples);
+CREATE VIEW flame_exact_names AS SELECT * FROM (VALUES
+  (['main','name;with;semicolons'], 1), (['main',' padded '], 1), (['main','padded'], 1)
+) t(stack, samples);
+
 -- Sequence diagram fixture: one row per message, each participant type, all four
 -- arrow kinds, a self-message, and an alt/else group. 'trace' carries a --link
 -- format (tooltip-link coverage); 'note' carries a hostile value (XSS coverage).
@@ -204,6 +225,21 @@ export function seed(env: NodeJS.ProcessEnv, binary: string, dbPath: string, por
     '--db', dbPath, '--view', 'incident_events', '--chart', 'incident',
     '--start', 'occurred_at', '--label', 'event_name', '--desc', 'narrative', '--color', 'severity',
     '--caption', 'Chronological incident milestones; colour indicates severity and descriptions add response context.']);
+  run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'flame', '--title', 'CPU profile',
+    '--db', dbPath, '--view', 'flame_stacks', '--chart', 'flame', '--stack', 'stack', '--value', 'samples',
+    '--caption', 'A flame graph: merged folded stacks, width = share of samples.']);
+  for (const [name, view, value, limit] of [
+    ['flame-list', 'flame_list_stacks', 'samples', null],
+    ['flame-raw', 'flame_raw_samples', null, null],
+    ['flame-limit', 'flame_distinct_stacks', null, '2'],
+    ['flame-rare', 'flame_rare_stacks', 'samples', null],
+    ['flame-names', 'flame_exact_names', 'samples', null],
+  ]) {
+    run(binary, env, port, ['session', 'tile', 'e2e', '--name', name!, '--title', name!,
+      '--db', dbPath, '--view', view!, '--chart', 'flame', '--stack', 'stack',
+      ...(value ? ['--value', value] : []), ...(limit ? ['--limit', limit] : []),
+      '--caption', 'Flamegraph correctness fixture.']);
+  }
   run(binary, env, port, ['session', 'tile', 'e2e', '--name', 'all', '--title', 'All widgets',
     '--db', dbPath, '--view', 'widgets_all', '--chart', 'table',
     '--caption', 'The full flattened list.']);

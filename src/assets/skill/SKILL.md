@@ -318,7 +318,7 @@ muckdb session section <name> --name TILE --title HEADING
 muckdb session context <name|agent-session-uid> <read|save> [--md <text|->]
 muckdb session move <name> --tile TILE (--up | --down | --to N | --before TILE | --after TILE)
 muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
-        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|topology|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
+        [--chart bar|stacked|line|area|scatter|pie|table|heatmap|box|probability|quadrant|map|timeline|incident|sequence|topology|flame|todo] [--x COL] [--y C1,C2] [--title T] [--caption C]
         [--limit N] (positive row limit, default 10000; applies to views and inline SQL)
         [--accent-max C1,C2] [--accent-min C1,C2]  (table: colour tied highest/lowest numeric values with the dashboard accent)
         [--value COL]  (heatmap: the cell value; --x/--y name the two axes)
@@ -346,6 +346,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--from-port COL] [--to-port COL]  (topology: labels at the two ends of a connection; --label labels its middle)
         [--direction right|down] [--routing orthogonal|metro] [--spacing compact|comfortable]  (topology layout)
         [--xlabel L] [--ylabel L] [--bars gradient|solid] [--y-range tight]
+        [--stack COL]  (flame: folded stack 'root;child;leaf' or a LIST column; --value weights each row, --direction down = icicle)
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
 muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out FILE.png] [--width W] [--height H]
@@ -559,6 +560,30 @@ muckdb session tile ops --name services --db ops.duckdb --view service_health \
     per message, drawn as an arrow between two participant lifelines. See the
     dedicated **Sequence** section below for the full flag set and a worked
     example.
+- **`flame`** draws a flame graph from root-first stacks. Prefer a
+  `VARCHAR[]` LIST column (`['main','run','a']`) for `--stack`: frame names
+  remain exact, including spaces and semicolons. Folded VARCHAR strings
+  (`main;run;a`) remain supported for imports, but cannot represent semicolons
+  inside a frame name. Use qualified names (module/function/source location)
+  when different functions share a display name; frames merge by exact name
+  within the same parent.
+  `--value` is the positive **exclusive weight of that exact stack**, default
+  one sample per row. The chart adds descendants automatically: stacks
+  `['main','run','a']=60`, `['main','run','b']=30`, and `['main','run']=30`
+  make `run` total 120, with self weight 30 and a gap above that part of its box.
+  Do not supply 120 for the parent row: that would count the children twice.
+  For trace spans, use exclusive duration, not inclusive span duration.
+  Duplicate stacks are summed in DuckDB before the distinct-stack `--limit`
+  (default 10000). If that limit is exceeded, the chart asks you to increase
+  it or filter the source; it does not display partial percentages.
+  Keep raw timestamp/thread/profile observations if you need those filters
+  later, and expose stacks plus weights through a view. For example:
+  `SELECT stack, count(*) AS samples FROM profile_samples GROUP BY stack`.
+  Root is at the bottom by default; `--direction down` draws an icicle.
+  Click frames or breadcrumbs to zoom; **reset zoom** restores the overview.
+  Small branches are hidden only in the current layout and can be revealed
+  by zooming into their parent. Hover shows total, self, percentage of all,
+  and percentage of parent through the weight column's display format.
 - **Bar fill — `--bars gradient|solid`** — match the fill to the data:
   - **`--bars solid`** for **categorical** x (HTTP methods GET/POST/PUT, status
     codes, regions, product names, error types). Each bar gets its own solid
