@@ -732,6 +732,7 @@ pub fn set_todo_status(id: &str, tile: &str, item: &str, status: &str) -> Result
         sql_literal(status),
         sql_literal(item)
     );
+    let _db_lock = crate::db_lock::acquire(db, false)?;
     let output = std::process::Command::new("duckdb")
         .arg(db)
         .arg("-c")
@@ -1905,7 +1906,8 @@ pub fn cli(args: &[String]) -> Result<i32> {
                 })
             });
             crate::facade::ensure_daemon()?;
-            let png = crate::shot::capture_png(&id, tile.as_deref(), width, height)?;
+            let png =
+                crate::shot::capture_png(&id, tile.as_deref(), p.get("theme"), width, height)?;
             fs::write(&out, &png).with_context(|| format!("writing {out:?}"))?;
             let abs = out.canonicalize().unwrap_or(out);
             match &tile {
@@ -1997,7 +1999,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label']  (repeatable reference lines)\n                       \
                  [--band LOWER,UPPER]  (line-chart confidence band, shaded between two columns)\n                       \
                  [--trend]  (overlay a smoothed trendline; single-series bar/line/area/scatter)\n  \
-                 screenshot <name> [--tile TILE] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
+                 screenshot <name> [--tile TILE] [--theme NAME] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
                  export <name> [--out FILE.muckdb]  (bundle session + database snapshots into a portable zip)\n  \
                  import <file.muckdb>               (load an exported session; dbs land in muckdb's data dir)\n  \
                  rm <name> [--tile TILE]"

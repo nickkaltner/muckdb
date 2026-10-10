@@ -4,6 +4,7 @@
 //! shared store, then transparently runs the real `duckdb` binary so muckdb is
 //! a drop-in replacement for the duckdb CLI.
 
+use std::fs::OpenOptions;
 use std::io::{Read, Write};
 use std::net::{SocketAddr, TcpStream};
 use std::path::{Path, PathBuf};
@@ -151,6 +152,13 @@ pub fn ensure_daemon() -> Result<()> {
         }
     }
 
+    // Check access before spawning: restricted callers cannot create runtime
+    // state, and should not spend the startup timeout waiting for a failed child.
+    OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(crate::paths::daemon_log(resolved_port())?)
+        .context("opening muckdb daemon log")?;
     let exe = std::env::current_exe().context("locating muckdb executable")?;
     // The spawned process daemonizes itself (fork + setsid), so its direct
     // parent exits almost immediately; we reap it below to avoid a zombie.
@@ -185,10 +193,12 @@ pub fn ensure_daemon() -> Result<()> {
     Ok(())
 }
 
-/// Run muckdb in facade mode: ensure the daemon, log the invocation, run
-/// `duckdb` with the given args, log completion, and return duckdb's exit code.
+/// Run DuckDB with coordination locks and preserve its exit code. Daemon and
+/// ledger failures warn but do not prevent ordinary database work.
 pub fn passthrough(args: &[String]) -> Result<i32> {
-    ensure_daemon()?;
+    if let Err(error) = ensure_daemon() {
+        eprintln!("muckdb: warning: UI unavailable; continuing database command: {error:#}");
+    }
 
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
     let db_path = detect_db_path(args, &cwd);
@@ -201,7 +211,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         .wrapping_mul(1000)
         .wrapping_add(std::process::id() as u64);
 
-    store::append(&Record {
+    let recorded = store::append(&Record {
         id,
         ts: store::now_millis(),
         cwd: cwd.to_string_lossy().into_owned(),
@@ -211,27 +221,40 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         exit_code: None,
         session: session.clone(),
         forget: false,
-    })?;
+    });
+    if let Err(error) = &recorded {
+        eprintln!(
+            "muckdb: warning: history unavailable; invocation will not be recorded: {error:#}"
+        );
+    }
 
     // Inherit stdio so muckdb behaves exactly like duckdb (interactive shell,
     // pipes, colours, exit code).
+    let _db_lock = db_path
+        .as_deref()
+        .map(|db| crate::db_lock::acquire(db, args.iter().any(|a| a == "-readonly")))
+        .transpose()?;
     let status = Command::new("duckdb")
         .args(args)
         .status()
         .context("failed to run `duckdb` — is it installed and on PATH?")?;
     let code = status.code().unwrap_or(1);
 
-    store::append(&Record {
-        id,
-        ts: store::now_millis(),
-        cwd: cwd.to_string_lossy().into_owned(),
-        args: args.to_vec(),
-        db_path,
-        phase: Phase::End,
-        exit_code: Some(code),
-        session,
-        forget: false,
-    })?;
+    if recorded.is_ok()
+        && let Err(error) = store::append(&Record {
+            id,
+            ts: store::now_millis(),
+            cwd: cwd.to_string_lossy().into_owned(),
+            args: args.to_vec(),
+            db_path,
+            phase: Phase::End,
+            exit_code: Some(code),
+            session,
+            forget: false,
+        })
+    {
+        eprintln!("muckdb: warning: could not record command completion: {error:#}");
+    }
 
     Ok(code)
 }

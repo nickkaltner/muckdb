@@ -120,12 +120,21 @@ test('live chart refreshes retain faded legend series', async ({ page }) => {
   const xAxis = await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
     return {
+      type: chart.scales.x.type,
       autoSkip: chart.scales.x.options.ticks.autoSkip,
+      maxTicksLimit: chart.scales.x.options.ticks.maxTicksLimit,
+      tickCount: chart.scales.x.ticks.length,
+      tickValues: chart.scales.x.ticks.map((tick: any) => tick.value),
+      precision: chart.scales.x.options.ticks.precision,
       labelPadding: chart.scales.x.options.ticks.padding,
       tickLength: chart.scales.x.options.grid.tickLength,
     };
   });
-  expect(xAxis).toEqual({ autoSkip: false, labelPadding: 3, tickLength: 4 });
+  expect(xAxis).toEqual({ type: 'linear', autoSkip: true, maxTicksLimit: 9, tickCount: expect.any(Number),
+    tickValues: expect.any(Array), precision: 0,
+    labelPadding: 3, tickLength: 4 });
+  expect(xAxis.tickCount).toBeLessThanOrEqual(9);
+  expect(xAxis.tickValues.every((value: number) => Number.isInteger(value))).toBe(true);
   await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
     const hit = chart.legend.legendHitBoxes[0], r = el.getBoundingClientRect();
@@ -154,9 +163,9 @@ test('live chart refreshes retain faded legend series', async ({ page }) => {
     return {
       retained: !!(el as any).identityMarker,
       faded: !!chart?.$muckFadedDatasets[0],
-      latest: chart?.data.datasets[0].data[1],
+      latest: chart?.getDatasetMeta(0)._parsed[1],
     };
-  })).toEqual({ retained: true, faded: true, latest: 0.9 });
+  })).toEqual({ retained: true, faded: true, latest: { x: 2, y: 0.9 } });
 });
 
 test('CLI session updates keep the reader on the same panel', async ({ page }) => {

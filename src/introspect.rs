@@ -54,6 +54,7 @@ pub struct Preview {
 
 /// Run a read-only query against `db` and parse `duckdb -json` output into rows.
 pub(crate) fn query_json(db: &str, sql: &str) -> Result<Vec<Value>> {
+    let _db_lock = crate::db_lock::acquire(db, true)?;
     let mut retries = 0;
     let output = loop {
         let output = Command::new("duckdb")
@@ -633,6 +634,7 @@ pub fn export(
     } else {
         "-csv"
     };
+    let _db_lock = crate::db_lock::acquire(db, true)?;
     let output = Command::new("duckdb")
         .arg("-readonly")
         .arg(out_flag)
@@ -665,6 +667,7 @@ pub fn export_query(db: &str, sql: &str, format: &str) -> Result<String> {
     } else {
         "-csv"
     };
+    let _db_lock = crate::db_lock::acquire(db, true)?;
     let output = Command::new("duckdb")
         .arg("-readonly")
         .arg(out_flag)
@@ -929,11 +932,9 @@ pub fn save_view(db: &str, name: &str, sql: &str, overwrite: bool) -> Result<()>
         "CREATE VIEW"
     };
     let statement = format!("{ddl} {} AS {query}", quote_ident(name));
-    // The web UI can still be completing a read-only schema/query request when
-    // the user clicks save. DuckDB gives that reader a shared file lock, so a
-    // new writer may briefly fail rather than wait. Retrying the short-lived
-    // contention keeps the save action reliable without masking real DDL
-    // errors (which return immediately).
+    // Coordinate with muckdb readers and writers; retain retries for brief
+    // contention from direct DuckDB clients that do not take our lock.
+    let _db_lock = crate::db_lock::acquire(db, false)?;
     let mut output = Command::new("duckdb")
         .arg(db)
         .arg("-c")

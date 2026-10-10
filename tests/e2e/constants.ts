@@ -9,6 +9,7 @@ export const BINARY = join(REPO_ROOT, 'target', 'release', 'muckdb');
 
 export interface E2EState {
   tmpDir: string;
+  browserPath: string;
   port: number;
   dbId: string;
   sessionId: string;

@@ -349,7 +349,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
         [--stack COL]  (flame: folded stack 'root;child;leaf' or a LIST column; --value weights each row, --direction down = icicle)
         [--skip-presentation | --include-presentation]  (todo: omit/include in presentation mode; omitted preserves the current setting)
         [--target 'VAL|label'] [--threshold 'VAL|label'] [--event 'X|label'] [--band LOWER,UPPER] [--trend]
-muckdb session screenshot <name> [--tile TILE] [--out FILE.png] [--width W] [--height H]
+muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
 muckdb session rm <name> [--tile TILE]
@@ -1033,6 +1033,10 @@ Use it to adapt: a session with many views is worth keeping polished; a tile
 the human zooms or explores repeatedly deserves more depth; a tile with zero
 interactions across many views is a hint to present that data differently.
 
+Numeric x columns on `line` and `area` charts use a linear axis with readable
+ticks and proportional spacing. Dense categorical line/area charts skip crowded
+labels while retaining every data point.
+
 ## See what you built — screenshot a panel
 
 `muckdb session screenshot` renders a session (or one tile) exactly as the web
@@ -1046,6 +1050,8 @@ muckdb session screenshot pond-analysis --tile species --out species.png
 
 - Omit `--tile` to capture the whole dashboard; the image auto-fits the content
   height. `--out` defaults to `muckdb-<session>[-<tile>].png` in the cwd.
+- Pass `--theme paper` (or another theme name) to choose the capture theme;
+  `/api/shot` accepts `&theme=paper`. Without it, captures use `hearth`.
 - **Verify visually after building.** After posting tiles, screenshot the
   session and look at it — wrong chart kind, an empty series, or unreadable
   labels are obvious in the image and invisible in the CLI output.

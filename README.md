@@ -228,9 +228,15 @@ chains of areas also run horizontally, with separate internal wiring. Switch to
 choice. Connections are bidirectional, without arrowheads, and label colours
 stay matched to their lines when hovered.
 
-`session screenshot` (and the copy-image button) render through a local headless
+Numeric x columns on `line` and `area` charts use a linear axis, preserving
+spacing between values with readable ticks. Dense categorical line charts skip
+crowded labels while retaining all points.
+
+`session screenshot` renders through a local headless
 Chromium — install chromium/chrome/brave/edge, or point `MUCKDB_BROWSER` at a
-browser binary. The image auto-fits the rendered content height.
+browser binary. The image auto-fits the rendered content height. Use
+`session screenshot analysis --theme paper` to choose a capture theme; the API
+accepts `&theme=paper` too. Without a theme, captures use the default `hearth`.
 
 **Try it:** `./demo.sh` seeds sample data (sales, a regular sensor series, and an
 irregular event stream) and builds a demo dashboard, then prints the URL.
@@ -289,6 +295,20 @@ column's formatted value, so `--currency USD --link …` renders a clickable
   records older than seven days on startup and once per day while running.
 - **Database views**: the daemon reads databases by shelling out to
   `duckdb -readonly -json`, so reads go through the same CLI you'd use by hand.
+- **Database coordination**: muckdb commands and UI operations share a per-database
+  advisory lock in a persistent `<database>.muckdb.lock` sidecar beside the
+  database. Keep that file in place; deleting it can break coordination. Existing
+  lock files can be opened read-only; creating one requires a writable database
+  directory. Read-only operations can run together; read-write operations wait
+  until other operations finish. Pass `-readonly` for CLI queries that only read.
+  An interactive read-write shell holds its lock until you exit. Direct `duckdb`
+  clients, older muckdb builds, and databases attached inside arbitrary SQL do
+  not participate; DuckDB lock errors remain possible for those accesses.
+- **Restricted environments**: ordinary CLI database commands continue with a
+  warning if the daemon cannot be reached or started, its binary differs, or the
+  history ledger cannot be written. Database locking and DuckDB errors still
+  apply. Commands without writable history are not recorded in the live ledger;
+  explicit dashboard and daemon commands still report failures.
 
 ### API
 
@@ -312,7 +332,7 @@ The daemon also exposes JSON endpoints (handy for other mDNS clients):
 | `GET /api/session?id=ID` | one session with its tiles |
 | `GET /api/session/export?id=ID` | download a session as a `.muckdb` archive (session + db snapshots) |
 | `POST /api/session/import` | install a `.muckdb` archive (raw zip body) |
-| `GET /api/shot?session=ID&tile=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
+| `GET /api/shot?session=ID&tile=NAME&theme=NAME&width=W&height=H` | render a session (or one tile) to PNG via headless Chromium |
 | `GET /ws` | WebSocket; pushes history + databases + sessions on every change |
 
 The web UI deep-links via clean paths like `/db/<id>/<table>/?view=stats&sort=...`;

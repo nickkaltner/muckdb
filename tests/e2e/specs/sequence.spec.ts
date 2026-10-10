@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ['sequence', 'sequence-loop'] });
+
 test.describe('sequence tile', () => {
   test('renders participants, lifelines, messages, a self-message and a group frame', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
