@@ -4204,8 +4204,8 @@
   ["wheel", "touchmove", "pointerdown", "keydown"].forEach((event) => {
     $("panels-scroll").addEventListener(event, () => { readerScrollRevision++; }, { passive: true });
   });
-  // Reconcile parsed, sanitized markdown without replacing unchanged blocks.
-  function patchMarkdown(target, next) {
+  // Reconcile rendered content without replacing unchanged text or blocks.
+  function patchLiveContent(target, next) {
     function patch(parent, fresh) {
       let current = parent.firstChild;
       const desiredNodes = [...fresh.childNodes];
@@ -4227,7 +4227,16 @@
           continue;
         }
         if (current && current.nodeType === desired.nodeType && current.nodeName === desired.nodeName) {
-          if (current.nodeType === Node.TEXT_NODE) current.nodeValue = desired.nodeValue;
+          if (current.nodeType === Node.TEXT_NODE) {
+            // Assigning nodeValue resets selection offsets even in unchanged
+            // prose beside a live value. Edit only the differing substring.
+            const before = current.data, after = desired.data;
+            let start = 0, end = 0;
+            while (start < before.length && start < after.length && before[start] === after[start]) start++;
+            while (end < before.length - start && end < after.length - start
+              && before[before.length - 1 - end] === after[after.length - 1 - end]) end++;
+            current.replaceData(start, before.length - start - end, after.slice(start, after.length - end));
+          }
           else if (current.nodeType === Node.ELEMENT_NODE) {
             for (const a of [...current.attributes]) if (!desired.hasAttribute(a.name)) current.removeAttribute(a.name);
             for (const a of [...desired.attributes]) if (current.getAttribute(a.name) !== a.value) current.setAttribute(a.name, a.value);
@@ -4413,7 +4422,7 @@
             fresh.innerHTML = mdRender(tile.markdown || "");
             const slot = panel.querySelector(".md");
             slot.liveGeneration = (slot.liveGeneration || 0) + 1;
-            patchMarkdown(slot, fresh);
+            patchLiveContent(slot, fresh);
           }
         } else if (!panel || changed) {
           if (panel) destroyPanelCharts(panel);
@@ -5327,7 +5336,7 @@
         }
       }
       slot.removeAttribute("title");
-      patchMarkdown(slot, fresh);
+      patchLiveContent(slot, fresh);
       const imageLoads = [...slot.querySelectorAll("img[data-db-image]")].map((img) => new Promise((resolve) => {
         let settled = false;
         const done = () => { if (!settled) { settled = true; resolve(); } };
@@ -5521,9 +5530,11 @@
     const q = (state.tileFilter[name] || "").trim().toLowerCase();
     const rows = q ? d.rows.filter((r) => r.some((v) => String(v ?? "").toLowerCase().includes(q))) : d.rows;
     slot.style.height = "auto";
-    slot.innerHTML = rows.length
+    const fresh = document.createElement("div");
+    fresh.innerHTML = rows.length
       ? miniTable(d.cols, rows, d.db, d.table, state.tableShrunk[name], TILE_TABLE_ROWS, !!q, tableExtremes(d.cols, rows, d.chart))
       : `<div class="note" style="padding:6px 12px">no rows match “${esc(q)}”.</div>`;
+    patchLiveContent(slot, fresh);
     applyTileHeight(name);
   }
   // A heatmap tile: two categorical axes (--x across, first --y down) and a

@@ -214,3 +214,92 @@ test('an update to another session does not refresh the open session', async ({ 
 
   expect(await list.evaluate((element: any) => element.identityMarker)).toBe(true);
 });
+
+test('tiles keep refreshing after moves, additions, and deletions', async ({ page }) => {
+  const db = join(readState().tmpDir, 'tile-lifecycle.duckdb');
+  const session = 'tile-lifecycle';
+  cli(db, '-c', 'CREATE TABLE readings AS SELECT 1 AS value');
+  const addTable = (name: string) => cli('session', 'tile', session, '--name', name,
+    '--db', db, '--sql', 'SELECT value FROM readings', '--chart', 'table', '--caption', 'Current reading.');
+  const addSummary = () => cli('session', 'post', session, '--name', 'summary', '--db', db,
+    '--md', 'Reading {{sql: SELECT value FROM readings}}');
+  addTable('first');
+  addTable('second');
+  addSummary();
+  await page.goto(`/session/${session}/`);
+  const table = (name: string) => page.locator(`[data-tile="${name}"] td`).last();
+  const summary = page.locator('[data-tile="summary"] .md');
+  await expect(table('first')).toHaveText('1');
+  await expect(summary).toHaveText('Reading 1');
+  await page.locator('[data-tile="first"]').evaluate((el: any) => { el.lifecycleMarker = true; });
+
+  cli('session', 'move', session, '--tile', 'first', '--after', 'summary');
+  await expect.poll(() => page.locator('#panels > .panel').evaluateAll((els) =>
+    els.map((el: any) => el.dataset.tile))).toEqual(['second', 'summary', 'first']);
+  expect(await page.locator('[data-tile="first"]').evaluate((el: any) => el.lifecycleMarker)).toBe(true);
+  cli(db, '-c', 'UPDATE readings SET value = 2');
+  await expect(table('first')).toHaveText('2');
+  await expect(table('second')).toHaveText('2');
+  await expect(summary).toHaveText('Reading 2');
+
+  addTable('added');
+  await expect(table('added')).toHaveText('2');
+  cli(db, '-c', 'UPDATE readings SET value = 3');
+  await expect(table('added')).toHaveText('3');
+  await expect(table('first')).toHaveText('3');
+  await expect(summary).toHaveText('Reading 3');
+
+  cli('session', 'rm', session, '--tile', 'second');
+  await expect(page.locator('[data-tile="second"]')).toHaveCount(0);
+  cli(db, '-c', 'UPDATE readings SET value = 4');
+  await expect(table('first')).toHaveText('4');
+  await expect(table('added')).toHaveText('4');
+  await expect(summary).toHaveText('Reading 4');
+
+  // Re-populating an empty dashboard must reconnect new tiles to live values.
+  for (const name of ['first', 'added', 'summary']) cli('session', 'rm', session, '--tile', name);
+  await expect(page.locator('#panels > .panel')).toHaveCount(0);
+  addTable('restored');
+  addSummary();
+  await expect(table('restored')).toHaveText('4');
+  cli(db, '-c', 'UPDATE readings SET value = 5');
+  await expect(table('restored')).toHaveText('5');
+  await expect(summary).toHaveText('Reading 5');
+});
+
+test('live table and markdown updates preserve selections in unchanged text', async ({ page }) => {
+  const db = join(readState().tmpDir, 'selected-text.duckdb');
+  cli(db, '-c', "CREATE TABLE readings AS SELECT 'Keep this text selected' AS label, 1 AS value");
+  cli('session', 'tile', 'selected-text', '--name', 'table', '--db', db, '--view', 'readings', '--chart', 'table', '--caption', 'Live readings.');
+  cli('session', 'post', 'selected-text', '--name', 'summary', '--db', db,
+    '--md', 'Keep this text selected; reading {{sql: SELECT value FROM readings}}');
+  await page.goto('/session/selected-text/');
+  const cells = page.locator('[data-tile="table"] td');
+  const summary = page.locator('[data-tile="summary"] .md p');
+  await expect(cells.last()).toHaveText('1');
+  await expect(summary).toHaveText('Keep this text selected; reading 1');
+  const selectText = async (locator: typeof summary) => locator.evaluate((element) => {
+    const node = element.firstChild!;
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, 'Keep this text selected'.length);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+  });
+  const selection = () => page.evaluate(() => window.getSelection()?.toString());
+  await selectText(cells.first());
+  cli(db, '-c', 'UPDATE readings SET value = 2');
+  await expect(cells.last()).toHaveText('2');
+  await expect(summary).toContainText('reading 2');
+  expect(await selection()).toBe('Keep this text selected');
+  await selectText(summary);
+  cli(db, '-c', 'UPDATE readings SET value = 3');
+  await expect(summary).toContainText('reading 3');
+  expect(await selection()).toBe('Keep this text selected');
+  // Even a query which leaves all values unchanged used to rebuild table cells.
+  await selectText(cells.first());
+  cli(db, '-c', 'SELECT * FROM readings');
+  await page.waitForTimeout(600);
+  expect(await selection()).toBe('Keep this text selected');
+});
