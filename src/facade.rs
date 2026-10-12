@@ -72,6 +72,7 @@ pub fn detect_db_path(args: &[String], cwd: &Path) -> Option<String> {
         }
         let p = PathBuf::from(arg);
         let abs = if p.is_absolute() { p } else { cwd.join(p) };
+        let abs = abs.canonicalize().unwrap_or(abs);
         return Some(abs.to_string_lossy().into_owned());
     }
     None
@@ -120,6 +121,34 @@ pub(crate) fn daemon_version() -> Option<String> {
 /// Build identity reported by daemons with the status endpoint.
 pub(crate) fn daemon_identity() -> Option<Identity> {
     http_get("/api/status").and_then(|body| serde_json::from_str(&body).ok())
+}
+
+/// Best-effort notification, independent of ledger recording. Bound every
+/// socket operation so UI trouble cannot hold up a completed SQL command.
+fn notify_database_refresh(db: &str, invocation: u64) -> Result<()> {
+    let body = serde_json::to_string(&serde_json::json!({
+        "db": db, "invocation": invocation,
+    }))?;
+    let addr = SocketAddr::from(([127, 0, 0, 1], resolved_port()));
+    let mut stream = TcpStream::connect_timeout(&addr, Duration::from_millis(200))?;
+    stream.set_read_timeout(Some(Duration::from_millis(500)))?;
+    stream.set_write_timeout(Some(Duration::from_millis(500)))?;
+    write!(
+        stream,
+        "POST /api/database/refresh HTTP/1.0\r\nHost: localhost\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n{}",
+        body.len(),
+        body
+    )?;
+    let mut response = String::new();
+    stream.read_to_string(&mut response)?;
+    anyhow::ensure!(
+        response
+            .lines()
+            .next()
+            .is_some_and(|line| line.contains(" 200 ")),
+        "daemon rejected database refresh"
+    );
+    Ok(())
 }
 
 /// Start the daemon if it isn't already running, returning once it accepts
@@ -239,6 +268,8 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         .status()
         .context("failed to run `duckdb` — is it installed and on PATH?")?;
     let code = status.code().unwrap_or(1);
+    // Readers must be able to acquire the database before any refresh signal.
+    drop(_db_lock);
 
     if recorded.is_ok()
         && let Err(error) = store::append(&Record {
@@ -246,7 +277,7 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
             ts: store::now_millis(),
             cwd: cwd.to_string_lossy().into_owned(),
             args: args.to_vec(),
-            db_path,
+            db_path: db_path.clone(),
             phase: Phase::End,
             exit_code: Some(code),
             session,
@@ -254,6 +285,13 @@ pub fn passthrough(args: &[String]) -> Result<i32> {
         })
     {
         eprintln!("muckdb: warning: could not record command completion: {error:#}");
+    }
+
+    if status.success()
+        && let Some(db) = db_path
+        && let Err(error) = notify_database_refresh(&db, id)
+    {
+        eprintln!("muckdb: warning: could not refresh dashboard: {error:#}");
     }
 
     Ok(code)

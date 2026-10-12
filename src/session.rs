@@ -944,7 +944,7 @@ fn resolve_db_path_from(base: &Path, db: &str) -> PathBuf {
     fs::canonicalize(&absolute).unwrap_or(absolute)
 }
 
-fn resolve_db_path(db: &str) -> Result<String> {
+pub(crate) fn resolve_db_path(db: &str) -> Result<String> {
     let cwd = std::env::current_dir().context("resolving the current directory for --db")?;
     Ok(resolve_db_path_from(&cwd, db)
         .to_string_lossy()

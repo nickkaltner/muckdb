@@ -1,10 +1,11 @@
 //! The daemon's HTTP + WebSocket server, its database-introspection API, mDNS
 //! advertisement, and the file watcher that pushes live updates to browsers.
 
+use std::collections::{BTreeMap, HashSet, VecDeque};
 use std::net::SocketAddr;
 use std::path::Path;
 use std::sync::mpsc;
-use std::sync::{Arc, RwLock};
+use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
@@ -35,6 +36,29 @@ struct AppState {
     update: Arc<RwLock<update::Status>>,
     query_slots: Arc<Semaphore>,
     identity: identity::Identity,
+    database_refreshes: Arc<Mutex<DatabaseRefreshes>>,
+}
+
+#[derive(Default)]
+struct DatabaseRefreshes {
+    revisions: BTreeMap<String, u64>,
+    recent: HashSet<(String, u64)>,
+    order: VecDeque<(String, u64)>,
+}
+
+impl DatabaseRefreshes {
+    fn record(&mut self, db: String, invocation: u64) -> bool {
+        let key = (db.clone(), invocation);
+        if !self.recent.insert(key.clone()) {
+            return false;
+        }
+        self.order.push_back(key);
+        if self.order.len() > 1024 {
+            self.recent.remove(&self.order.pop_front().unwrap());
+        }
+        *self.revisions.entry(db).or_default() += 1;
+        true
+    }
 }
 
 /// Entry point for the daemon: start mDNS, the file watcher, and the server.
@@ -62,6 +86,7 @@ pub async fn run() -> Result<()> {
         update,
         query_slots: Arc::new(Semaphore::new(MAX_DASHBOARD_QUERIES)),
         identity: identity::current(facade::resolved_port())?,
+        database_refreshes: Arc::new(Mutex::new(DatabaseRefreshes::default())),
     };
     spawn_watcher(state.clone())?;
     spawn_update_checker(state.clone());
@@ -73,6 +98,7 @@ pub async fn run() -> Result<()> {
         .route("/api/status", get(api_status))
         .route("/api/state", get(api_state))
         .route("/api/databases", get(api_databases))
+        .route("/api/database/refresh", post(api_database_refresh))
         .route("/api/tables", get(api_tables))
         .route("/api/preview", get(api_preview))
         .route("/api/stats", get(api_stats))
@@ -187,7 +213,9 @@ fn register_mdns() -> Result<mdns_sd::ServiceDaemon> {
 
 /// The full snapshot pushed to browsers: history + databases + session summaries.
 fn snapshot_json(app: &AppState) -> Option<String> {
-    let state = store::load_state().ok()?;
+    // Refresh notifications must still reach dashboards if ledger storage is
+    // unavailable. Sessions and database revisions are independent of it.
+    let state = store::load_state().unwrap_or_default();
     let sessions: Vec<_> = session::list()
         .unwrap_or_default()
         .into_iter()
@@ -196,6 +224,7 @@ fn snapshot_json(app: &AppState) -> Option<String> {
     serde_json::to_string(&json!({
         "history": state.history,
         "databases": state.databases,
+        "database_revisions": app.database_refreshes.lock().ok()?.revisions,
         "sessions": sessions,
         // Fingerprint of the column-format registry: a `muckdb format` write
         // lands in the watched data dir, and this field is what makes the
@@ -208,6 +237,30 @@ fn snapshot_json(app: &AppState) -> Option<String> {
         "update": app.update.read().ok()?.clone(),
     }))
     .ok()
+}
+
+#[derive(Deserialize)]
+struct DatabaseRefreshParams {
+    db: String,
+    invocation: u64,
+}
+
+async fn api_database_refresh(
+    State(state): State<AppState>,
+    Json(p): Json<DatabaseRefreshParams>,
+) -> Response {
+    let db = match session::resolve_db_path(&p.db) {
+        Ok(db) => db,
+        Err(error) => return error_json(&error),
+    };
+    let changed = match state.database_refreshes.lock() {
+        Ok(mut refreshes) => refreshes.record(db, p.invocation),
+        Err(_) => return StatusCode::INTERNAL_SERVER_ERROR.into_response(),
+    };
+    if changed && let Some(snapshot) = snapshot_json(&state) {
+        let _ = state.tx.send(snapshot);
+    }
+    Json(json!({ "ok": true })).into_response()
 }
 
 /// Millisecond timestamp captured once per daemon process — pages compare it
@@ -1209,6 +1262,9 @@ async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> Resp
 }
 
 async fn handle_socket(mut socket: WebSocket, state: AppState) {
+    // Subscribe first so a completion between the snapshot and subscription
+    // cannot disappear. Repeated revisions are harmless to clients.
+    let mut rx = state.tx.subscribe();
     // Send the current snapshot immediately so a fresh client is populated.
     if let Some(s) = snapshot_json(&state)
         && socket.send(Message::Text(s.into())).await.is_err()
@@ -1216,7 +1272,6 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
         return;
     }
 
-    let mut rx = state.tx.subscribe();
     loop {
         tokio::select! {
             msg = rx.recv() => match msg {
@@ -1225,7 +1280,13 @@ async fn handle_socket(mut socket: WebSocket, state: AppState) {
                         break;
                     }
                 }
-                Err(broadcast::error::RecvError::Lagged(_)) => continue,
+                Err(broadcast::error::RecvError::Lagged(_)) => {
+                    if let Some(s) = snapshot_json(&state)
+                        && socket.send(Message::Text(s.into())).await.is_err()
+                    {
+                        break;
+                    }
+                },
                 Err(broadcast::error::RecvError::Closed) => break,
             },
             incoming = socket.recv() => match incoming {

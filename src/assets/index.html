@@ -10623,7 +10623,7 @@
       el.dataset.tip = `<b>muckdb v__MUCKDB_VERSION__</b><br>Checking GitHub for new releases once per day.`;
     }
   }
-  let sessionDataRevision = null;
+  let databaseRevisions = null;
   let historyUiRevision = null, sessionsUiRevision = null, databasesRevision = null;
   const targetedSessionRefreshes = new Set();
   let liveSessionReloadTimer = null, liveSessionReloadAll = false;
@@ -10646,12 +10646,19 @@
       bootSeen = s.boot;
     }
     const history = s.history || [];
-    const previousHistory = new Map((state.history || []).map((h) => [h.id, h.exit_code]));
-    const newlyCompleted = history.filter((h) => h.exit_code !== null && previousHistory.get(h.id) !== h.exit_code);
-    const changedDbs = new Set(newlyCompleted.map((h) => h.db_path).filter(Boolean));
-    const revision = JSON.stringify(history.filter((h) => h.exit_code !== null).map((h) => [h.id, h.exit_code]));
-    const dataChanged = sessionDataRevision !== null && sessionDataRevision !== revision;
-    sessionDataRevision = revision;
+    const changedDbs = new Set();
+    if (s.database_revisions) {
+      const initialSnapshot = databaseRevisions === null;
+      if (initialSnapshot) databaseRevisions = {};
+      Object.entries(s.database_revisions).forEach(([db, revision]) => {
+        const previous = databaseRevisions[db] || 0;
+        // Concurrent snapshots can arrive out of order; never move backwards.
+        if (revision > previous) {
+          databaseRevisions[db] = revision;
+          if (!initialSnapshot) changedDbs.add(db);
+        }
+      });
+    }
     const nextHistoryUiRevision = JSON.stringify(history.map((h) => [h.id, h.exit_code, h.running]));
     const historyUiChanged = historyUiRevision !== nextHistoryUiRevision;
     historyUiRevision = nextHistoryUiRevision;
@@ -10680,7 +10687,7 @@
       else ledgerDirty = true;
     }
     if (sessionsUiChanged) renderSessionNav();
-    maybeRefreshSession(dataChanged ? changedDbs : new Set(), formatsChanged);
+    maybeRefreshSession(changedDbs, formatsChanged);
     if (!suppressSync && !pendingNav) maybeAutoSession();
     const nextDatabasesRevision = JSON.stringify(s.databases || []);
     if (databasesRevision !== nextDatabasesRevision) {
