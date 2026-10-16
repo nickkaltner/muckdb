@@ -429,6 +429,43 @@ test('Cartesian charts brush-zoom their x-range and can reset', async ({ page })
   await expect(reset).toBeHidden();
 });
 
+for (const edge of ['left', 'right'] as const) {
+  test(`brush zoom completes when released beyond the ${edge} chart edge`, async ({ page }) => {
+    await page.goto(`/session/${SESSION_ID}/`);
+    const panel = page.locator('.panel[data-tile="by-day"]');
+    const canvas = panel.locator('canvas');
+    await canvas.scrollIntoViewIfNeeded();
+    const bounds = await canvas.evaluate((el, edge) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const r = el.getBoundingClientRect(), a = chart.chartArea;
+      return {
+        middle: r.left + (a.left + a.right) / 2 * r.width / chart.width,
+        y: r.top + (a.top + a.bottom) / 2 * r.height / chart.height,
+        outside: edge === 'left' ? r.left - 20 : r.right + 20,
+        min: chart.scales.x.min, max: chart.scales.x.max,
+      };
+    }, edge);
+    await page.mouse.move(bounds.middle, bounds.y);
+    await page.mouse.down();
+    await page.mouse.move(bounds.outside, bounds.y, { steps: 5 });
+    await page.mouse.up();
+    await expect(panel.locator('.chart-reset')).toBeVisible();
+    const range = await canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return { min: chart.options.scales.x.min, max: chart.options.scales.x.max,
+        active: chart.$muckBrushZoom.startX };
+    });
+    expect(range.active).toBeNull();
+    if (edge === 'left') {
+      expect(range.min).toBe(bounds.min);
+      expect(range.max).toBeLessThan(bounds.max);
+    } else {
+      expect(range.max).toBe(bounds.max);
+      expect(range.min).toBeGreaterThan(bounds.min);
+    }
+  });
+}
+
 test('legend clicks fade a dataset rather than brushing or hiding it', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');

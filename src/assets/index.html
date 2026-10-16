@@ -9167,15 +9167,16 @@
           scale.min = lo; scale.max = hi; z.reset.hidden = false; chart.update();
         } else chart.draw();
       };
+      // Keep tracking the active brush outside the plot; clamp it to either edge.
       slot.addEventListener("pointerdown", z.onDown, true);
-      slot.addEventListener("pointermove", z.onMove, true);
-      slot.addEventListener("pointerup", z.onUp, true);
+      document.addEventListener("pointermove", z.onMove, true);
+      document.addEventListener("pointerup", z.onUp, true);
       slot.addEventListener("mousedown", z.onDown, true);
-      slot.addEventListener("mousemove", z.onMove, true);
-      slot.addEventListener("mouseup", z.onUp, true);
+      document.addEventListener("mousemove", z.onMove, true);
+      document.addEventListener("mouseup", z.onUp, true);
       slot.addEventListener("touchstart", z.onDown, { capture: true, passive: true });
-      slot.addEventListener("touchmove", z.onMove, { capture: true, passive: true });
-      slot.addEventListener("touchend", z.onUp, { capture: true, passive: true });
+      document.addEventListener("touchmove", z.onMove, { capture: true, passive: true });
+      document.addEventListener("touchend", z.onUp, { capture: true, passive: true });
     },
     afterDatasetsDraw(chart, _args, opts) {
       if (!opts || !opts.enabled) return;
@@ -9196,14 +9197,14 @@
       const slot = chart.canvas.parentElement;
       if (slot) {
         slot.removeEventListener("pointerdown", z.onDown, true);
-        slot.removeEventListener("pointermove", z.onMove, true);
-        slot.removeEventListener("pointerup", z.onUp, true);
+        document.removeEventListener("pointermove", z.onMove, true);
+        document.removeEventListener("pointerup", z.onUp, true);
         slot.removeEventListener("mousedown", z.onDown, true);
-        slot.removeEventListener("mousemove", z.onMove, true);
-        slot.removeEventListener("mouseup", z.onUp, true);
+        document.removeEventListener("mousemove", z.onMove, true);
+        document.removeEventListener("mouseup", z.onUp, true);
         slot.removeEventListener("touchstart", z.onDown, true);
-        slot.removeEventListener("touchmove", z.onMove, true);
-        slot.removeEventListener("touchend", z.onUp, true);
+        document.removeEventListener("touchmove", z.onMove, true);
+        document.removeEventListener("touchend", z.onUp, true);
       }
       if (z.reset) z.reset.remove();
     },
