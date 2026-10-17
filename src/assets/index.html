@@ -9566,7 +9566,7 @@
       if (yf0 && o.scales && o.scales.y) o.scales.y.ticks = Object.assign({}, o.scales.y.ticks, { callback: (v) => applyFmt(yf0, v) });
       o.plugins = o.plugins || {};
       const tooltipParts = (cx) => {
-        const f = colFmt(db, ys[cx.datasetIndex] || ys[0], table);
+        const f = colFmt(db, cx.dataset?._muckYColumn || ys[cx.datasetIndex] || ys[0], table);
         const val = cx.parsed && cx.parsed.y != null ? cx.parsed.y : cx.parsed;
         return {
           label: cx.dataset && cx.dataset.label ? String(cx.dataset.label) : "",
@@ -9629,7 +9629,16 @@
     }
     const stacked = kind === "stacked";
     const type = kind === "line" || kind === "area" ? "line" : "bar";
-    const single = ys.length === 1 && !stacked;
+    const colorIndex = type === "line" && spec.color ? cols.indexOf(spec.color) : -1;
+    const groups = colorIndex >= 0 ? [...new Set(rows.map((r) => r[colorIndex]))] : null;
+    const series = groups
+      ? groups.flatMap((group) => ys.map((column) => ({
+        column, label: ys.length === 1 ? String(group ?? "NULL") : `${group ?? "NULL"} · ${column}`,
+        rows: rows.filter((r) => r[colorIndex] === group),
+      })))
+      : ys.map((column) => ({ column, label: column, rows }));
+    const categoryValues = groups && !continuousX ? [...new Set(rows.map((r) => r[xi]))] : null;
+    const single = series.length === 1 && !stacked;
     const band = kind === "line" && Array.isArray(spec.band) && spec.band.length === 2
       && spec.band.every((c) => cols.includes(c)) ? spec.band : null;
     // Round the top of bars when the active theme opts in (theme.barRadius).
@@ -9638,7 +9647,7 @@
     // Multi-series charts (stacked / grouped bars, multi line / area) colour by
     // series from the same scale as solid bars, so a dashboard speaks one colour
     // language. For ≤ CAT_CURATED series this is just the curated palette.
-    const seriesCols = catColors(ys.length);
+    const seriesCols = catColors(series.length);
     const bandDatasets = band ? band.flatMap((c, i) => {
       const yi = cols.indexOf(c);
       const data = continuousX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
@@ -9657,7 +9666,8 @@
         spanGaps: false,
       }];
     }) : [];
-    const datasets = [...bandDatasets, ...ys.map((c, i) => {
+    const datasets = [...bandDatasets, ...series.map((series, i) => {
+      const c = series.column;
       const yi = cols.indexOf(c);
       const col = seriesCols[i % seriesCols.length];
       // Bars: a single series is either one left→right gradient (continuous data,
@@ -9681,11 +9691,14 @@
       } else {
         bg = col;
       }
-      const values = continuousX ? rows.map((r) => ({ x: xv(r), y: yv(r, yi) })) : rows.map((r) => yv(r, yi));
+      const byCategory = categoryValues ? new Map(series.rows.map((r) => [r[xi], r])) : null;
+      const values = continuousX ? series.rows.map((r) => ({ x: xv(r), y: yv(r, yi) }))
+        : categoryValues ? categoryValues.map((x) => byCategory.has(x) ? yv(byCategory.get(x), yi) : null)
+        : series.rows.map((r) => yv(r, yi));
       // A small marker on a late-starting series makes its real first point
       // explicit without turning every point on a dense history into a dot.
       const firstPresent = values.findIndex((v) => (v && typeof v === "object" ? v.y != null : v != null));
-      return { label: c,
+      return { label: series.label, _muckYColumn: c,
         data: values,
         borderColor: border, borderWidth: type === "line" ? 2 : 0,
         // monotone: smooth but never overshoots past the data points, so a
@@ -9707,7 +9720,7 @@
         datasets.push(t);
       }
     }
-    const data = continuousX ? { datasets } : { labels: rows.map((r) => String(r[xi])), datasets };
+    const data = continuousX ? { datasets } : { labels: (categoryValues || rows.map((r) => r[xi])).map(String), datasets };
     const allYValues = datasets.flatMap((set) => set.data.map((v) => v && typeof v === "object" ? v.y : v));
     const o = reserveAnnotationHeadroom(applyYRange(applyAxisTitles(applyXFmt(applyYFmt(chartOpts(numericX, timeX, stacked, minUnit, timeX && type === "bar")))), allYValues)); if (anno) o.plugins.muckAnno = anno;
     if (numericX && presentX.every(Number.isInteger)) o.scales.x.ticks.precision = 0;

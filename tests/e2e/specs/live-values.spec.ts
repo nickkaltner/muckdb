@@ -303,3 +303,37 @@ test('live table and markdown updates preserve selections in unchanged text', as
   await page.waitForTimeout(600);
   expect(await selection()).toBe('Keep this text selected');
 });
+
+test('color-grouped lines share hover values and keep missing points absent', async ({ page }) => {
+  const db = join(readState().tmpDir, 'grouped-lines.duckdb');
+  cli(db, '-c', "CREATE TABLE readings AS SELECT * FROM (VALUES (1,'baseline',10.0),(1,'mojo',8.0),(2,'baseline',20.0),(2,'mojo',16.0),(3,'baseline',30.0)) t(step,variant,seconds)");
+  cli('format', db, 'seconds', '--suffix', ' s', '--decimals', '1');
+  cli('session', 'tile', 'grouped-lines', '--name', 'cumulative', '--db', db,
+    '--view', 'readings', '--chart', 'line', '--x', 'step', '--y', 'seconds',
+    '--color', 'variant', '--caption', 'Cumulative time by variant.');
+  await page.goto('/session/grouped-lines/');
+  const canvas = page.locator('[data-tile="cumulative"] canvas');
+  await canvas.scrollIntoViewIfNeeded();
+  await expect.poll(() => canvas.evaluate((el) => {
+    const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+    return chart?.data.datasets.map((d: any) => d.label);
+  })).toEqual(['baseline', 'mojo']);
+  for (const index of [1, 2]) {
+    const target = await canvas.evaluate((el, index) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      const p = chart.getDatasetMeta(0).data[index].getCenterPoint(true);
+      const r = el.getBoundingClientRect();
+      return { x: r.left + p.x * r.width / chart.width, y: r.top + p.y * r.height / chart.height };
+    }, index);
+    await page.mouse.move(target.x, target.y);
+    await expect.poll(() => canvas.evaluate((el) => {
+      const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
+      return chart.tooltip.dataPoints?.map((p: any) => ({ label: p.dataset.label, value: p.parsed.y }));
+    })).toEqual(index === 1
+      ? [{ label: 'baseline', value: 20 }, { label: 'mojo', value: 16 }]
+      : [{ label: 'baseline', value: 30 }]);
+    const text = await canvas.evaluate((el) =>
+      (window as any).Chart.getChart(el as HTMLCanvasElement).tooltip.body.map((b: any) => b.lines.join(' ')).join(' '));
+    expect(text).toContain(' s');
+  }
+});
