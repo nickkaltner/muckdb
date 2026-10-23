@@ -275,6 +275,9 @@
   .mermaid-host { min-height: 260px; overflow: visible; padding: 12px; display: grid; place-items: center; color: var(--muted); }
   .mermaid-host svg, .mermaid-editor-preview svg { display: block; max-width: 100%; height: auto; }
   .mermaid-host svg { width: auto; max-height: 600px; }
+  .zoom-chart.mermaid-zoom { overflow: auto; }
+  .mermaid-zoom .mermaid-host { width: max-content; min-width: 100%; min-height: 100%; box-sizing: border-box; }
+  .mermaid-zoom .mermaid-host svg { max-width: none; max-height: none; }
   .mermaid-render-error { align-self: center; justify-self: stretch; padding: 14px 16px; border-left: 3px solid var(--fail); background: color-mix(in srgb, var(--fail) 8%, var(--surface)); color: var(--fail); white-space: pre-wrap; font-size: 11px; line-height: 1.55; }
   .ml-architecture-host { overflow: auto; padding: 18px; background: color-mix(in srgb, var(--bg) 68%, var(--surface)); }
   .ml-architecture-host svg { display: block; width: 100%; min-width: 720px; height: auto; font-family: var(--mono); }
@@ -3952,7 +3955,7 @@
     if (state.zoomPanel) { state.zoomPanel = null; syncUrl(true); }
   }
   async function zoomTile(name) {
-    const t = sessionTile(name); if (!t || (t.type !== "view" && t.type !== "mlarchitecture")) return;
+    const t = sessionTile(name); if (!t || (t.type !== "view" && t.type !== "mlarchitecture" && t.type !== "mermaid")) return;
     postActivity(name, "zoom");
     state.zoomPanel = name; syncUrl(true);
     const exploreBtn = t.view ? `<button class="zoom-explore" data-zexplore>explore</button>` : "";
@@ -3966,6 +3969,12 @@
       if (e.target === layer || e.target.closest(".zoom-close")) closeZoom();
     });
     const slot = layer.querySelector(".zoom-chart");
+    if (t.type === "mermaid") {
+      slot.classList.add("mermaid-zoom");
+      slot.innerHTML = `<div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>`;
+      await renderMermaidSource(t.source || "", slot.querySelector(".mermaid-host"));
+      return;
+    }
     if (t.type === "mlarchitecture") {
       slot.innerHTML = `<div class="ml-architecture-host">${mlArchitectureSvg(t.spec, t.name + "-zoom")}</div>`;
       return;
@@ -5045,13 +5054,14 @@
       const svg = host.querySelector("svg");
       if (svg) {
         orientMermaidFlowchartGradient(svg);
-        svg.removeAttribute("height"); svg.style.maxWidth = "100%"; svg.setAttribute("role", "img");
+        const expanded = !!host.closest(".mermaid-zoom");
+        svg.removeAttribute("height"); svg.style.maxWidth = expanded ? "none" : "100%"; svg.setAttribute("role", "img");
         if (host.classList.contains("mermaid-host") && svg.viewBox && svg.viewBox.baseVal.width && svg.viewBox.baseVal.height) {
           const box = svg.viewBox.baseVal;
-          const scale = Math.max(0.1, Math.min((host.clientWidth - 24) / box.width, 600 / box.height));
+          const scale = expanded ? 1 : Math.max(0.1, Math.min((host.clientWidth - 24) / box.width, 600 / box.height));
           const width = Math.floor(box.width * scale), height = Math.floor(box.height * scale);
           svg.style.width = width + "px"; svg.style.height = height + "px";
-          host.style.height = (height + 24) + "px";
+          host.style.height = expanded ? "" : (height + 24) + "px";
         }
       }
       if (result.bindFunctions) result.bindFunctions(host);
@@ -5239,7 +5249,7 @@
     }
     if (t.type === "mermaid") {
       const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
-      return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="beta-badge">beta</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
+      return `<div class="panel wide mermaid-panel" data-tile="${attr(t.name)}"><div class="panel-bar"><span class="panel-title">${esc(t.title || t.name)}</span><span class="panel-name">mermaid</span><span class="beta-badge">beta</span><span class="panel-actions no-screenshot"><button class="panel-act" data-edit-mermaid="${attr(t.name)}">edit</button>${copyTileBtn(t.name, "Copy Mermaid source")}${copyImgBtn(t.name)}${zoomTileBtn(t.name)}${trashBtn(t.name)}</span></div><div class="panel-body"><div class="mermaid-host" aria-label="${attr(t.title || t.name)} diagram">rendering diagram…</div>${cap}</div></div>`;
     }
     if (t.type === "mlarchitecture") {
       const cap = t.caption ? `<div class="panel-caption">${esc(t.caption)}</div>` : "";
