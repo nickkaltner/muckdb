@@ -15,8 +15,12 @@ test('dashboard poster exports despite color-mix styles', async ({ page }) => {
   // carry it in the raster scale instead. Mixing the two coordinate systems
   // makes macOS captures progressively widen the spaces between text runs.
   await page.evaluate(() => {
+    interface CaptureOptions {
+      scale?: number;
+      onclone?: (doc: Document, cloned: HTMLElement) => void | Promise<void>;
+    }
     const win = window as typeof window & {
-      html2canvas: typeof window.html2canvas;
+      html2canvas: (element: HTMLElement, options?: CaptureOptions) => Promise<HTMLCanvasElement>;
       captureProbe?: { zoom: string; scale: number };
     };
     const render = win.html2canvas;

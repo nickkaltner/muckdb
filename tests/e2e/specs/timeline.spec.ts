@@ -1,5 +1,6 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
+import type { Locator } from '@playwright/test';
 
 test.describe('timeline tile', () => {
   test('renders lanes, bars, a sublane for overlap, and a legend', async ({ page }) => {
@@ -24,7 +25,7 @@ test.describe('timeline tile', () => {
     // The two 'build' bars overlap → different top offsets (a sublane).
     const compile = panel.locator('.tl-bar', { hasText: 'compile' });
     const lint = panel.locator('.tl-bar', { hasText: 'lint' });
-    const topOf = (loc) => loc.evaluate((el) => parseFloat((el as HTMLElement).style.top));
+    const topOf = (loc: Locator) => loc.evaluate((el) => parseFloat((el as HTMLElement).style.top));
     expect(await topOf(compile)).not.toBe(await topOf(lint));
 
     // Colour-by-status legend has entries.

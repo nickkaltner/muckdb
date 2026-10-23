@@ -599,10 +599,11 @@ mod tests {
         let opts = zip::write::SimpleFileOptions::default();
         for i in 0..zin.len() {
             let mut f = zin.by_index(i).unwrap();
-            if f.name() == "manifest.json" {
+            if f.name().unwrap() == "manifest.json" {
                 continue;
             }
-            zout.start_file(f.name().to_string(), opts).unwrap();
+            zout.start_file(f.name().unwrap().into_owned(), opts)
+                .unwrap();
             std::io::copy(&mut f, &mut zout).unwrap();
         }
         zout.start_file("manifest.json", opts).unwrap();

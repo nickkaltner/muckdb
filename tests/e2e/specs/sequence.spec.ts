@@ -35,10 +35,10 @@ test.describe('sequence tile', () => {
     expect(firstGroupedFlowY - frameY).toBeGreaterThanOrEqual(22);
     // Lifelines render beneath the frame tab, so they cannot show through its
     // opaque group-heading background.
-    const lifelineIndex = await panel.locator('.seq-life').first().evaluate((line) =>
+    const lifelineIndex = await panel.locator('.seq-life').first().evaluate((line: SVGLineElement) =>
       Array.from(line.ownerSVGElement!.children).indexOf(line),
     );
-    const frameTabIndex = await panel.locator('.seq-frame-tab').first().evaluate((tab) =>
+    const frameTabIndex = await panel.locator('.seq-frame-tab').first().evaluate((tab: SVGRectElement) =>
       Array.from(tab.ownerSVGElement!.children).indexOf(tab),
     );
     expect(lifelineIndex).toBeLessThan(frameTabIndex);
@@ -48,7 +48,7 @@ test.describe('sequence tile', () => {
 
     // A message label begins inside the diagram rather than off-screen, while
     // still being free to continue beyond its arrow to the right.
-    const firstLabelX = await panel.locator('.seq-msg-lbl').first().evaluate((label) => label.getBBox().x);
+    const firstLabelX = await panel.locator('.seq-msg-lbl').first().evaluate((label: SVGGraphicsElement) => label.getBBox().x);
     expect(firstLabelX).toBeGreaterThanOrEqual(0);
 
     // Long labels wrap inside their group/viewport allowance and the enlarged

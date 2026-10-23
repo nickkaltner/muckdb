@@ -6,7 +6,7 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
   await canvas.scrollIntoViewIfNeeded();
-  const measure = () => canvas.evaluate((el) => {
+  const measure = () => canvas.evaluate((el: HTMLCanvasElement) => {
     const chart = (window as any).Chart.getChart(el), rect = el.getBoundingClientRect();
     const parent = el.parentElement!.getBoundingClientRect();
     const pixels = chart.ctx.getImageData(0, 0, el.width, el.height).data;
