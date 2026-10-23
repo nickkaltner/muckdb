@@ -87,6 +87,13 @@
   .pick-hint { font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--primary-dim); min-width: 44px; }
   .pick-label { color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pick-sub { color: var(--faint); font-size: 11px; margin-left: auto; white-space: nowrap; }
+  .session-picker .pick-sub { display: flex; align-items: baseline; gap: 16px; flex-shrink: 0; }
+  .pick-count { display: inline-grid; grid-template-columns: 4ch 5ch; gap: 1ch; }
+  .pick-count-number { text-align: right; font-variant-numeric: tabular-nums; }
+  @media (max-width: 600px) {
+    .session-picker .pick-row { flex-direction: column; align-items: stretch; gap: 3px; }
+    .session-picker .pick-sub { margin-left: 0; justify-content: space-between; }
+  }
   .pick-empty { padding: 12px; color: var(--muted); font-size: 12px; }
   .pick-foot { padding: 6px 12px; border-top: 1px solid var(--line); font-size: 10px; color: var(--faint); letter-spacing: 0.04em; }
   .pick-action { display:flex;align-items:center;gap:8px;width:100%;padding:9px 13px;border:0;border-top:1px solid var(--line);background:var(--surface);color:var(--muted);font:inherit;font-size:11px;text-align:left;cursor:pointer; }
@@ -3563,6 +3570,7 @@
     layer.innerHTML = `<div class="pick-box"><div class="pick-search"><span class="pick-prompt">❯</span><input class="pick-input" type="text" placeholder="${attr(opts.placeholder || "filter…")}" /></div><ul class="pick-list"></ul>${opts.action ? `<button class="pick-action" data-pick-action>${esc(opts.action.label)}${opts.action.beta?'<span class="beta-badge">beta</span>':""}<span>${esc(opts.action.hint || "")}</span></button>` : ""}${foot}</div>`;
     document.body.appendChild(layer);
     const box = layer.querySelector(".pick-box");
+    if (opts.className) box.classList.add(opts.className);
     if (opts.anchor) {
       const r = opts.anchor.getBoundingClientRect();
       // getBoundingClientRect() reports screen coordinates, including the
@@ -3571,7 +3579,8 @@
       // scale them a second time and put right-side pickers off-screen.
       const scale = Number.parseFloat(getComputedStyle(document.documentElement).zoom) || 1;
       const vw = window.innerWidth / scale;
-      box.style.minWidth = Math.max(r.width / scale, 240) + "px";
+      box.style.minWidth = Math.min(Math.max(r.width / scale, opts.minWidth || 240), vw - 16) + "px";
+      box.style.maxWidth = (vw - 16) + "px";
       const boxWidth = box.getBoundingClientRect().width / scale;
       box.style.left = Math.max(8, Math.min(r.left / scale, vw - boxWidth - 8)) + "px";
       box.style.top = (r.bottom / scale + 4) + "px";
@@ -3582,7 +3591,7 @@
     const draw = () => {
       list.innerHTML = shown.length ? shown.map((it, i) => it.separator
         ? `<li class="pick-separator">${esc(it.label)}</li>` :
-        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw"${it.swbg ? ` style="background:${esc(it.swbg)}"` : ""}>${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}</span>` : ""}</li>`).join("")
+        `<li class="pick-row${i === sel ? " sel" : ""}" data-i="${i}">${it.swatch ? `<span class="pick-sw"${it.swbg ? ` style="background:${esc(it.swbg)}"` : ""}>${it.swatch.map((c) => `<i style="background:${esc(c)}"></i>`).join("")}</span>` : ""}${it.hint ? `<span class="pick-hint">${esc(it.hint)}</span>` : ""}<span class="pick-label">${esc(it.label)}</span>${it.sub ? `<span class="pick-sub">${esc(it.sub)}${it.tileCount != null ? `<span class="pick-count"><span class="pick-count-number">${esc(it.tileCount)}</span><span>${it.tileCount === 1 ? "tile" : "tiles"}</span></span>` : ""}</span>` : ""}</li>`).join("")
         : '<li class="pick-empty">no matches</li>';
       const s = list.querySelector(".pick-row.sel"); if (s) s.scrollIntoView({ block: "nearest" });
     };
@@ -4020,12 +4029,32 @@
       renderSessionHead(detail);
     }
   }
+  function sessionUpdatedAgo(timestamp, now = Date.now()) {
+    const updated = Number(timestamp);
+    if (!updated || !Number.isFinite(updated)) return "update time unknown";
+    const minutes = Math.max(0, (now - updated) / 60000);
+    if (minutes < 1) return "less than a minute ago";
+    if (minutes < 2) return "a minute ago";
+    if (minutes < 45) return `${Math.round(minutes)} minutes ago`;
+    if (minutes < 90) return "~an hour ago";
+    if (minutes < 1440) return `~${Math.round(minutes / 60)} hours ago`;
+    if (minutes < 2520) return "a day ago";
+    if (minutes < 43200) return `${Math.round(minutes / 1440)} days ago`;
+    if (minutes < 86400) return "~a month ago";
+    if (minutes < 525600) return `~${Math.round(minutes / 43200)} months ago`;
+    const years = Math.round(minutes / 525600);
+    return `~${years === 1 ? "a year" : years + " years"} ago`;
+  }
   function openSessionCombo(anchor) {
     if (!state.sessions.length) return;
+    const updatedAt = (s) => Number.isFinite(Number(s.updated)) ? Number(s.updated) : 0;
+    const sessions = state.sessions.slice().sort((a, b) => updatedAt(b) - updatedAt(a));
+    const now = Date.now();
     openPicker({
-      anchor, placeholder: "filter sessions…",
-      items: state.sessions.map((s) => ({ label: s.title || s.id, sub: s.tiles + (s.tiles === 1 ? " tile" : " tiles"), id: s.id })),
-      selectedIndex: state.sessions.findIndex((s) => s.id === state.selSession),
+      anchor, minWidth: 640, className: "session-picker", placeholder: "filter sessions…",
+      foot: "Most recently updated first · ↑/↓ move · Enter open · Esc close",
+      items: sessions.map((s) => ({ label: s.title || s.id, sub: sessionUpdatedAgo(s.updated, now), tileCount: s.tiles, id: s.id })),
+      selectedIndex: sessions.findIndex((s) => s.id === state.selSession),
       onPick: (it) => loadSession(it.id, true),
     });
   }
