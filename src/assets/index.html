@@ -396,6 +396,8 @@
   .navchip.l1 { background: var(--raised); }
   .navchip.query { color: var(--primary); border-style: dashed; }
   .view-pill { display: inline-flex; align-items: center; font-size: 10px; font-weight: 600; letter-spacing: 0.08em; padding: 3px 8px; border-radius: 5px; border: 1px solid var(--primary-dim); color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); flex: none; }
+  button.view-pill { font-family: inherit; cursor: pointer; }
+  button.view-pill:hover { border-color: var(--primary); }
   .navchip.query.active { background: var(--grad-accent); color: var(--on-accent); border-style: solid; font-weight: 700; }
 
   .db-body { flex: 1; display: grid; grid-template-columns: 268px 1fr; min-height: 0; position: relative; }
@@ -471,7 +473,7 @@
   .tdate:focus { outline: none; border-color: var(--primary-dim); }
 
   .tp-head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
-  .tp-name { font-size: 16px; color: var(--fg); min-width: 0; }
+  .tp-name { font-size: 16px; color: var(--fg); min-width: 0; white-space: nowrap; }
   .tp-name.truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tp-rows { font-size: 12px; color: var(--faint); flex: none; }
   .tp-actions { margin-left: auto; display: flex; align-items: center; gap: 14px; flex: none; }
@@ -2499,7 +2501,7 @@
     $("results").innerHTML = `
       <div class="tp-head">
         <span class="tp-name">${esc(state.selTable)}</span>
-        ${t && t.is_view ? '<span class="view-pill" title="This is a SQL view, not a base table">view</span>' : ""}
+        ${t && t.is_view ? '<button class="view-pill" id="view-source" title="Open the source table of this view">view</button>' : ""}
         <span class="tp-rows">${colCount}</span>
         <span class="tp-rows" id="tp-results"></span>
         <span class="tp-actions">${exp}
@@ -2516,8 +2518,37 @@
     reloadBody();
     updateTitle();
   }
+  async function openViewSource(anchor) {
+    const db = state.selDb, table = state.selTable;
+    try {
+      const data = await (await fetch("/api/schema?" + new URLSearchParams({ db, table }))).json();
+      const parser = await initSqlTreeSitter();
+      if (db !== state.selDb || table !== state.selTable) return;
+      if (data.error) throw new Error(data.error);
+      const sources = new Set();
+      if (parser && data.sql) {
+        const tree = parser.parse(data.sql);
+        const visit = (node) => {
+          if (node.type === "object_reference" && node.parent?.type === "relation") {
+            const identifiers = node.namedChildren.filter((child) => child.type === "identifier");
+            const name = identifiers.at(-1)?.text.replace(/^"|"$/g, "").replace(/""/g, '"');
+            const source = state.tables.find((t) => t.name.toLowerCase() === name?.toLowerCase());
+            if (source && source.name !== table) sources.add(source.name);
+          }
+          for (const child of node.namedChildren) visit(child);
+        };
+        visit(tree.rootNode); tree.delete();
+      }
+      if (sources.size === 1) { selectTable([...sources][0]); return; }
+      if (sources.size > 1) {
+        openPicker({ anchor, placeholder: "Choose a source table…", items: [...sources].map((name) => ({ label: name, name })), onPick: (it) => selectTable(it.name) });
+        return;
+      }
+      state.subview = "schema"; renderResults(); syncUrl(false);
+    } catch (e) { console.warn("Could not open view source", e); }
+  }
   // Keep the table header on one line: prefer the full title + inline export, but
-  // when space is tight first collapse export to a dropdown, then truncate the
+  // when space is tight collapse export, hide the redundant result count, then truncate the
   // title — rather than overflowing into a horizontal scrollbar.
   function fitResultsHead() {
     const head = document.querySelector(".tp-head"); if (!head) return;
@@ -2525,11 +2556,14 @@
     const exp = head.querySelector(".export"), mini = head.querySelector("#export-combo");
     if (!name) return;
     if (exp && mini) { exp.hidden = false; mini.hidden = true; }
+    const count = head.querySelector("#tp-results");
+    if (count) count.hidden = false;
     name.classList.remove("truncate");
     // The title is squeezed when its text can't fit the box flex gave it.
     const squeezed = () => name.scrollWidth > name.clientWidth + 1;
     if (!squeezed()) return;
     if (exp && mini) { exp.hidden = true; mini.hidden = false; }   // reclaim room
+    if (squeezed() && count) count.hidden = true;
     if (squeezed()) name.classList.add("truncate");               // still tight → ellipsis
   }
   function openExportCombo(anchor) {
@@ -2560,6 +2594,7 @@
       state.total = data.total || 0;
       const rc = $("tp-results");
       if (rc) rc.textContent = `${state.total.toLocaleString()} ${state.total === 1 ? "result" : "results"}`;
+      fitResultsHead();
       const allCols = data.columns || [], rows = data.rows || [];
       if (!rows.length) { slot.innerHTML = '<div class="note">No rows match the current filters.</div>'; return; }
       // Columns whose facet eye is closed are dropped from the table (the rows
@@ -10204,7 +10239,8 @@
     const pagerH = pager ? pager.getBoundingClientRect().height : 36;
     const top = wrap.getBoundingClientRect().top;
     // pagerH + its 10px margin-top + 2px slack so nothing overflows.
-    const avail = Math.max(120, (rRect.bottom - padB) - top - pagerH - 12);
+    const scale = rRect.height / results.offsetHeight || 1;
+    const avail = Math.max(0, (rRect.bottom - top - pagerH) / scale - padB - 12);
     // Pin the table to the full height so the pager sits at the very bottom
     // (rather than floating up after a short, floor-rounded set of rows).
     wrap.style.height = avail + "px";
@@ -10222,7 +10258,8 @@
     if (rowH < 4) return;
     const thead = fw.wrap.querySelector("thead");
     const theadH = thead ? thead.getBoundingClientRect().height : 0;
-    const capacity = clamp(Math.floor((fw.avail - theadH) / rowH), 1, 500);
+    const scale = fw.wrap.getBoundingClientRect().height / fw.wrap.offsetHeight || 1;
+    const capacity = clamp(Math.floor((fw.wrap.clientHeight - theadH / scale) / (rowH / scale)), 1, 500);
     if (capacity !== state.pageSize) {
       state.pageSize = capacity; state.page = 0; autofitGuard = true; loadRows();
     }
@@ -10313,6 +10350,7 @@
   window.addEventListener("resize", hideSessionInfo);
 
   document.addEventListener("click", (ev) => {
+    const viewSource = ev.target.closest("#view-source"); if (viewSource) { openViewSource(viewSource); return; }
     const dbCombo = ev.target.closest("#db-combo"); if (dbCombo) { openDbCombo(dbCombo); return; }
     const tblCombo = ev.target.closest("#table-combo"); if (tblCombo) { openTableCombo(tblCombo); return; }
     const sessCombo = ev.target.closest("#session-combo"); if (sessCombo) { openSessionCombo(sessCombo); return; }
