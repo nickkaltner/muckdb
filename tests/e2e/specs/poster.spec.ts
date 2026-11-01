@@ -2,6 +2,10 @@ import { test, expect } from '../fixtures/test';
 import { readFileSync } from 'node:fs';
 import { SESSION_ID } from '../constants';
 
+// Keep this capture focused on the two tiles that exercise color-mix styles;
+// rendering every chart in parallel makes the poster test needlessly costly.
+test.use({ sessionTiles: ['timeline', 'map'] });
+
 // Regression: the poster / copy-image export (html2canvas) must not choke on
 // color-mix() styles. Chrome serialises a computed color-mix() as `color(srgb …)`,
 // which html2canvas can't parse ("unsupported color function 'color'") — the
