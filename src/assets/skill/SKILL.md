@@ -172,6 +172,16 @@ Revenue **{{sql: SELECT sum(amount) AS revenue FROM orders}}** across
 MD
 ```
 
+Whitespace around live values is part of the authored Markdown. Put spaces
+between expressions and surrounding words, including outside bold markers.
+Don't rely on SQL-returned strings to supply layout whitespace.
+
+- Good: `Trained **{{sql: SELECT hours FROM progress}}** hours.`
+- Bad: `Trained{{sql: SELECT hours FROM progress}}hours.`
+
+Keep intentional adjacency for punctuation and suffixes, such as
+`{{sql: SELECT percentage FROM progress}}%`.
+
 Each expression must return exactly one row and one column. Queries run read-only;
 empty or multi-row/multi-column results show an explicit error, and NULL displays
 as `—`. Use an aggregate or an explicit ordered `LIMIT 1` when appropriate;
@@ -1062,6 +1072,9 @@ muckdb session screenshot pond-analysis --tile species --out species.png
 - **Verify visually after building.** After posting tiles, screenshot the
   session and look at it — wrong chart kind, an empty series, or unreadable
   labels are obvious in the image and invisible in the CLI output.
+  Inspect sentences containing live values for joined words. If spacing is
+  wrong, compare the stored Markdown with rendered output to distinguish
+  authoring mistakes from renderer bugs.
 - Needs a Chromium-based browser installed (chromium/chrome/brave/edge; override
   with `MUCKDB_BROWSER=/path/to/browser`). Renders in ~1s.
 - The same render backs `GET /api/shot?session=<id>&tile=<name>` (returns
