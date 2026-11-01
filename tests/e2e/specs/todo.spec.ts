@@ -1,6 +1,9 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+// Updating a todo must also preserve the unrelated table's DOM node.
+test.use({ sessionTiles: ['all', 'todos'] });
+
 test('todo tile renders states, updates DuckDB, and can leave presentation mode', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/#t=todos`);
   const panel = page.locator('.panel[data-tile="todos"]');

@@ -1,6 +1,9 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+// Keep real queries and rendering without competing with every other chart.
+test.use({ sessionTiles: ['flame', 'flame-list', 'flame-names', 'flame-raw', 'flame-limit', 'flame-rare'] });
+
 test.describe('flame tile', () => {
   test('merges stacks into frames, zooms on click and resets', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
