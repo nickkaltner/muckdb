@@ -819,6 +819,7 @@ const BOOL_FLAGS: &[&str] = &[
     "autonumber",
     "skip-presentation",
     "include-presentation",
+    "restore",
 ];
 
 impl Args {
@@ -1953,6 +1954,22 @@ pub fn cli(args: &[String]) -> Result<i32> {
             );
             Ok(0)
         }
+        "hide" => {
+            let name =
+                session_arg.context("usage: muckdb session hide <name> --tile T [--restore]")?;
+            let tile = p
+                .get("tile")
+                .filter(|tile| !tile.is_empty())
+                .context("--tile <name> required")?;
+            let id = resolve_session_or_agent_session(&name)?;
+            let restore = p.get("restore").is_some();
+            if !set_tile_trashed(&id, tile, !restore)? {
+                bail!("no such session or tile: {name}/{tile}");
+            }
+            let action = if restore { "restored" } else { "hidden" };
+            println!("{action} tile '{tile}' in session {id}");
+            Ok(0)
+        }
         "rm" => {
             let name = session_arg.context("usage: muckdb session rm <name> [--tile T]")?;
             let id = slug(&name);
@@ -1972,7 +1989,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
         }
         _ => {
             eprintln!(
-                "usage: muckdb session <create|list|post|mermaid|section|context|tile|move|screenshot|export|import|rm> ...\n\
+                "usage: muckdb session <create|list|post|mermaid|section|context|tile|move|screenshot|export|import|hide|rm> ...\n\
                  \n  create <name> [--title T] [--agent-session UUID]\n  list\n  \
                  post <name> --md <text|-> [--name TILE] [--title T]\n  \
                  mermaid <name> --name TILE (--source FILE|- | --mmd TEXT|-) [--title T] [--caption C]\n  \
@@ -2002,6 +2019,7 @@ pub fn cli(args: &[String]) -> Result<i32> {
                  screenshot <name> [--tile TILE] [--theme NAME] [--out F.png] [--width W] [--height H]  (capture as PNG via headless Chromium)\n  \
                  export <name> [--out FILE.muckdb]  (bundle session + database snapshots into a portable zip)\n  \
                  import <file.muckdb>               (load an exported session; dbs land in muckdb's data dir)\n  \
+                 hide <name> --tile TILE [--restore]  (hide a panel, or restore it from the trash)\n  \
                  rm <name> [--tile TILE]"
             );
             Ok(2)

@@ -99,6 +99,7 @@ muckdb session tile <name> --name TILE --db <db> (--view V | --sql "SQL")
 muckdb session screenshot <name> [--tile TILE] [--theme NAME] [--out FILE.png] [--width W] [--height H]
 muckdb session export <name> [--out FILE.muckdb]
 muckdb session import <file.muckdb>
+muckdb session hide <name> --tile TILE [--restore]
 muckdb session rm <name> [--tile TILE]
 ```
 
@@ -423,9 +424,15 @@ breaks the tile out of the centred column so every column is visible.
   in a chart or explorable view tile beside it.
 - **Update, don't duplicate.** Keep `--name`s stable across a task; the dashboard
   updates live (WebSocket) each time you post.
+- **Hide panels that retain historical context.** When a panel is no longer
+  relevant to the current report but preserves useful historical context, hide
+  it with `muckdb session hide <session> --tile <name>` so it can be restored
+  later. Use `--restore` to bring it back when relevant again.
 - **Respect the trash.** The human can trash a panel in the UI; the flag persists
   on the tile (`trashed: true` in `muckdb ls session`) and survives re-posts —
-  updating a trashed tile does not resurface it. Delete for real with
+  updating a trashed tile does not resurface it. Hide with
+  `muckdb session hide <session> --tile <name>`; add `--restore`
+  to bring it back. Delete for real with
   `muckdb session rm <session> --tile <name>`.
 - **Todos are collaborative with the human.** A `--chart todo` tile must use an
   updateable `--view` table with `item_description VARCHAR PRIMARY KEY`, nullable

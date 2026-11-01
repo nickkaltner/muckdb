@@ -166,6 +166,7 @@ muckdb session tile analysis --name todos --db mydb.db \
   --view collaborative_todos --chart todo --title "Todo"
 
 muckdb session list
+muckdb session hide analysis --tile temp   # restore with --restore
 muckdb session rm analysis --tile temp     # or: rm analysis (whole session)
 
 # capture the dashboard (or one tile) as a PNG — lets an agent *see* the result
@@ -203,8 +204,9 @@ typing narrows the rows to those containing the text in any column.
 Each data tile has an **explore** button that opens the view in the faceted
 table explorer, and every panel has a **copy-image** button that puts a PNG of
 the rendered panel on the clipboard, plus an **✕** that hides it into a *trash*
-section of the contents sidebar (click it there to restore it — a per-browser
-preference; other viewers and screenshots still see every panel).
+section of the contents sidebar. Hidden panels stay hidden across viewers and
+reposts. Restore one from the sidebar, or use
+`muckdb session hide analysis --tile temp --restore` from the CLI.
 
 Mermaid tiles store authored diagram source directly in the session JSON. Use
 them when the information is naturally structural—flowcharts, trees, state
