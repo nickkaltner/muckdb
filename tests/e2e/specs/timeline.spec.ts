@@ -2,6 +2,8 @@ import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 import type { Locator } from '@playwright/test';
 
+test.use({ sessionTiles: ["timeline","timeline-ts"] });
+
 test.describe('timeline tile', () => {
   test('renders lanes, bars, a sublane for overlap, and a legend', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);

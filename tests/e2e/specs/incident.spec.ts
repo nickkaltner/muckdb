@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ["incident"] });
+
 test.describe('incident timeline tile', () => {
   test('orders events, groups dates, renders optional narrative and severity', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);

@@ -1,7 +1,8 @@
-import { test, expect } from '../fixtures/test';
+import { testForTiles, expect } from '../fixtures/test';
+import { waitForChart } from '../fixtures/chart';
 import { SESSION_ID } from '../constants';
 
-test('chart canvases recover after browser zoom changes', async ({ page, context }) => {
+testForTiles('by-day')('chart canvases recover after browser zoom changes', async ({ page, context }) => {
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
@@ -20,7 +21,7 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
       points: chart.getDatasetMeta(0).data.map((p: any) => [p.x, p.y]),
     };
   });
-  await page.waitForTimeout(1200);
+  await waitForChart(canvas);
   const before = await measure();
   // The canvas backing store covers every physical pixel after both browser
   // DPR and muckdb's own CSS interface scale; otherwise charts look enlarged
@@ -33,10 +34,15 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
     width: 1024, height: 576, deviceScaleFactor: 1.25, mobile: false,
     screenWidth: 1280, screenHeight: 720,
   });
-  await page.waitForTimeout(20);
+  await expect.poll(() => canvas.evaluate(() => devicePixelRatio)).toBe(1.25);
   const zoomed = await measure();
   await cdp.send('Emulation.clearDeviceMetricsOverride');
-  await page.waitForTimeout(500);
+  await expect.poll(async () => {
+    const current = await measure();
+    return { width: current.chartWidth, height: current.chartHeight, dpr: current.chartDpr,
+      bitmapHash: current.bitmapHash };
+  }).toEqual({ width: before.chartWidth, height: before.chartHeight, dpr: before.chartDpr,
+    bitmapHash: before.bitmapHash });
   const restored = await measure();
   expect(zoomed.dpr).toBe(1.25);
   expect(restored.chartWidth).toBe(before.chartWidth);
@@ -50,7 +56,7 @@ test('chart canvases recover after browser zoom changes', async ({ page, context
 });
 
 for (const kind of ['scatter', 'pie']) {
-  test(`${kind} hover selects every point under console zoom`, async ({ page }) => {
+  testForTiles('by-day')(`${kind} hover selects every point under console zoom`, async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const canvas = page.locator('.panel[data-tile="by-day"] canvas');
     await canvas.scrollIntoViewIfNeeded();
@@ -68,7 +74,7 @@ for (const kind of ['scatter', 'pie']) {
           plugins: { legend: { display: false } } },
       });
     }, kind);
-    await page.waitForTimeout(500);
+    await waitForChart(canvas);
     for (const index of [0, 1, 2, 3, 4, 2]) {
       const p = await canvas.evaluate((el, index) => {
         const c = (window as any).Chart.getChart(el);
@@ -82,7 +88,7 @@ for (const kind of ['scatter', 'pie']) {
 }
 
 for (const [name, type] of [['line', 'line'], ['area', 'line'], ['scatter', 'scatter'], ['bar', 'bar']]) {
-  test(`${name} data hover does not show the x-axis tooltip`, async ({ page }) => {
+  testForTiles('by-day')(`${name} data hover does not show the x-axis tooltip`, async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const canvas = page.locator('.panel[data-tile="by-day"] canvas');
     await canvas.scrollIntoViewIfNeeded();
@@ -101,6 +107,7 @@ for (const [name, type] of [['line', 'line'], ['area', 'line'], ['scatter', 'sca
         },
       });
     }, { name, type });
+    await waitForChart(canvas);
     const point = await canvas.evaluate((el) => {
       const chart = (window as any).Chart.getChart(el);
       const p = chart.getDatasetMeta(0).data[2].getCenterPoint(true);
@@ -108,12 +115,13 @@ for (const [name, type] of [['line', 'line'], ['area', 'line'], ['scatter', 'sca
       return { x: rect.left + p.x * rect.width / chart.width, y: rect.top + p.y * rect.height / chart.height };
     });
     await page.mouse.move(point.x, point.y);
-    await page.waitForTimeout(100);
+    await expect.poll(() => canvas.evaluate(el =>
+      (window as any).Chart.getChart(el).tooltip.getActiveElements().length)).toBeGreaterThan(0);
     await expect(page.locator('.chart-time-tip')).not.toBeVisible();
   });
 }
 
-test('chart tiles render canvases; table tile renders a table', async ({ page }) => {
+testForTiles('by-cat', 'by-day', 'all')('chart tiles render canvases; table tile renders a table', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
 
   // Bar and line tiles draw with Chart.js → a <canvas> inside their panel.
@@ -124,7 +132,7 @@ test('chart tiles render canvases; table tile renders a table', async ({ page })
   await expect(page.locator('.panel', { hasText: 'All widgets' }).locator('table')).toBeVisible();
 });
 
-test('long categorical bar labels rotate instead of overlapping', async ({ page }) => {
+testForTiles('long-labels')('long categorical bar labels rotate instead of overlapping', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="long-labels"] canvas');
   await expect(canvas).toBeVisible();
@@ -145,7 +153,7 @@ test('long categorical bar labels rotate instead of overlapping', async ({ page 
   expect(axis.rotation).toBeLessThanOrEqual(axis.maxRotation);
 });
 
-test('a single-series line keeps the shared vertical hover cursor', async ({ page }) => {
+testForTiles('by-day')('a single-series line keeps the shared vertical hover cursor', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
@@ -164,7 +172,7 @@ test('a single-series line keeps the shared vertical hover cursor', async ({ pag
     (window as any).Chart.getChart(el).$muckHoverTickIndex)).not.toBeNull();
 });
 
-test('a trendline tooltip reports both source and fitted values', async ({ page }) => {
+testForTiles('trend')('a trendline tooltip reports both source and fitted values', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="trend"] canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
@@ -187,7 +195,7 @@ test('a trendline tooltip reports both source and fitted values', async ({ page 
   })).toEqual({ active: ['n', 'trend'], displayed: ['n', 'trend'] });
 });
 
-test('a stacked bar tooltip reports every segment in stack order with aligned values', async ({ page }) => {
+testForTiles('stack')('a stacked bar tooltip reports every segment in stack order with aligned values', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="stack"] canvas');
   await expect(canvas).toBeVisible({ timeout: 15_000 });
@@ -216,7 +224,7 @@ test('a stacked bar tooltip reports every segment in stack order with aligned va
   });
 });
 
-test('bar tooltips follow the final three hovered bars under console zoom', async ({ page }) => {
+testForTiles('by-cat')('bar tooltips follow the final three hovered bars under console zoom', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const panel = page.locator('.panel', { hasText: 'By category' });
   const canvas = panel.locator('canvas');
@@ -233,12 +241,18 @@ test('bar tooltips follow the final three hovered bars under console zoom', asyn
   }
 });
 
-test('line snapping follows late points under console zoom', async ({ page }) => {
+testForTiles('by-day')('line snapping follows late points under console zoom', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
+  // Preserve a real nonzero page scroll even with a one-panel fixture.
+  await canvas.evaluate(el => {
+    const panels = el.closest('#panels') as HTMLElement;
+    panels.style.paddingTop = '500px';
+    panels.style.paddingBottom = '500px';
+  });
   await canvas.scrollIntoViewIfNeeded();
-  await page.evaluate(() => window.scrollBy(0, 250));
-  await page.waitForTimeout(1000);
+  await waitForChart(canvas);
+  await expect.poll(() => page.locator('#panels-scroll').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   const point = await canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
     const points = chart.getDatasetMeta(0).data;
@@ -263,12 +277,18 @@ test('line snapping follows late points under console zoom', async ({ page }) =>
   expect(picked).toBe(point.index);
 });
 
-test('multi-series line snapping follows late x positions under console zoom', async ({ page }) => {
+testForTiles('by-day-multi')('multi-series line snapping follows late x positions under console zoom', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
+  // Preserve a real nonzero page scroll even with a one-panel fixture.
+  await canvas.evaluate(el => {
+    const panels = el.closest('#panels') as HTMLElement;
+    panels.style.paddingTop = '500px';
+    panels.style.paddingBottom = '500px';
+  });
   await canvas.scrollIntoViewIfNeeded();
-  await page.evaluate(() => window.scrollBy(0, 250));
-  await page.waitForTimeout(1000);
+  await waitForChart(canvas);
+  await expect.poll(() => page.locator('#panels-scroll').evaluate(el => el.scrollTop)).toBeGreaterThan(0);
   for (const index of [30, 36, 40, 45, 48, 49, 40]) {
     const target = await canvas.evaluate((el, index) => {
       const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
@@ -306,7 +326,7 @@ test('multi-series line snapping follows late x positions under console zoom', a
   }
 });
 
-test('multi-series line tooltip orders hovered values from highest to lowest', async ({ page }) => {
+testForTiles('by-day-multi')('multi-series line tooltip orders hovered values from highest to lowest', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
   await canvas.scrollIntoViewIfNeeded();
@@ -333,7 +353,7 @@ test('multi-series line tooltip orders hovered values from highest to lowest', a
   }
 });
 
-test('time-series line tooltip follows plotted top-to-bottom order', async ({ page }) => {
+testForTiles('by-day-multi')('time-series line tooltip follows plotted top-to-bottom order', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
   await canvas.scrollIntoViewIfNeeded();
@@ -356,7 +376,7 @@ test('time-series line tooltip follows plotted top-to-bottom order', async ({ pa
   })).toEqual([0, 1]);
 });
 
-test('multi-series line hover ignores a series after its final point', async ({ page }) => {
+testForTiles('by-day-multi')('multi-series line hover ignores a series after its final point', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day-multi"] canvas');
   await canvas.scrollIntoViewIfNeeded();
@@ -398,7 +418,7 @@ test('multi-series line hover ignores a series after its final point', async ({ 
   }
 });
 
-test('Cartesian charts brush-zoom their x-range and can reset', async ({ page }) => {
+testForTiles('by-day')('Cartesian charts brush-zoom their x-range and can reset', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const panel = page.locator('.panel[data-tile="by-day"]');
   const canvas = panel.locator('canvas');
@@ -430,7 +450,7 @@ test('Cartesian charts brush-zoom their x-range and can reset', async ({ page })
 });
 
 for (const edge of ['left', 'right'] as const) {
-  test(`brush zoom completes when released beyond the ${edge} chart edge`, async ({ page }) => {
+  testForTiles('by-day')(`brush zoom completes when released beyond the ${edge} chart edge`, async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="by-day"]');
     const canvas = panel.locator('canvas');
@@ -466,7 +486,7 @@ for (const edge of ['left', 'right'] as const) {
   });
 }
 
-test('legend clicks fade a dataset rather than brushing or hiding it', async ({ page }) => {
+testForTiles('by-day')('legend clicks fade a dataset rather than brushing or hiding it', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   const canvas = page.locator('.panel[data-tile="by-day"] canvas');
   const faded = await canvas.evaluate((el) => {

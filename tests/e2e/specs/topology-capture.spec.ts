@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ["summary"] });
+
 test('clipboard PNG retains both edges of a centered topology SVG', async ({ page }) => {
   await page.goto(`/session/${SESSION_ID}/`);
   await expect(page.locator('#panels .panel').first()).toBeVisible();

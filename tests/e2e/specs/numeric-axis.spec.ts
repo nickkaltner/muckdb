@@ -1,4 +1,5 @@
 import { test, expect } from '../fixtures/test';
+import { waitForChart } from '../fixtures/chart';
 import { BINARY } from '../constants';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
@@ -37,7 +38,7 @@ for (const kind of ['line', 'area']) {
     await page.goto(`/session/dense-${kind}/`);
     await expect(canvas).toBeVisible();
     await canvas.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(1000);
+    await waitForChart(canvas);
     const point = await canvas.evaluate(el => {
       const c = (window as any).Chart.getChart(el as HTMLCanvasElement);
       const p = c.getDatasetMeta(0).data[1000].getCenterPoint(true);

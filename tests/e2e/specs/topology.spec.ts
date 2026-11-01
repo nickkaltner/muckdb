@@ -1,4 +1,4 @@
-import { test, expect } from '../fixtures/test';
+import { test, testForTiles, expect } from '../fixtures/test';
 import { SESSION_ID, BINARY } from '../constants';
 import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
@@ -13,13 +13,12 @@ async function chooseTopologyLayout(panel: Locator, name: string) {
 }
 
 test.describe('topology tile', () => {
-  test('fanout labels align, endpoint labels stay by their ports, and long text fits', async ({ page, e2eState }) => {
-    test.setTimeout(60_000);
-    const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
-    const db = join(e2eState.tmpDir, 'label-examples.duckdb');
-    const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
-    run([db, '-c', readFileSync(resolve(__dirname, '../fixtures/topology-labels.sql'), 'utf8')]);
-    for (const view of ['label_fanout', 'long_label_fanout', 'long_label_triangle', 'long_label_regions']) {
+  for (const view of ['label_fanout', 'long_label_fanout', 'long_label_triangle', 'long_label_regions']) {
+    testForTiles(view)(`fanout labels align, endpoint labels stay by their ports, and long text fits: ${view}`, async ({ page, e2eState }) => {
+      const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
+      const db = join(e2eState.tmpDir, 'label-examples.duckdb');
+      const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
+      run([db, '-c', readFileSync(resolve(__dirname, '../fixtures/topology-labels.sql'), 'utf8')]);
       run(['session', 'tile', SESSION_ID, '--name', view, '--db', db, '--view', view,
         '--chart', 'topology', '--from', 'src', '--to', 'dst', '--color', 'link_class', '--label', 'link_label',
         '--from-port', 'src_port', '--to-port', 'dst_port', '--routing', 'metro',
@@ -120,10 +119,10 @@ test.describe('topology tile', () => {
         expect(new Set(aligned.labels.map((label) => label.x)).size).toBe(1);
         expect(aligned.labels.every((label) => label.text.includes('Gbps · '))).toBe(true);
       }
-    }
-  });
+    });
+  }
 
-  test('two peers converge on the next column without crossing their arrivals', async ({ page, e2eState }) => {
+  testForTiles('ordered-arrivals')('two peers converge on the next column without crossing their arrivals', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'ordered-arrivals.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -163,7 +162,7 @@ test.describe('topology tile', () => {
     }
   });
 
-  test('long chains respect two columns and skip-rank links clear every card', async ({ page, e2eState }) => {
+  testForTiles('skip-ranks')('long chains respect two columns and skip-rank links clear every card', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'skip-ranks.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -208,7 +207,7 @@ test.describe('topology tile', () => {
     await panel.screenshot({ path: '/tmp/muckdb-topology-columns.png' });
   });
 
-  test('core fanout reserves a clear gutter before the second service column', async ({ page, e2eState }) => {
+  testForTiles('core-fanout')('core fanout reserves a clear gutter before the second service column', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'core-fanout.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -268,7 +267,7 @@ test.describe('topology tile', () => {
     }
   });
 
-  test('edge-to-data links do not share horizontal runs across columns', async ({ page }) => {
+  testForTiles('topology')('edge-to-data links do not share horizontal runs across columns', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="topology"]');
     await expect(panel.locator('.topo-svg').first()).toBeVisible();
@@ -296,7 +295,7 @@ test.describe('topology tile', () => {
     }
   });
 
-  test('wide layout separates local services and packs independent areas, with persistent per-tile controls', async ({ page, e2eState }) => {
+  testForTiles('wide-layout')('wide layout separates local services and packs independent areas, with persistent per-tile controls', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'wide.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -340,7 +339,7 @@ test.describe('topology tile', () => {
     await expect(panel.locator('.topo-layout-controls')).toBeHidden();
   });
 
-  test('disjoint direct-service loops stack with the same right edge', async ({ page, e2eState }) => {
+  testForTiles('stacked-loops')('disjoint direct-service loops stack with the same right edge', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'stacked-loops.duckdb');
     const run = (args: string[]) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env });
@@ -372,7 +371,7 @@ test.describe('topology tile', () => {
     }
   });
 
-  test('mesh labels clear all tracks, stay inside the diagram, and highlight their connection', async ({ page, e2eState }) => {
+  testForTiles('router-mesh')('mesh labels clear all tracks, stay inside the diagram, and highlight their connection', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'router-mesh.duckdb');
     const run = (args: string[], input?: string) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env, input, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -468,7 +467,7 @@ test.describe('topology tile', () => {
     await expect(label.locator('.topo-edge-label')).toHaveCSS('text-decoration-line', 'none');
   });
 
-  test('four MCRs and four AWS LAGs retain labels next to their ports', async ({ page, e2eState }) => {
+  testForTiles('aws-mesh')('four MCRs and four AWS LAGs retain labels next to their ports', async ({ page, e2eState }) => {
     const env = { ...process.env, XDG_DATA_HOME: join(e2eState.tmpDir, 'data'), XDG_STATE_HOME: join(e2eState.tmpDir, 'state') };
     const db = join(e2eState.tmpDir, 'aws-mesh.duckdb');
     const run = (args: string[], input?: string) => execFileSync(BINARY, ['--port', String(e2eState.port), ...args], { env, input, stdio: ['pipe', 'pipe', 'pipe'] });
@@ -609,7 +608,7 @@ test.describe('topology tile', () => {
     expect(crossings).toBe(1);
   });
 
-  test('renders nested containment, typed nodes, labeled tracks and markup badges', async ({ page }) => {
+  testForTiles('topology')('renders nested containment, typed nodes, labeled tracks and markup badges', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
     const panel = page.locator('.panel[data-tile="topology"]');
     await expect(panel).toBeVisible();

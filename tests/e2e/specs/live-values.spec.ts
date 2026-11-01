@@ -156,7 +156,7 @@ test('live chart refreshes retain faded legend series', async ({ page }) => {
 
   // A data write refreshes the chart in place. Its canvas survives and Chart.js
   // receives the new series data through update(), rather than a replacement.
-  await page.waitForTimeout(300);
+  await expect(page.locator('[data-tile="refresh-note"]')).toContainText('The comparison was refreshed.');
   cli(db, '-c', 'UPDATE readings SET alpha = 0.9 WHERE epoch = 2');
   await expect.poll(() => canvas.evaluate((el) => {
     const chart = (window as any).Chart.getChart(el as HTMLCanvasElement);
@@ -299,8 +299,15 @@ test('live table and markdown updates preserve selections in unchanged text', as
   expect(await selection()).toBe('Keep this text selected');
   // Even a query which leaves all values unchanged used to rebuild table cells.
   await selectText(cells.first());
+  const refreshed = page.waitForResponse(response => {
+    const url = new URL(response.url());
+    return url.pathname === '/api/query' && url.searchParams.get('db') === db
+      && /SELECT \*/i.test(url.searchParams.get('sql') || '');
+  });
   cli(db, '-c', 'SELECT * FROM readings');
-  await page.waitForTimeout(600);
+  await (await refreshed).finished();
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   expect(await selection()).toBe('Keep this text selected');
 });
 

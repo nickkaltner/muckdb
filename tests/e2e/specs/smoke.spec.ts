@@ -25,7 +25,8 @@ test('page loads with tabs and no console errors', async ({ page }) => {
   );
   expect(ids.indexOf('theme-btn')).toBe(ids.indexOf('credits-btn') - 1);
 
-  await page.waitForTimeout(300);
+  await expect(page.locator('#status')).toHaveClass(/live/);
+  await expect(page.locator('#session-combo .cv-sub')).toHaveText(/[1-9]\d* sessions?/);
   expect(errors, `console errors:\n${errors.join('\n')}`).toEqual([]);
 });
 

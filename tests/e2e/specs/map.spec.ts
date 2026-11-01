@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ["map","flows"] });
+
 test.describe('map tile', () => {
   test('marker tooltip shows above the expand overlay', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);

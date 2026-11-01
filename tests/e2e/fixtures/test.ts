@@ -96,5 +96,10 @@ export const test = base.extend<TestFixtures, WorkerFixtures>({
   },
 });
 
+// Scope an individual test to real daemon panels without an extra describe block.
+export function testForTiles(...tiles: string[]): typeof test {
+  return test.extend({ sessionTiles: tiles });
+}
+
 export { expect };
 export type { Response } from '@playwright/test';

@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ["probability"] });
+
 test.describe('probability tile', () => {
   test('estimates raw distributions on a shared scale', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);

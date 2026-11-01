@@ -1,6 +1,8 @@
 import { test, expect } from '../fixtures/test';
 import { SESSION_ID } from '../constants';
 
+test.use({ sessionTiles: ["boxes"] });
+
 test.describe('box tile', () => {
   test('ignores incomplete summaries when calculating the shared range', async ({ page }) => {
     await page.goto(`/session/${SESSION_ID}/`);
