@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
 
+env:
+  # Keep Cargo's cache-key environment identical to the release workflow.
+  CARGO_TERM_COLOR: always
+  MUCKDB_E2E_BINARY: ${{ github.workspace }}/target/x86_64-unknown-linux-gnu/release/muckdb
+
 jobs:
   e2e:
     runs-on: ubuntu-24.04
@@ -24,9 +29,14 @@ jobs:
         run: duckdb --version
 
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
       - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-x86_64-unknown-linux-gnu
+          save-if: ${{ github.ref == 'refs/heads/main' }}
       - name: Build muckdb (release)
-        run: cargo build --release
+        run: cargo build --locked --release --target x86_64-unknown-linux-gnu
 
       - uses: actions/setup-node@v7
         with:

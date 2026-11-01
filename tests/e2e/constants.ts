@@ -5,7 +5,8 @@ export const BASE_PORT = 12700;
 export const SESSION_ID = 'e2e';
 
 export const REPO_ROOT = resolve(__dirname, '..', '..');
-export const BINARY = join(REPO_ROOT, 'target', 'release', 'muckdb');
+// CI builds an explicit target to share dependency artifacts with releases.
+export const BINARY = process.env.MUCKDB_E2E_BINARY || join(REPO_ROOT, 'target', 'release', 'muckdb');
 
 export interface E2EState {
   tmpDir: string;

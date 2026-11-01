@@ -474,9 +474,15 @@ Sessions are JSON files under the muckdb data dir
 
 CI (`.github/workflows/ci.yml`) runs, in order, on every push/PR across
 ubuntu + macos: `cargo fmt --check` → `cargo clippy --all-targets -- -D warnings`
-→ `cargo build` → `cargo test`. `fmt --check` is strict and is the most common
-cause of red — committing code that hasn't been run through `cargo fmt` fails the
-whole job.
+→ `cargo test --locked --verbose` → the timeline router unit tests. The Rust
+integration tests build the normal CLI binary too, so a separate `cargo build`
+is unnecessary. `fmt --check` is strict and is the most common cause of red —
+committing code that hasn't been run through `cargo fmt` fails the whole job.
+
+On `main`, CI also populates the macOS release dependency cache. E2E populates
+the Linux cache with the same explicit target and `release-<target>` shared key
+used by the release workflow. Keep their Cargo environment, target, and profile
+aligned: new release tags can restore caches from `main`, not from earlier tags.
 
 **Before committing any Rust change, always run these and only commit once they
 pass clean:**

@@ -28,9 +28,24 @@ jobs:
         run: cargo fmt --check
       - name: Clippy
         run: cargo clippy --all-targets -- -D warnings
-      - name: Build
-        run: cargo build --verbose
-      - name: Test
-        run: cargo test --verbose
+      # Integration tests build the normal binary as well as the test harnesses.
+      - name: Build and test
+        run: cargo test --locked --verbose
       - name: Timeline router unit tests
         run: node --test tests/unit/timeline-route.test.js
+
+  # Release-tag caches cannot be reused by later tags. Populate this on main,
+  # where tag workflows can restore it. E2E already produces the Linux cache.
+  warm-macos-release-cache:
+    if: github.ref == 'refs/heads/main'
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-apple-darwin
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: release-aarch64-apple-darwin
+      - name: Build release dependencies and binary
+        run: cargo build --locked --release --target aarch64-apple-darwin
